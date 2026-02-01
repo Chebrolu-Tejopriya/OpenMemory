@@ -1,0 +1,11 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+
+# Database (contains personal bookmarks with embeddings)
+data.db
+
+# Build output
+dist/

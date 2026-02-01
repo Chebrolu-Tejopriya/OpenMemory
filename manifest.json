@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Semantic Bookmarks",
+  "version": "0.1.0",
+  "description": "Sync bookmarks for semantic search",
+  "permissions": ["bookmarks"],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

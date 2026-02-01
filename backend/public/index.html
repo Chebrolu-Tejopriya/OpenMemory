@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenMemory</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #000000;
+      color: #FFFFFF;
+      min-height: 100vh;
+    }
+
+    /* Navigation */
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 1px solid #333333;
+    }
+
+    .logo {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    .nav-link {
+      font-size: 14px;
+      color: #888888;
+      text-decoration: none;
+      transition: color 0.15s ease;
+    }
+
+    .nav-link:hover {
+      color: #FFFFFF;
+    }
+
+    /* Main Container */
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+
+    /* Search Bar */
+    .search-container {
+      margin-bottom: 32px;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 14px 18px;
+      font-size: 15px;
+      font-family: inherit;
+      background: #000000;
+      border: 1px solid #333333;
+      border-radius: 6px;
+      color: #FFFFFF;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+
+    .search-input::placeholder {
+      color: #888888;
+    }
+
+    .search-input:focus {
+      border-color: #FFFFFF;
+    }
+
+    /* Status */
+    .status {
+      font-size: 13px;
+      color: #888888;
+      margin-bottom: 24px;
+    }
+
+    /* Results Grid */
+    .results-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 20px;
+    }
+
+    /* Inspiration Card */
+    .card {
+      background: #000000;
+      border: 1px solid #333333;
+      border-radius: 8px;
+      overflow: hidden;
+      transition: border-color 0.15s ease, transform 0.15s ease;
+      cursor: pointer;
+      text-decoration: none;
+      display: block;
+    }
+
+    .card:hover {
+      border-color: #555555;
+      transform: translateY(-2px);
+    }
+
+    .card-thumbnail {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #111111;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .card-thumbnail img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: top;
+      transition: opacity 0.2s ease;
+    }
+
+    .card-thumbnail img.loading {
+      opacity: 0;
+    }
+
+    .card-thumbnail img.loaded {
+      opacity: 1;
+    }
+
+    .card-thumbnail .placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #111111;
+    }
+
+    .card-thumbnail .placeholder img {
+      width: 32px;
+      height: 32px;
+      opacity: 0.5;
+    }
+
+    .card-content {
+      padding: 14px 16px;
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: #FFFFFF;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 6px;
+    }
+
+    .card-path {
+      font-size: 12px;
+      color: #888888;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .card-path span {
+      color: #555555;
+      margin: 0 6px;
+    }
+
+    /* Source Badge */
+    .card-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .source-badge {
+      font-size: 10px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 3px 6px;
+      border-radius: 4px;
+      background: #1a1a1a;
+      color: #888888;
+    }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 80px 20px;
+      color: #888888;
+    }
+
+    .empty-state h2 {
+      font-size: 16px;
+      font-weight: 500;
+      color: #FFFFFF;
+      margin-bottom: 8px;
+    }
+
+    .empty-state p {
+      font-size: 14px;
+    }
+
+    /* Load More */
+    .load-more-container {
+      display: flex;
+      justify-content: center;
+      margin-top: 32px;
+    }
+
+    .load-more-btn {
+      padding: 12px 24px;
+      font-size: 14px;
+      font-family: inherit;
+      font-weight: 500;
+      background: #000000;
+      border: 1px solid #333333;
+      border-radius: 6px;
+      color: #FFFFFF;
+      cursor: pointer;
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+
+    .load-more-btn:hover {
+      border-color: #555555;
+      background: #111111;
+    }
+
+    .load-more-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Folder Suggestions */
+    .search-wrapper {
+      position: relative;
+    }
+
+    .suggestions {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: #0a0a0a;
+      border: 1px solid #333333;
+      border-top: none;
+      border-radius: 0 0 6px 6px;
+      max-height: 300px;
+      overflow-y: auto;
+      z-index: 100;
+      display: none;
+    }
+
+    .suggestions.active {
+      display: block;
+    }
+
+    .suggestion-item {
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #888888;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #222222;
+    }
+
+    .suggestion-item:last-child {
+      border-bottom: none;
+    }
+
+    .suggestion-item:hover,
+    .suggestion-item.selected {
+      background: #111111;
+      color: #FFFFFF;
+    }
+
+    .suggestion-item .folder-icon {
+      opacity: 0.5;
+    }
+
+    .suggestion-item .folder-path {
+      flex: 1;
+    }
+
+    .suggestion-item .folder-path span {
+      color: #555555;
+      margin: 0 4px;
+    }
+
+    /* Active folder tag */
+    .active-filter {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+      background: #1a1a1a;
+      border: 1px solid #333333;
+      border-radius: 4px;
+      color: #888888;
+      margin-bottom: 16px;
+    }
+
+    .active-filter .remove-filter {
+      cursor: pointer;
+      color: #666666;
+      font-size: 14px;
+    }
+
+    .active-filter .remove-filter:hover {
+      color: #FFFFFF;
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="logo">OpenMemory</div>
+    <a href="#" class="nav-link">Integrations</a>
+  </nav>
+
+  <main class="container">
+    <div class="search-container">
+      <div class="search-wrapper">
+        <input
+          type="text"
+          id="search-input"
+          class="search-input"
+          placeholder="Search inspirations... (use @ to filter by folder)"
+          autofocus
+        >
+        <div id="suggestions" class="suggestions"></div>
+      </div>
+    </div>
+
+    <div id="active-filter" class="active-filter" style="display: none;">
+      <span id="filter-text"></span>
+      <span class="remove-filter" id="remove-filter">×</span>
+    </div>
+
+    <div id="status" class="status"></div>
+    <div id="results" class="results-grid"></div>
+    <div id="load-more-container" class="load-more-container" style="display: none;">
+      <button id="load-more-btn" class="load-more-btn">Load more</button>
+    </div>
+  </main>
+
+  <script>
+    const input = document.getElementById('search-input');
+    const resultsEl = document.getElementById('results');
+    const statusEl = document.getElementById('status');
+    const loadMoreContainer = document.getElementById('load-more-container');
+    const loadMoreBtn = document.getElementById('load-more-btn');
+    const suggestionsEl = document.getElementById('suggestions');
+    const activeFilterEl = document.getElementById('active-filter');
+    const filterTextEl = document.getElementById('filter-text');
+    const removeFilterBtn = document.getElementById('remove-filter');
+
+    const SOURCE_LABELS = {
+      chrome_bookmarks: 'Chrome',
+      pinterest: 'Pinterest',
+      instagram: 'Instagram',
+      twitter: 'X',
+      linkedin: 'LinkedIn'
+    };
+
+    // State
+    let currentQuery = '';
+    let currentOffset = 0;
+    let currentFolder = null;
+    let isLoading = false;
+    let allFolders = [];
+    let selectedSuggestionIndex = -1;
+    const LIMIT = 20;
+
+    // Load folders on init
+    async function loadFolders() {
+      try {
+        const res = await fetch('/folders');
+        const data = await res.json();
+        allFolders = data.folders || [];
+      } catch (err) {
+        console.error('Failed to load folders:', err);
+      }
+    }
+    loadFolders();
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str || '';
+      return div.innerHTML;
+    }
+
+    function formatPath(folder) {
+      if (!folder) return '';
+      return folder.split('/').map(p => escapeHtml(p)).join('<span>/</span>');
+    }
+
+    function getFaviconUrl(url) {
+      try {
+        const domain = new URL(url).hostname;
+        return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+      } catch {
+        return '';
+      }
+    }
+
+    function getScreenshotUrl(url) {
+      // Using 11ty screenshot service - free and reliable
+      return `https://v1.screenshot.11ty.dev/${encodeURIComponent(url)}/opengraph/`;
+    }
+
+    function renderCard(r) {
+      const screenshotUrl = getScreenshotUrl(r.url);
+      const faviconUrl = getFaviconUrl(r.url);
+      const cardId = 'card-' + Math.random().toString(36).substr(2, 9);
+
+      return `
+        <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener" class="card">
+          <div class="card-thumbnail" id="${cardId}">
+            <div class="placeholder">
+              <img src="${faviconUrl}" alt="">
+            </div>
+            <img
+              src="${screenshotUrl}"
+              alt=""
+              class="loading"
+              onload="this.classList.remove('loading'); this.classList.add('loaded'); this.parentElement.querySelector('.placeholder').style.display='none';"
+              onerror="this.style.display='none';"
+            >
+          </div>
+          <div class="card-content">
+            <div class="card-title">${escapeHtml(r.title)}</div>
+            ${r.folder ? `<div class="card-path">${formatPath(r.folder)}</div>` : ''}
+            <div class="card-meta">
+              <span class="source-badge">${escapeHtml(SOURCE_LABELS[r.source] || r.source)}</span>
+            </div>
+          </div>
+        </a>
+      `;
+    }
+
+    function renderResults(results, append = false) {
+      if (results.length === 0 && !append) {
+        resultsEl.innerHTML = `
+          <div class="empty-state" style="grid-column: 1 / -1;">
+            <h2>No inspirations found</h2>
+            <p>Try a different search term</p>
+          </div>
+        `;
+        return;
+      }
+
+      const html = results.map(renderCard).join('');
+      if (append) {
+        resultsEl.insertAdjacentHTML('beforeend', html);
+      } else {
+        resultsEl.innerHTML = html;
+      }
+    }
+
+    // Folder suggestions
+    function showSuggestions(filter) {
+      const filtered = allFolders.filter(f =>
+        f.toLowerCase().includes(filter.toLowerCase())
+      ).slice(0, 10);
+
+      if (filtered.length === 0) {
+        hideSuggestions();
+        return;
+      }
+
+      selectedSuggestionIndex = -1;
+      suggestionsEl.innerHTML = filtered.map((folder, i) => `
+        <div class="suggestion-item" data-folder="${escapeHtml(folder)}" data-index="${i}">
+          <span class="folder-icon">📁</span>
+          <span class="folder-path">${formatPath(folder)}</span>
+        </div>
+      `).join('');
+      suggestionsEl.classList.add('active');
+    }
+
+    function hideSuggestions() {
+      suggestionsEl.classList.remove('active');
+      selectedSuggestionIndex = -1;
+    }
+
+    function selectFolder(folder) {
+      currentFolder = folder;
+      filterTextEl.textContent = `📁 ${folder}`;
+      activeFilterEl.style.display = 'inline-flex';
+
+      // Remove @ part from input
+      const value = input.value;
+      const atIndex = value.lastIndexOf('@');
+      if (atIndex !== -1) {
+        input.value = value.substring(0, atIndex).trim();
+      }
+
+      hideSuggestions();
+      input.focus();
+
+      // Trigger search if there's a query
+      if (input.value.trim()) {
+        performSearch(input.value.trim(), 0, false);
+      }
+    }
+
+    function clearFilter() {
+      currentFolder = null;
+      activeFilterEl.style.display = 'none';
+
+      // Re-search without filter
+      if (input.value.trim()) {
+        performSearch(input.value.trim(), 0, false);
+      }
+    }
+
+    removeFilterBtn.addEventListener('click', clearFilter);
+
+    // Click on suggestion
+    suggestionsEl.addEventListener('click', (e) => {
+      const item = e.target.closest('.suggestion-item');
+      if (item) {
+        selectFolder(item.dataset.folder);
+      }
+    });
+
+    async function performSearch(query, offset = 0, append = false) {
+      if (isLoading) return;
+      isLoading = true;
+
+      if (!append) {
+        statusEl.textContent = 'Searching...';
+      }
+      loadMoreBtn.disabled = true;
+      loadMoreBtn.textContent = 'Loading...';
+
+      try {
+        let url = `/search?q=${encodeURIComponent(query)}&limit=${LIMIT}&offset=${offset}`;
+        if (currentFolder) {
+          url += `&folder=${encodeURIComponent(currentFolder)}`;
+        }
+
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Search failed');
+        const data = await res.json();
+
+        const filterInfo = currentFolder ? ` in ${currentFolder}` : '';
+        statusEl.textContent = `${data.total} inspirations found${filterInfo}`;
+        renderResults(data.results, append);
+
+        // Update pagination state
+        currentQuery = query;
+        currentOffset = offset + data.results.length;
+
+        // Show/hide load more button
+        if (data.hasMore) {
+          loadMoreContainer.style.display = 'flex';
+          loadMoreBtn.textContent = 'Load more';
+          loadMoreBtn.disabled = false;
+        } else {
+          loadMoreContainer.style.display = 'none';
+        }
+      } catch (err) {
+        statusEl.textContent = 'Error: ' + err.message;
+        if (!append) resultsEl.innerHTML = '';
+        loadMoreContainer.style.display = 'none';
+      } finally {
+        isLoading = false;
+      }
+    }
+
+    // Load more button click
+    loadMoreBtn.addEventListener('click', () => {
+      if (currentQuery) {
+        performSearch(currentQuery, currentOffset, true);
+      }
+    });
+
+    // Keyboard navigation for suggestions
+    input.addEventListener('keydown', (e) => {
+      if (!suggestionsEl.classList.contains('active')) return;
+
+      const items = suggestionsEl.querySelectorAll('.suggestion-item');
+      if (items.length === 0) return;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        selectedSuggestionIndex = Math.min(selectedSuggestionIndex + 1, items.length - 1);
+        updateSelectedSuggestion(items);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        selectedSuggestionIndex = Math.max(selectedSuggestionIndex - 1, 0);
+        updateSelectedSuggestion(items);
+      } else if (e.key === 'Enter' && selectedSuggestionIndex >= 0) {
+        e.preventDefault();
+        selectFolder(items[selectedSuggestionIndex].dataset.folder);
+      } else if (e.key === 'Escape') {
+        hideSuggestions();
+      }
+    });
+
+    function updateSelectedSuggestion(items) {
+      items.forEach((item, i) => {
+        item.classList.toggle('selected', i === selectedSuggestionIndex);
+      });
+    }
+
+    // Search input with debounce
+    let debounceTimer;
+    input.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      const value = input.value;
+
+      // Check for @ folder filter
+      const atIndex = value.lastIndexOf('@');
+      if (atIndex !== -1) {
+        const folderQuery = value.substring(atIndex + 1);
+        showSuggestions(folderQuery);
+        return;
+      } else {
+        hideSuggestions();
+      }
+
+      const query = value.trim();
+      if (!query) {
+        resultsEl.innerHTML = '';
+        statusEl.textContent = '';
+        loadMoreContainer.style.display = 'none';
+        currentQuery = '';
+        currentOffset = 0;
+        return;
+      }
+
+      debounceTimer = setTimeout(() => {
+        performSearch(query, 0, false);
+      }, 200);
+    });
+
+    // Hide suggestions when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.search-wrapper')) {
+        hideSuggestions();
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npx kill-port:*)",
+      "Bash(curl:*)",
+      "Bash(dir /s /b \"C:\\\\Users\\\\chebr\\\\AppData\\\\Local\\\\Google\")",
+      "Bash(findstr:*)",
+      "Bash(npm run import:*)"
+    ]
+  }
+}
