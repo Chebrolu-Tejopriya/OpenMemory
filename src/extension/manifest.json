@@ -1,11 +1,21 @@
 {
   "manifest_version": 3,
   "name": "OpenMemory",
-  "version": "1.0.0",
-  "description": "Semantic search for your design inspirations",
+  "version": "1.2.0",
+  "description": "Semantic search for your design inspirations with deep indexing",
   "permissions": [
     "sidePanel",
-    "storage"
+    "storage",
+    "idle",
+    "alarms",
+    "cookies",
+    "tabs",
+    "scripting",
+    "offscreen",
+    "bookmarks"
+  ],
+  "host_permissions": [
+    "<all_urls>"
   ],
   "side_panel": {
     "default_path": "sidepanel.html"

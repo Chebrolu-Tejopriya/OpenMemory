@@ -87,7 +87,7 @@
       border: 1px solid #333333;
       border-top: none;
       border-radius: 0 0 6px 6px;
-      max-height: 200px;
+      max-height: 300px;
       overflow-y: auto;
       z-index: 100;
       display: none;
@@ -217,10 +217,17 @@
       font-size: 14px;
       font-weight: 500;
       color: #FFFFFF;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-title-text {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      margin-bottom: 6px;
+      flex: 1;
     }
 
     .card-path {
@@ -295,13 +302,265 @@
       padding: 40px;
       color: #888888;
     }
+
+    /* Blog Badge */
+    .blog-badge {
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: #1a3a1a;
+      color: #4ade80;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+
+    /* Card Snippet - for deep search matches */
+    .card-snippet {
+      font-size: 12px;
+      color: #888888;
+      margin-top: 6px;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .card-snippet mark {
+      background: #3b3b00;
+      color: #fbbf24;
+      padding: 0 2px;
+      border-radius: 2px;
+    }
+
+    /* Integrations Toggle */
+    .integrations-toggle {
+      background: none;
+      border: 1px solid #333333;
+      border-radius: 4px;
+      padding: 6px 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: #888888;
+      font-size: 11px;
+      transition: all 0.15s ease;
+    }
+
+    .integrations-toggle:hover {
+      border-color: #555555;
+      color: #ffffff;
+    }
+
+    .integrations-toggle.has-connection {
+      border-color: #4ade80;
+      color: #4ade80;
+    }
+
+    /* Integrations Section */
+    .integrations-section {
+      padding: 16px;
+      border-bottom: 1px solid #333333;
+      background: #0a0a0a;
+      display: none;
+    }
+
+    .integrations-section.active {
+      display: block;
+    }
+
+    .integrations-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .integrations-header h3 {
+      font-size: 12px;
+      font-weight: 600;
+      color: #888888;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      color: #666666;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px;
+      line-height: 1;
+    }
+
+    .close-btn:hover {
+      color: #ffffff;
+    }
+
+    .integration-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: #111111;
+      border: 1px solid #333333;
+      border-radius: 8px;
+    }
+
+    .integration-icon {
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .integration-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .integration-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: #ffffff;
+    }
+
+    .integration-status {
+      font-size: 12px;
+      color: #888888;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .integration-status.connected {
+      color: #4ade80;
+    }
+
+    .integration-status.syncing {
+      color: #fbbf24;
+    }
+
+    .integration-status.error {
+      color: #f87171;
+    }
+
+    .connect-btn {
+      padding: 6px 12px;
+      font-size: 12px;
+      font-family: inherit;
+      background: #ffffff;
+      color: #000000;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s ease;
+    }
+
+    .connect-btn:hover {
+      background: #e0e0e0;
+    }
+
+    .connect-btn.connected {
+      background: #1a1a1a;
+      color: #4ade80;
+      border: 1px solid #333333;
+    }
+
+    .connect-btn.syncing {
+      background: #1a1a1a;
+      color: #fbbf24;
+      border: 1px solid #333333;
+      cursor: not-allowed;
+    }
+
+    /* Sync Progress */
+    .sync-progress {
+      margin-top: 12px;
+      display: none;
+    }
+
+    .sync-progress.active {
+      display: block;
+    }
+
+    .progress-bar {
+      height: 4px;
+      background: #333333;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: #E60023;
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .progress-text {
+      font-size: 11px;
+      color: #888888;
+      margin-top: 4px;
+    }
+
+    /* Pinterest Card Styling */
+    .card.pinterest {
+      border-color: #E60023;
+    }
+
+    .card.pinterest:hover {
+      border-color: #ff3344;
+    }
+
+    .source-badge.pinterest {
+      background: #E60023;
+      color: #ffffff;
+    }
+
+    .pinterest-icon {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 24px;
+      height: 24px;
+      background: #E60023;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .pinterest-placeholder-icon {
+      font-size: 24px;
+      font-weight: bold;
+      color: #E60023;
+      opacity: 0.5;
+    }
+
   </style>
 </head>
 <body>
   <header class="header">
     <nav class="nav">
       <div class="logo">OpenMemory</div>
-      <span class="nav-link" id="item-count">Loading...</span>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <button class="integrations-toggle" id="integrations-toggle" title="Integrations">
+          <svg viewBox="0 0 24 24" width="14" height="14">
+            <path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+          </svg>
+        </button>
+        <span class="nav-link" id="item-count">Loading...</span>
+      </div>
     </nav>
     <div class="search-container">
       <div class="search-wrapper">
@@ -316,6 +575,50 @@
       </div>
     </div>
   </header>
+
+  <!-- Integrations Section -->
+  <div class="integrations-section" id="integrations-section">
+    <div class="integrations-header">
+      <h3>Integrations</h3>
+      <button class="close-btn" id="close-integrations">&times;</button>
+    </div>
+
+    <!-- Chrome Bookmarks -->
+    <div class="integration-card" id="bookmarks-card">
+      <div class="integration-icon">
+        <svg viewBox="0 0 24 24" width="32" height="32">
+          <path fill="#4285F4" d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
+        </svg>
+      </div>
+      <div class="integration-info">
+        <div class="integration-name">Chrome Bookmarks</div>
+        <div class="integration-status connected" id="bookmarks-status">Loading...</div>
+      </div>
+      <button class="connect-btn" id="bookmarks-sync">Sync</button>
+    </div>
+
+    <!-- Pinterest -->
+    <div class="integration-card" id="pinterest-card" style="margin-top: 8px;">
+      <div class="integration-icon">
+        <svg viewBox="0 0 24 24" width="32" height="32">
+          <path fill="#E60023" d="M12 0C5.4 0 0 5.4 0 12c0 5.1 3.2 9.4 7.6 11.2-.1-.9-.2-2.4 0-3.4.2-.9 1.4-6 1.4-6s-.4-.7-.4-1.8c0-1.7 1-2.9 2.2-2.9 1 0 1.5.8 1.5 1.7 0 1-.7 2.6-1 4-.3 1.2.6 2.2 1.8 2.2 2.1 0 3.8-2.2 3.8-5.5 0-2.9-2.1-4.9-5-4.9-3.4 0-5.4 2.6-5.4 5.2 0 1 .4 2.1.9 2.7.1.1.1.2.1.3-.1.4-.3 1.2-.3 1.4-.1.2-.2.3-.4.2-1.5-.7-2.4-2.9-2.4-4.6 0-3.8 2.8-7.3 8-7.3 4.2 0 7.5 3 7.5 7 0 4.2-2.6 7.5-6.3 7.5-1.2 0-2.4-.6-2.8-1.4l-.8 3c-.3 1.1-.9 2.2-1.4 3 1 .3 2.1.5 3.3.5 6.6 0 12-5.4 12-12S18.6 0 12 0z"/>
+        </svg>
+      </div>
+      <div class="integration-info">
+        <div class="integration-name">Pinterest</div>
+        <div class="integration-status" id="pinterest-status">Not connected</div>
+      </div>
+      <button class="connect-btn" id="pinterest-connect">Connect</button>
+    </div>
+
+    <!-- Sync Progress Bar -->
+    <div class="sync-progress" id="pinterest-progress">
+      <div class="progress-bar">
+        <div class="progress-fill" id="pinterest-progress-fill"></div>
+      </div>
+      <div class="progress-text" id="pinterest-progress-text">Syncing pins...</div>
+    </div>
+  </div>
 
   <main class="container">
     <div id="active-filter" class="active-filter" style="display: none;">
