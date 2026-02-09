@@ -9,7 +9,9 @@
       "Bash(curl:*)",
       "Bash(dir /s /b \"C:\\\\Users\\\\chebr\\\\AppData\\\\Local\\\\Google\")",
       "Bash(findstr:*)",
-      "Bash(npm run import:*)"
+      "Bash(npm run import:*)",
+      "Bash(npx serve:*)",
+      "Bash(npm run export:*)"
     ]
   }
 }
