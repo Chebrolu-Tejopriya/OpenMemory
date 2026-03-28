@@ -422,3 +422,310 @@ export function getSyncStatus(): SyncStatus {
 export function updateSyncStatus(updates: Partial<SyncStatus>): void {
   syncStatus = { ...syncStatus, ...updates };
 }
+
+// ============== PINTEREST PIN SYNC OPERATIONS ==============
+
+interface PinterestPinPayload {
+  pin_id: string;
+  board_name: string;
+  board_url?: string;
+  title?: string;
+  description?: string;
+  pin_url: string;
+  image_url?: string;
+}
+
+interface SupabasePinterestPin {
+  id: string;
+  pin_id: string;
+  board_name: string;
+  board_url: string | null;
+  title: string | null;
+  description: string | null;
+  pin_url: string;
+  image_url: string | null;
+  embedding: number[] | null;
+  similarity?: number;
+  synced_at: string;
+}
+
+/**
+ * UPSERT a Pinterest pin to Supabase using pin_id as unique key
+ */
+export async function upsertPinterestPin(
+  pin: PinterestPinPayload,
+  forceEmbedding = false
+): Promise<{ success: boolean; error?: string }> {
+  const config = await getSupabaseConfig();
+
+  if (!config) {
+    return { success: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    // Check if pin exists and if title changed
+    const { data: existing } = await supabaseRequest<SupabasePinterestPin[]>(
+      `pinterest_pins?pin_id=eq.${encodeURIComponent(pin.pin_id)}&select=id,title,embedding`
+    );
+
+    const existingPin = existing?.[0];
+    const titleChanged = existingPin && existingPin.title !== pin.title;
+    const needsEmbedding = forceEmbedding || !existingPin || titleChanged || !existingPin.embedding;
+
+    // Generate embedding if needed
+    let embedding: number[] | null = null;
+    if (needsEmbedding) {
+      const textForEmbedding = `${pin.title || ''} ${pin.description || ''} ${pin.board_name}`.trim();
+      if (textForEmbedding.length > 0) {
+        embedding = await generateEmbedding(textForEmbedding);
+        console.log('[Supabase] Generated embedding for pin:', pin.pin_id);
+      }
+    }
+
+    // Prepare payload
+    const payload: Record<string, unknown> = {
+      pin_id: pin.pin_id,
+      board_name: pin.board_name,
+      board_url: pin.board_url || null,
+      title: pin.title || null,
+      description: pin.description || null,
+      pin_url: pin.pin_url,
+      image_url: pin.image_url || null,
+      synced_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    if (embedding) {
+      payload.embedding = embedding;
+    }
+
+    // UPSERT using Supabase's on_conflict
+    const { error } = await supabaseRequest<SupabasePinterestPin[]>(
+      'pinterest_pins?on_conflict=pin_id',
+      {
+        method: 'POST',
+        headers: {
+          'Prefer': 'resolution=merge-duplicates,return=representation'
+        },
+        body: JSON.stringify(payload)
+      }
+    );
+
+    if (error) {
+      return { success: false, error };
+    }
+
+    return { success: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Bulk upsert Pinterest pins (for sync)
+ */
+export async function bulkUpsertPinterestPins(
+  pins: PinterestPinPayload[],
+  onProgress?: (processed: number, total: number) => void
+): Promise<{ success: number; failed: number }> {
+  const BATCH_SIZE = 10;
+  let success = 0;
+  let failed = 0;
+
+  for (let i = 0; i < pins.length; i += BATCH_SIZE) {
+    const batch = pins.slice(i, i + BATCH_SIZE);
+
+    const results = await Promise.all(
+      batch.map(p => upsertPinterestPin(p))
+    );
+
+    for (const result of results) {
+      if (result.success) {
+        success++;
+      } else {
+        failed++;
+      }
+    }
+
+    onProgress?.(Math.min(i + BATCH_SIZE, pins.length), pins.length);
+
+    // Small delay between batches to avoid rate limiting
+    if (i + BATCH_SIZE < pins.length) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+
+  return { success, failed };
+}
+
+/**
+ * Search Pinterest pins using vector similarity
+ */
+export async function searchPinterestPins(
+  query: string,
+  limit = 20,
+  board?: string
+): Promise<SupabasePinterestPin[]> {
+  const config = await getSupabaseConfig();
+
+  if (!config) {
+    return [];
+  }
+
+  try {
+    // Generate embedding for the query
+    const queryEmbedding = await generateEmbedding(query);
+
+    if (!queryEmbedding) {
+      console.warn('[Supabase] Could not generate query embedding for Pinterest search');
+      return searchPinterestPinsText(query, limit, board);
+    }
+
+    // Call RPC function for vector similarity search
+    const response = await fetch(`${config.url}/rest/v1/rpc/search_pinterest_pins`, {
+      method: 'POST',
+      headers: {
+        'apikey': config.anonKey,
+        'Authorization': `Bearer ${config.anonKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        query_embedding: queryEmbedding,
+        match_count: limit,
+        filter_board: board || null
+      })
+    });
+
+    if (!response.ok) {
+      console.error('[Supabase] Pinterest search failed:', response.status);
+      return searchPinterestPinsText(query, limit, board);
+    }
+
+    return await response.json();
+  } catch (err) {
+    console.error('[Supabase] Pinterest search error:', err);
+    return [];
+  }
+}
+
+/**
+ * Text-based search fallback for Pinterest pins
+ */
+async function searchPinterestPinsText(
+  query: string,
+  limit = 20,
+  board?: string
+): Promise<SupabasePinterestPin[]> {
+  const config = await getSupabaseConfig();
+
+  if (!config) {
+    return [];
+  }
+
+  try {
+    const response = await fetch(`${config.url}/rest/v1/rpc/search_pinterest_pins_text`, {
+      method: 'POST',
+      headers: {
+        'apikey': config.anonKey,
+        'Authorization': `Bearer ${config.anonKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        search_query: query,
+        match_count: limit,
+        filter_board: board || null
+      })
+    });
+
+    if (!response.ok) return [];
+    return await response.json();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Search all items (bookmarks + pinterest pins) using combined vector search
+ */
+export async function searchAllItems(
+  query: string,
+  limit = 50,
+  folder?: string
+): Promise<Array<{
+  source: 'chrome' | 'pinterest';
+  item_id: string;
+  url: string;
+  title: string;
+  folder_or_board: string | null;
+  image_url: string | null;
+  similarity: number;
+}>> {
+  const config = await getSupabaseConfig();
+
+  if (!config) {
+    return [];
+  }
+
+  try {
+    const queryEmbedding = await generateEmbedding(query);
+
+    if (!queryEmbedding) {
+      console.warn('[Supabase] Could not generate query embedding');
+      return [];
+    }
+
+    const response = await fetch(`${config.url}/rest/v1/rpc/search_all_items`, {
+      method: 'POST',
+      headers: {
+        'apikey': config.anonKey,
+        'Authorization': `Bearer ${config.anonKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        query_embedding: queryEmbedding,
+        match_count: limit,
+        filter_folder: folder || null
+      })
+    });
+
+    if (!response.ok) {
+      console.error('[Supabase] Combined search failed:', response.status);
+      return [];
+    }
+
+    return await response.json();
+  } catch (err) {
+    console.error('[Supabase] Combined search error:', err);
+    return [];
+  }
+}
+
+/**
+ * Get Pinterest pin count from Supabase
+ */
+export async function getPinterestPinCount(): Promise<number> {
+  const config = await getSupabaseConfig();
+  if (!config) return 0;
+
+  try {
+    const response = await fetch(`${config.url}/rest/v1/pinterest_pins?select=count`, {
+      headers: {
+        'apikey': config.anonKey,
+        'Authorization': `Bearer ${config.anonKey}`,
+        'Prefer': 'count=exact'
+      }
+    });
+
+    if (!response.ok) return 0;
+
+    const countHeader = response.headers.get('content-range');
+    if (countHeader) {
+      const match = countHeader.match(/\/(\d+)/);
+      if (match) return parseInt(match[1], 10);
+    }
+    return 0;
+  } catch {
+    return 0;
+  }
+}

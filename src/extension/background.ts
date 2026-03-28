@@ -10,6 +10,8 @@ import {
   initializePinterestIntegration,
   updatePinterestIntegration,
   getPinterestIntegration,
+  fetchPinterestBoards,
+  fetchPinterestBoardPins,
   ScrapedBoard,
   ScrapedPin
 } from './pinterest';
@@ -18,6 +20,7 @@ import {
   deleteBookmark,
   updateBookmark,
   bulkUpsertBookmarks,
+  bulkUpsertPinterestPins,
   isSupabaseConfigured,
   setSupabaseConfig,
   getSyncStatus,
@@ -111,7 +114,8 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 
   if (alarm.name === PINTEREST_ALARM) {
-    syncPinterest();
+    // Auto Pinterest sync if username is saved
+    autoPinterestSync();
   }
 
   if (alarm.name === SUPABASE_SYNC_ALARM) {
@@ -798,6 +802,14 @@ async function syncPinterest(providedUsername?: string, activeTabId?: number, de
     }, 3000);
 
     console.log('[Pinterest] Sync complete. Processed', processedPins, 'pins');
+
+    // Auto-sync Pinterest pins to Supabase for semantic search
+    if (await isSupabaseConfigured()) {
+      console.log('[Pinterest] Syncing pins to Supabase for AI search...');
+      syncPinterestPinsToSupabase().then(result => {
+        console.log('[Pinterest] Supabase sync complete:', result.success, 'pins');
+      });
+    }
   } catch (error) {
     console.error('[Pinterest] Sync failed:', error);
     await updatePinterestIntegration({ syncStatus: 'error' });
@@ -851,37 +863,308 @@ async function autoSyncToSupabase(): Promise<void> {
     const allBookmarks = await db.bookmarks.toArray();
     console.log('[Supabase] Found', allBookmarks.length, 'local bookmarks');
 
-    if (allBookmarks.length === 0) {
-      console.log('[Supabase] No bookmarks to sync');
-      return;
+    if (allBookmarks.length > 0) {
+      updateSyncStatus({ syncInProgress: true, pendingSync: allBookmarks.length });
+
+      const bookmarkPayloads = allBookmarks.map(b => ({
+        url: b.url,
+        title: b.title,
+        folder: b.folder,
+        chrome_id: b.id?.toString()
+      }));
+
+      const result = await bulkUpsertBookmarks(bookmarkPayloads, (processed, total) => {
+        updateSyncStatus({ pendingSync: total - processed });
+      });
+
+      console.log('[Supabase] Bookmarks sync complete:', result.success, 'synced,', result.failed, 'failed');
     }
 
-    updateSyncStatus({ syncInProgress: true, pendingSync: allBookmarks.length });
-
-    const bookmarkPayloads = allBookmarks.map(b => ({
-      url: b.url,
-      title: b.title,
-      folder: b.folder,
-      chrome_id: b.id?.toString()
-    }));
-
-    const result = await bulkUpsertBookmarks(bookmarkPayloads, (processed, total) => {
-      updateSyncStatus({ pendingSync: total - processed });
-    });
+    // Sync Pinterest pins too
+    await syncPinterestPinsToSupabase();
 
     updateSyncStatus({
       syncInProgress: false,
       lastSyncAt: Date.now(),
-      totalSynced: result.success,
       pendingSync: 0
     });
 
-    console.log('[Supabase] Auto-sync complete:', result.success, 'synced,', result.failed, 'failed');
   } catch (error) {
     console.error('[Supabase] Auto-sync failed:', error);
     updateSyncStatus({ syncInProgress: false });
   } finally {
     supabaseSyncInProgress = false;
+  }
+}
+
+// ============== AUTO PINTEREST SYNC ==============
+async function autoPinterestSync(): Promise<void> {
+  // Check if user has connected Pinterest before
+  const stored = await chrome.storage.local.get('pinterestUsername');
+  const username = stored?.pinterestUsername;
+
+  if (!username) {
+    console.log('[Pinterest] No username saved, skipping auto-sync');
+    return;
+  }
+
+  // Check if logged in
+  const { loggedIn } = await checkPinterestLogin();
+  if (!loggedIn) {
+    console.log('[Pinterest] Not logged in, skipping auto-sync');
+    return;
+  }
+
+  // Check if already syncing
+  if (pinterestSyncInProgress) {
+    console.log('[Pinterest] Sync already in progress, skipping');
+    return;
+  }
+
+  console.log('[Pinterest] Starting auto-sync for:', username);
+  pinterestSyncInProgress = true;
+
+  try {
+    await fastPinterestSync(username);
+  } finally {
+    pinterestSyncInProgress = false;
+  }
+}
+
+// ============== FAST PINTEREST SYNC (uses single tab + content script API calls) ==============
+async function fastPinterestSync(username: string): Promise<{ boards: number; pins: number }> {
+  console.log('[Pinterest] Starting FAST sync for:', username);
+
+  await updatePinterestIntegration({
+    connected: true,
+    username,
+    syncStatus: 'syncing',
+    syncProgress: 0
+  });
+
+  let tabId: number | undefined;
+
+  try {
+    // Detect which Pinterest domain the user is logged into
+    const pinterestDomains = [
+      'https://in.pinterest.com',
+      'https://www.pinterest.com',
+      'https://pinterest.com',
+      'https://br.pinterest.com',
+      'https://de.pinterest.com',
+      'https://fr.pinterest.com',
+      'https://uk.pinterest.com'
+    ];
+
+    let activeDomain = 'https://www.pinterest.com';
+    for (const domain of pinterestDomains) {
+      const cookie = await chrome.cookies.get({ url: domain, name: '_pinterest_sess' });
+      if (cookie) {
+        activeDomain = domain;
+        console.log('[Pinterest] Found active session on:', domain);
+        break;
+      }
+    }
+
+    // Open Pinterest boards page (not _saved, which shows fewer boards)
+    const boardsUrl = `${activeDomain}/${username}/boards/`;
+    console.log('[Pinterest] Opening:', boardsUrl);
+    const tab = await chrome.tabs.create({ url: boardsUrl, active: false });
+    tabId = tab.id;
+
+    if (!tabId) {
+      throw new Error('Failed to create Pinterest tab');
+    }
+
+    // Wait for tab to load
+    await waitForTabLoad(tabId);
+    await delay(1500);
+
+    // Fetch all boards via content script API
+    console.log('[Pinterest] Fetching boards via content script...');
+    let boardResponse;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        boardResponse = await chrome.tabs.sendMessage(tabId, {
+          type: 'PINTEREST_ACTIVE_FETCH_BOARDS',
+          username,
+          deepSync: false
+        });
+        break;
+      } catch (error) {
+        console.log('[Pinterest] Waiting for content script...', attempt + 1);
+        await delay(1000);
+      }
+    }
+
+    const boards = (boardResponse?.boards || []) as Array<{ boardId?: string; name: string; url: string; pinCount?: number }>;
+
+    // Log detailed content script logs
+    if (boardResponse?.logs) {
+      console.log('[Pinterest] === Content Script Logs ===');
+      (boardResponse.logs as string[]).forEach(log => console.log(log));
+      console.log('[Pinterest] === End Content Script Logs ===');
+    }
+
+    if (boards.length === 0) {
+      console.log('[Pinterest] No boards found. Response:', boardResponse);
+      await updatePinterestIntegration({ syncStatus: 'error' });
+      if (tabId) chrome.tabs.remove(tabId).catch(() => {});
+      return { boards: 0, pins: 0 };
+    }
+
+    console.log('[Pinterest] Found', boards.length, 'boards:');
+    boards.forEach((b, i) => console.log(`  ${i + 1}. "${b.name}" (id: ${b.boardId}, pins: ${b.pinCount || '?'})`));
+    await updatePinterestIntegration({ boardTotal: boards.length });
+
+    let totalPins = 0;
+    let boardsWithPins = 0;
+    let boardsFailed = 0;
+
+    // Fetch pins from each board - navigate to board page for DOM extraction
+    for (let i = 0; i < boards.length; i++) {
+      const board = boards[i];
+      const boardId = board.boardId;
+
+      console.log(`[Pinterest] Fetching pins from "${board.name}" (${i + 1}/${boards.length})`);
+
+      try {
+        // Navigate to the board page
+        console.log(`[Pinterest] Navigating to: ${board.url}`);
+        await chrome.tabs.update(tabId, { url: board.url });
+        await waitForTabLoad(tabId);
+        await delay(800); // Reduced delay
+
+        // Use content script to extract pins
+        let pinsResponse;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            pinsResponse = await chrome.tabs.sendMessage(tabId, {
+              type: 'PINTEREST_ACTIVE_FETCH_PINS',
+              boardId: boardId,
+              boardUrl: board.url,
+              deepSync: false
+            });
+            break;
+          } catch (err) {
+            console.log(`[Pinterest] Waiting for content script... attempt ${attempt + 1}`);
+            await delay(500);
+          }
+        }
+
+        const pins = (pinsResponse?.pins || []) as Array<{ pinId: string; title: string; description?: string; imageUrl: string; pinUrl: string }>;
+
+        if (pinsResponse?.error) {
+          console.log(`[Pinterest] API error for "${board.name}": ${pinsResponse.error} - using DOM extraction`);
+        }
+
+        if (pins.length > 0) {
+          boardsWithPins++;
+          console.log(`[Pinterest] ✓ Got ${pins.length} pins from "${board.name}"`);
+        } else {
+          boardsFailed++;
+          console.log(`[Pinterest] ✗ Got 0 pins from "${board.name}" (expected: ${board.pinCount || '?'})`);
+        }
+
+        // Process each pin
+        for (const pin of pins) {
+          try {
+            await processPin({
+              pinId: pin.pinId,
+              title: pin.title,
+              description: pin.description,
+              imageUrl: pin.imageUrl,
+              pinUrl: pin.pinUrl
+            }, board.name, board.url);
+            totalPins++;
+          } catch (err) {
+            // Pin might already exist, continue
+          }
+        }
+
+        // Update progress
+        const progress = Math.round(((i + 1) / boards.length) * 100);
+        await updatePinterestIntegration({
+          syncProgress: progress,
+          totalPins,
+          boardUpdated: i + 1
+        });
+
+      } catch (err) {
+        console.warn(`[Pinterest] Failed to fetch pins from "${board.name}":`, err);
+        boardsFailed++;
+      }
+    }
+
+    await updatePinterestIntegration({
+      syncStatus: 'idle',
+      syncProgress: 100,
+      lastSyncAt: Date.now(),
+      totalPins
+    });
+
+    console.log('[Pinterest] ===== SYNC SUMMARY =====');
+    console.log(`[Pinterest] Boards found: ${boards.length}`);
+    console.log(`[Pinterest] Boards with pins: ${boardsWithPins}`);
+    console.log(`[Pinterest] Boards failed: ${boardsFailed}`);
+    console.log(`[Pinterest] Total pins synced: ${totalPins}`);
+    console.log('[Pinterest] ==========================');
+
+    // Close the tab
+    if (tabId) {
+      chrome.tabs.remove(tabId).catch(() => {});
+    }
+
+    // Auto-sync to Supabase
+    if (await isSupabaseConfigured()) {
+      console.log('[Pinterest] Syncing pins to Supabase...');
+      syncPinterestPinsToSupabase();
+    }
+
+    return { boards: boards.length, pins: totalPins };
+  } catch (error) {
+    console.error('[Pinterest] Fast sync failed:', error);
+    await updatePinterestIntegration({ syncStatus: 'error' });
+    if (tabId) chrome.tabs.remove(tabId).catch(() => {});
+    return { boards: 0, pins: 0 };
+  }
+}
+
+// ============== PINTEREST PINS SUPABASE SYNC ==============
+async function syncPinterestPinsToSupabase(): Promise<{ success: number; failed: number }> {
+  if (!(await isSupabaseConfigured())) {
+    console.log('[Supabase] Not configured, skipping Pinterest sync');
+    return { success: 0, failed: 0 };
+  }
+
+  try {
+    // Get all local Pinterest pins
+    const allPins = await db.pins.toArray();
+    console.log('[Supabase] Found', allPins.length, 'local Pinterest pins');
+
+    if (allPins.length === 0) {
+      return { success: 0, failed: 0 };
+    }
+
+    const pinPayloads = allPins.map(p => ({
+      pin_id: p.pinId,
+      board_name: p.boardName,
+      board_url: p.boardUrl,
+      title: p.title,
+      description: p.description,
+      pin_url: p.pinUrl,
+      image_url: p.originalImageUrl
+    }));
+
+    const result = await bulkUpsertPinterestPins(pinPayloads, (processed, total) => {
+      console.log(`[Supabase] Pinterest sync progress: ${processed}/${total}`);
+    });
+
+    console.log('[Supabase] Pinterest pins sync complete:', result.success, 'synced,', result.failed, 'failed');
+    return result;
+  } catch (error) {
+    console.error('[Supabase] Pinterest sync failed:', error);
+    return { success: 0, failed: 0 };
   }
 }
 
@@ -1101,6 +1384,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const tabId = message.tabId as number | undefined;
     const deepSync = !!message.deepSync;
     syncPinterest(username, tabId, deepSync).then(() => sendResponse({ success: true }));
+    return true;
+  }
+
+  if (message.type === 'FAST_PINTEREST_SYNC') {
+    const username = message.username;
+    if (!username) {
+      sendResponse({ success: false, error: 'Username required' });
+      return true;
+    }
+    fastPinterestSync(username).then(result => {
+      sendResponse({ success: true, ...result });
+    });
     return true;
   }
 
@@ -1332,6 +1627,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: false, error: (error as Error).message });
       }
     })();
+    return true;
+  }
+
+  if (message.type === 'SYNC_PINTEREST_TO_SUPABASE') {
+    syncPinterestPinsToSupabase().then(result => {
+      sendResponse(result);
+    });
     return true;
   }
 

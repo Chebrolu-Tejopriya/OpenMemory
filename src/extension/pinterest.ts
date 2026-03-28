@@ -187,80 +187,172 @@ function extractPinsFromState(state: PinterestInitialState): Array<{ id?: string
 
 export async function fetchPinterestBoards(username: string): Promise<PinterestBoard[]> {
   const boards: PinterestBoard[] = [];
-  const profileUrl = `https://www.pinterest.com/${username}/_saved/`;
-  const response = await fetch(profileUrl, { credentials: 'include', cache: 'no-store' });
-  if (!response.ok) return boards;
+  const seenIds = new Set<string>();
 
-  const html = await response.text();
-  const state = extractInitialStateJson(html);
-  if (state) {
-    const deepBoards: Array<{ id?: string; name?: string; url?: string; pin_count?: number }> = [];
-    const resourceResponses = (state?.props?.initialReduxState as { resourceResponses?: unknown } | undefined)?.resourceResponses;
-    if (resourceResponses) {
-      collectBoardsFromObject(resourceResponses, deepBoards);
-    }
-    const dataList = deepBoards.length > 0 ? deepBoards : extractBoardsFromState(state);
+  // Use Pinterest's internal API with pagination
+  let bookmark: string | undefined = undefined;
+  let rounds = 0;
+  const maxRounds = 20; // Safety limit
 
-    for (const item of dataList) {
-      if (!item?.id || !item?.url || !item?.name) continue;
-      boards.push({
-        boardId: String(item.id),
-        name: String(item.name),
-        url: normalizeBoardUrl(String(item.url)),
-        pinCount: item.pin_count || 0,
-        archived: false,
-        updatedAt: Date.now()
+  console.log('[Pinterest API] Fetching boards for:', username);
+
+  while (rounds < maxRounds) {
+    const data = {
+      options: {
+        username,
+        field_set_key: 'detailed',
+        page_size: 250,
+        bookmarks: bookmark ? [bookmark] : []
+      },
+      context: {}
+    };
+
+    const apiUrl = `https://www.pinterest.com/resource/BoardsResource/get/?source_url=/${username}/boards/&data=${encodeURIComponent(JSON.stringify(data))}`;
+
+    try {
+      const response = await fetch(apiUrl, {
+        credentials: 'include',
+        cache: 'no-store',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json'
+        }
       });
+
+      if (!response.ok) {
+        console.log('[Pinterest API] Boards request failed:', response.status);
+        break;
+      }
+
+      const json = await response.json();
+      const dataList = json?.resource_response?.data || [];
+
+      console.log(`[Pinterest API] Round ${rounds + 1}: got ${dataList.length} boards`);
+
+      for (const item of dataList) {
+        if (!item?.id || !item?.name || !item?.url) continue;
+        if (seenIds.has(item.id)) continue;
+        seenIds.add(item.id);
+
+        boards.push({
+          boardId: String(item.id),
+          name: String(item.name),
+          url: normalizeBoardUrl(String(item.url)),
+          pinCount: item.pin_count || 0,
+          archived: false,
+          updatedAt: Date.now()
+        });
+      }
+
+      const nextBookmark = json?.resource_response?.bookmark;
+      if (!nextBookmark || nextBookmark === '-end-') {
+        console.log('[Pinterest API] No more boards (end of pagination)');
+        break;
+      }
+
+      bookmark = nextBookmark;
+      rounds++;
+
+      // Small delay to avoid rate limiting
+      await new Promise(r => setTimeout(r, 200));
+    } catch (error) {
+      console.error('[Pinterest API] Error fetching boards:', error);
+      break;
     }
   }
 
-  if (boards.length === 0) {
-    const linkRegex = new RegExp(`<a[^>]+href="(/${username}/[^\"#?]+)"`, 'gi');
-    const seen = new Set<string>();
-    let match: RegExpExecArray | null;
-    while ((match = linkRegex.exec(html)) !== null) {
-      const url = normalizeBoardUrl(match[1]);
-      if (seen.has(url)) continue;
-      seen.add(url);
-      const slug = match[1].split('/').filter(Boolean).pop() || '';
-      const name = slug.replace(/-/g, ' ');
-      if (!name) continue;
-      boards.push({
-        boardId: `slug:${slug}`,
-        name,
-        url,
-        pinCount: 0,
-        archived: false,
-        updatedAt: Date.now()
-      });
-    }
-  }
-
+  console.log('[Pinterest API] Total boards found:', boards.length);
   return boards;
 }
 
 export async function fetchPinterestBoardPins(boardId: string, boardUrl: string): Promise<PinterestBoardFeedPin[]> {
   const pins: PinterestBoardFeedPin[] = [];
-  const response = await fetch(boardUrl, { credentials: 'include', cache: 'no-store' });
-  if (!response.ok) return pins;
+  const seenIds = new Set<string>();
 
-  const html = await response.text();
-  const state = extractInitialStateJson(html);
-  if (!state) return pins;
+  // Extract path from URL for source_url
+  let sourcePath = boardUrl;
+  try {
+    const urlObj = new URL(boardUrl);
+    sourcePath = urlObj.pathname;
+  } catch {
+    // Use as-is if not a valid URL
+  }
+  if (!sourcePath.endsWith('/')) sourcePath += '/';
 
-  const dataList = extractPinsFromState(state);
-  for (const item of dataList) {
-    if (!item?.id) continue;
-    const imageUrl = item.images?.orig?.url || '';
-    pins.push({
-      pinId: item.id,
-      title: item.title || '',
-      description: item.description,
-      pinUrl: `https://www.pinterest.com/pin/${item.id}/`,
-      imageUrl
-    });
+  // Use Pinterest's internal API with pagination
+  let bookmark: string | undefined = undefined;
+  let rounds = 0;
+  const maxRounds = 50; // Allow more rounds for boards with many pins
+
+  console.log('[Pinterest API] Fetching pins for board:', boardId);
+
+  while (rounds < maxRounds) {
+    const data = {
+      options: {
+        board_id: boardId,
+        page_size: 250,
+        bookmarks: bookmark ? [bookmark] : []
+      },
+      context: {}
+    };
+
+    const apiUrl = `https://www.pinterest.com/resource/BoardFeedResource/get/?source_url=${encodeURIComponent(sourcePath)}&data=${encodeURIComponent(JSON.stringify(data))}`;
+
+    try {
+      const response = await fetch(apiUrl, {
+        credentials: 'include',
+        cache: 'no-store',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        console.log('[Pinterest API] Pins request failed:', response.status);
+        break;
+      }
+
+      const json = await response.json();
+      const dataList = json?.resource_response?.data || [];
+
+      if (rounds === 0 || dataList.length > 0) {
+        console.log(`[Pinterest API] Round ${rounds + 1}: got ${dataList.length} pins`);
+      }
+
+      for (const item of dataList) {
+        const pinId = item?.id;
+        const imageUrl = item?.images?.orig?.url;
+        if (!pinId || !imageUrl) continue;
+        if (seenIds.has(pinId)) continue;
+        seenIds.add(pinId);
+
+        pins.push({
+          pinId: String(pinId),
+          title: item?.title || '',
+          description: item?.description,
+          pinUrl: `https://www.pinterest.com/pin/${pinId}/`,
+          imageUrl: String(imageUrl)
+        });
+      }
+
+      const nextBookmark = json?.resource_response?.bookmark;
+      if (!nextBookmark || nextBookmark === '-end-') {
+        break;
+      }
+
+      bookmark = nextBookmark;
+      rounds++;
+
+      // Small delay to avoid rate limiting
+      await new Promise(r => setTimeout(r, 150));
+    } catch (error) {
+      console.error('[Pinterest API] Error fetching pins:', error);
+      break;
+    }
   }
 
+  console.log('[Pinterest API] Total pins found for board:', pins.length);
   return pins;
 }
 
