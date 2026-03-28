@@ -15,7 +15,8 @@
     "bookmarks"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "<all_urls>",
+    "https://www.pinterest.com/*"
   ],
   "side_panel": {
     "default_path": "sidepanel.html"
@@ -26,6 +27,16 @@
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://pinterest.com/*",
+        "https://*.pinterest.com/*"
+      ],
+      "js": ["pinterest_active.js"],
+      "run_at": "document_end"
+    }
+  ],
   "icons": {
     "16": "icon16.png",
     "48": "icon48.png",

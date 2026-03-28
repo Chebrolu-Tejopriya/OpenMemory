@@ -1,11 +1,139 @@
 /**
- * OpenMemory - Client-side search with MiniSearch
+ * OpenMemory - Hybrid Search with MiniSearch + Supabase AI
  * Full-text search with field weighting and snippet generation
- * Includes Pinterest pins integration
+ * Includes Pinterest pins integration and Supabase semantic search
  */
 
 import MiniSearch from 'minisearch';
 import { db, IndexedBookmark, PinterestPin } from './db';
+
+// ============== SUPABASE SEARCH ==============
+interface SupabaseBookmark {
+  id: string;
+  url: string;
+  title: string;
+  folder: string | null;
+  chrome_id: string | null;
+  similarity: number;
+}
+
+async function getSupabaseConfig(): Promise<{ url: string; anonKey: string } | null> {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['supabaseUrl', 'supabaseAnonKey'], (result) => {
+      if (result.supabaseUrl && result.supabaseAnonKey) {
+        resolve({ url: result.supabaseUrl, anonKey: result.supabaseAnonKey });
+      } else {
+        resolve(null);
+      }
+    });
+  });
+}
+
+// Generate embedding via Supabase Edge Function (uses HF with token)
+async function generateLocalEmbedding(text: string): Promise<number[] | null> {
+  const config = await getSupabaseConfig();
+  if (!config) return null;
+
+  try {
+    const response = await fetch(`${config.url}/functions/v1/generate-embedding`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.anonKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ text })
+    });
+
+    if (!response.ok) {
+      console.error('[Search] Embedding API error:', response.status);
+      return null;
+    }
+
+    const result = await response.json();
+    return Array.isArray(result.embedding) ? result.embedding : null;
+  } catch (error) {
+    console.error('[Search] Embedding failed:', error);
+    return null;
+  }
+}
+
+// Search using vector similarity (semantic search)
+async function searchSupabaseVector(query: string, limit = 50, folder?: string): Promise<SupabaseBookmark[]> {
+  const config = await getSupabaseConfig();
+  if (!config) return [];
+
+  try {
+    // Generate embedding locally
+    const embedding = await generateLocalEmbedding(query);
+    if (!embedding) {
+      console.log('[Search] No embedding, falling back to text search');
+      return searchSupabaseText(query, limit, folder);
+    }
+
+    const response = await fetch(`${config.url}/rest/v1/rpc/search_bookmarks_vector`, {
+      method: 'POST',
+      headers: {
+        'apikey': config.anonKey,
+        'Authorization': `Bearer ${config.anonKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        query_embedding: embedding,
+        match_count: limit,
+        filter_folder: folder || null
+      })
+    });
+
+    if (!response.ok) {
+      console.log('[Search] Vector search failed, falling back to text');
+      return searchSupabaseText(query, limit, folder);
+    }
+
+    const results = await response.json();
+
+    // If no vector results, fall back to text search
+    if (!results || results.length === 0) {
+      return searchSupabaseText(query, limit, folder);
+    }
+
+    return results;
+  } catch (error) {
+    console.error('[Search] Vector search error:', error);
+    return searchSupabaseText(query, limit, folder);
+  }
+}
+
+// Fallback text search
+async function searchSupabaseText(query: string, limit = 50, folder?: string): Promise<SupabaseBookmark[]> {
+  const config = await getSupabaseConfig();
+  if (!config) return [];
+
+  try {
+    const response = await fetch(`${config.url}/rest/v1/rpc/search_bookmarks_text`, {
+      method: 'POST',
+      headers: {
+        'apikey': config.anonKey,
+        'Authorization': `Bearer ${config.anonKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        search_query: query,
+        match_count: limit,
+        filter_folder: folder || null
+      })
+    });
+
+    if (!response.ok) return [];
+    return await response.json();
+  } catch {
+    return [];
+  }
+}
+
+// Main search function - uses vector search with text fallback
+async function searchSupabase(query: string, limit = 50, folder?: string): Promise<SupabaseBookmark[]> {
+  return searchSupabaseVector(query, limit, folder);
+}
 
 // ============== INTERFACES ==============
 type SearchableItem = (IndexedBookmark & { source: 'chrome' }) | (PinterestPin & { source: 'pinterest' });
@@ -44,11 +172,35 @@ const integrationsSection = document.getElementById('integrations-section') as H
 const closeIntegrations = document.getElementById('close-integrations') as HTMLButtonElement;
 const pinterestStatus = document.getElementById('pinterest-status') as HTMLDivElement;
 const pinterestConnect = document.getElementById('pinterest-connect') as HTMLButtonElement;
+const pinterestReset = document.getElementById('pinterest-reset') as HTMLButtonElement;
 const pinterestProgress = document.getElementById('pinterest-progress') as HTMLDivElement;
 const pinterestProgressFill = document.getElementById('pinterest-progress-fill') as HTMLDivElement;
 const pinterestProgressText = document.getElementById('pinterest-progress-text') as HTMLDivElement;
+const pinterestSyncStats = document.getElementById('pinterest-sync-stats') as HTMLDivElement;
+const pinterestBoardTotal = document.getElementById('pinterest-board-total') as HTMLDivElement;
+const pinterestBoardUpdated = document.getElementById('pinterest-board-updated') as HTMLDivElement;
+const pinterestBoardArchived = document.getElementById('pinterest-board-archived') as HTMLDivElement;
+const pinterestDeepSync = document.getElementById('pinterest-deep-sync') as HTMLInputElement;
 const bookmarksStatus = document.getElementById('bookmarks-status') as HTMLDivElement;
 const bookmarksSync = document.getElementById('bookmarks-sync') as HTMLButtonElement;
+const triggerIndexingBtn = document.getElementById('trigger-indexing') as HTMLButtonElement;
+const retryFailedBtn = document.getElementById('retry-failed') as HTMLButtonElement;
+
+// Board selection elements
+const boardSelection = document.getElementById('board-selection') as HTMLDivElement;
+const closeBoardSelection = document.getElementById('close-board-selection') as HTMLButtonElement;
+const boardCount = document.getElementById('board-count') as HTMLSpanElement;
+const boardList = document.getElementById('board-list') as HTMLDivElement;
+const selectAllBoards = document.getElementById('select-all-boards') as HTMLButtonElement;
+const syncSelectedBoards = document.getElementById('sync-selected-boards') as HTMLButtonElement;
+
+interface DiscoveredBoard {
+  name: string;
+  url: string;
+}
+
+let discoveredBoards: DiscoveredBoard[] = [];
+let discoveredUsername: string | null = null;
 
 // ============== STATE ==============
 let allItems: SearchableItem[] = [];
@@ -59,6 +211,10 @@ let displayedCount = 0;
 let currentFolder: string | null = null;
 let selectedSuggestionIndex = -1;
 const ITEMS_PER_PAGE = 20;
+
+// Search mode: 'local' (MiniSearch) or 'ai' (Supabase semantic)
+let searchMode: 'local' | 'ai' = 'local';
+let isSupabaseAvailable = false;
 
 // Object URL cache for Pinterest images
 const blobUrlCache = new Map<string, string>();
@@ -114,14 +270,54 @@ async function initializeSearch(): Promise<void> {
 
     const pinsCount = pins.length;
     const bookmarksCount = bookmarks.length || allItems.filter(i => i.source === 'chrome').length;
-    itemCountEl.textContent = pinsCount > 0
-      ? `${bookmarksCount} bookmarks, ${pinsCount} pins`
-      : `${allItems.length} items`;
+    
+    // Update count display
+    if (pinsCount > 0 && bookmarksCount > 0) {
+      itemCountEl.textContent = `${bookmarksCount} 📚 ${pinsCount} 📌`;
+    } else if (pinsCount > 0) {
+      itemCountEl.textContent = `${pinsCount} pins`;
+    } else {
+      itemCountEl.textContent = `${bookmarksCount} items`;
+    }
 
     console.log(`[OpenMemory] Loaded ${bookmarksCount} bookmarks, ${pinsCount} pins`);
 
-    // Update indexing status display
-    updateIndexingStatus();
+    // Auto-trigger indexing if items exist but not indexed
+    const queueCount = await db.queue.count();
+    if (queueCount > 0) {
+      console.log(`[OpenMemory] Starting auto-indexing for ${queueCount} items...`);
+      triggerIndexingBtn.classList.add('indexing');
+      await chrome.runtime.sendMessage({ type: 'TRIGGER_INDEXING' });
+      
+      // Poll for completion
+      const pollInterval = setInterval(async () => {
+        try {
+          const status = await chrome.runtime.sendMessage({ type: 'GET_INDEXING_STATUS' });
+          if (status) {
+            const percent = Math.round((status.indexed / status.total) * 100);
+            if (pinsCount > 0 && bookmarksCount > 0) {
+              itemCountEl.textContent = `${bookmarksCount} 📚 ${pinsCount} 📌 (${percent}%)`;
+            } else if (pinsCount > 0) {
+              itemCountEl.textContent = `${pinsCount} pins (${percent}%)`;
+            } else {
+              itemCountEl.textContent = `${bookmarksCount} items (${percent}%)`;
+            }
+            
+            if (percent >= 100) {
+              clearInterval(pollInterval);
+              triggerIndexingBtn.classList.remove('indexing');
+            }
+          }
+        } catch (e) {
+          clearInterval(pollInterval);
+        }
+      }, 3000);
+      
+      setTimeout(() => {
+        clearInterval(pollInterval);
+        triggerIndexingBtn.classList.remove('indexing');
+      }, 120000);
+    }
   } catch (err) {
     console.error('[OpenMemory] Failed to load data:', err);
     itemCountEl.textContent = 'No data';
@@ -527,8 +723,38 @@ function clearFilter(): void {
   }
 }
 
+// ============== SEARCH MODE UI ==============
+function updateSearchModeUI(): void {
+  const toggleBtn = document.getElementById('search-mode-toggle');
+  if (toggleBtn) {
+    if (isSupabaseAvailable) {
+      toggleBtn.style.display = 'inline-flex';
+      toggleBtn.textContent = searchMode === 'ai' ? '🧠 AI' : '📝 Local';
+      toggleBtn.title = searchMode === 'ai'
+        ? 'AI Semantic Search (click for Local)'
+        : 'Local Keyword Search (click for AI)';
+      toggleBtn.className = searchMode === 'ai' ? 'search-mode-btn ai-mode' : 'search-mode-btn local-mode';
+    } else {
+      toggleBtn.style.display = 'none';
+    }
+  }
+}
+
+function toggleSearchMode(): void {
+  if (!isSupabaseAvailable) return;
+  searchMode = searchMode === 'local' ? 'ai' : 'local';
+  updateSearchModeUI();
+
+  // Re-run search if there's a query
+  if (searchInput.value.trim()) {
+    performSearch();
+  }
+}
+
 // ============== SEARCH EXECUTION ==============
-function performSearch(): void {
+let isSearching = false;
+
+async function performSearch(): Promise<void> {
   const query = searchInput.value.trim();
   if (!query) {
     resultsEl.innerHTML = '';
@@ -537,12 +763,48 @@ function performSearch(): void {
     return;
   }
 
-  currentResults = search(query);
-  displayedCount = 0;
+  // Prevent concurrent searches
+  if (isSearching) return;
+  isSearching = true;
 
   const filterInfo = currentFolder ? ` in ${currentFolder}` : '';
-  statusEl.textContent = `${currentResults.length} inspirations found${filterInfo}`;
 
+  if (searchMode === 'ai' && isSupabaseAvailable) {
+    // AI Semantic Search via Supabase
+    statusEl.textContent = `🧠 Searching with AI...`;
+
+    try {
+      const supabaseResults = await searchSupabase(query, 50, currentFolder || undefined);
+
+      // Convert Supabase results to SearchResult format
+      currentResults = supabaseResults.map(r => ({
+        item: {
+          id: undefined,
+          url: r.url,
+          title: r.title,
+          folder: r.folder,
+          indexStatus: 'indexed' as const,
+          source: 'chrome' as const
+        } as SearchableItem,
+        score: r.similarity,
+        matchField: 'title' as const,
+        snippet: undefined
+      }));
+
+      statusEl.textContent = `🧠 ${currentResults.length} results (AI Search)${filterInfo}`;
+    } catch (error) {
+      console.error('[OpenMemory] AI search failed:', error);
+      statusEl.textContent = 'AI search failed, try Local mode';
+      currentResults = [];
+    }
+  } else {
+    // Local MiniSearch
+    currentResults = search(query);
+    statusEl.textContent = `📝 ${currentResults.length} inspirations found${filterInfo}`;
+  }
+
+  displayedCount = 0;
+  isSearching = false;
   showMore();
 }
 
@@ -561,6 +823,12 @@ function showMore(): void {
 
 // ============== EVENT LISTENERS ==============
 removeFilterBtn.addEventListener('click', clearFilter);
+
+// Search mode toggle
+const searchModeToggle = document.getElementById('search-mode-toggle');
+if (searchModeToggle) {
+  searchModeToggle.addEventListener('click', toggleSearchMode);
+}
 
 suggestionsEl.addEventListener('click', (e) => {
   const target = e.target as HTMLElement;
@@ -649,81 +917,257 @@ closeIntegrations.addEventListener('click', () => {
   integrationsSection.classList.remove('active');
 });
 
+// Close board selection
+closeBoardSelection.addEventListener('click', () => {
+  boardSelection.classList.remove('active');
+});
+
+function setPinterestCtaText(text: string): void {
+  pinterestConnect.textContent = text;
+}
+
 pinterestConnect.addEventListener('click', async () => {
   console.log('[OpenMemory] Pinterest connect clicked');
 
   try {
-    const status = await chrome.runtime.sendMessage({ type: 'GET_PINTEREST_STATUS' });
-    console.log('[OpenMemory] Pinterest status:', status);
-
-    if (status?.connected && status?.syncStatus !== 'syncing') {
-      // Disconnect
-      if (confirm('Disconnect Pinterest and remove synced pins?')) {
-        await chrome.runtime.sendMessage({ type: 'DISCONNECT_PINTEREST' });
-        updatePinterestUI();
-        await initializeSearch();
-      }
-    } else if (status?.syncStatus === 'syncing') {
-      // Already syncing
-      console.log('[OpenMemory] Already syncing');
-    } else {
-      // Check if logged in to Pinterest
-      const loginStatus = await chrome.runtime.sendMessage({ type: 'CHECK_PINTEREST_LOGIN' });
-      console.log('[OpenMemory] Pinterest login status:', loginStatus);
-
-      if (loginStatus?.loggedIn) {
-        // Ask for username if not available
-        let username = loginStatus.username;
-        if (!username) {
-          username = prompt('Enter your Pinterest username:');
-          if (!username) {
-            alert('Username is required to sync your boards.');
-            return;
-          }
-        }
-
-        // Start sync with username
-        pinterestStatus.textContent = 'Starting sync...';
-        pinterestStatus.className = 'integration-status syncing';
-        pinterestConnect.textContent = 'Syncing...';
-        pinterestConnect.className = 'connect-btn syncing';
-
-        chrome.runtime.sendMessage({ type: 'TRIGGER_PINTEREST_SYNC', username });
-        startPinterestPolling();
-      } else {
-        // Open Pinterest login
-        chrome.tabs.create({ url: 'https://www.pinterest.com/login/' });
-        alert('Please log in to Pinterest in the opened tab, then click Connect again.');
-      }
-    }
+    await openPinterestActiveSync();
   } catch (error) {
     console.error('[OpenMemory] Pinterest connect error:', error);
     alert('Error connecting to Pinterest. Check the console for details.');
   }
 });
 
+async function openPinterestActiveSync(): Promise<void> {
+  const status = await chrome.runtime.sendMessage({ type: 'GET_PINTEREST_STATUS' });
+
+  if (status?.syncStatus === 'syncing') {
+    console.log('[OpenMemory] Already syncing');
+    return;
+  }
+
+  const stored = await chrome.storage.local.get('pinterestUsername');
+  let username = stored?.pinterestUsername as string | undefined;
+
+  if (!username) {
+    const manualUsername = prompt(
+      'Please enter your Pinterest username to sync:\n' +
+      '(You can find it in your Pinterest profile URL: pinterest.com/YOUR_USERNAME)'
+    );
+
+    if (!manualUsername || manualUsername.trim() === '') {
+      return;
+    }
+
+    username = manualUsername.trim();
+    await chrome.storage.local.set({ pinterestUsername: username });
+  }
+
+  setPinterestCtaText('Open Pinterest & Sync');
+
+  const savedUrl = `https://www.pinterest.com/${username}/_saved/`;
+  const tab = await chrome.tabs.create({ url: savedUrl, active: true });
+
+  const deepSync = !!pinterestDeepSync?.checked;
+  await chrome.runtime.sendMessage({ type: 'TRIGGER_PINTEREST_SYNC', username, tabId: tab.id, deepSync });
+  startPinterestPolling();
+}
+
+// Function to discover boards and show selection UI
+async function discoverAndShowBoards(): Promise<void> {
+  pinterestStatus.textContent = 'Checking Pinterest login...';
+  pinterestStatus.className = 'integration-status syncing';
+  pinterestConnect.textContent = 'Connecting...';
+  pinterestConnect.className = 'connect-btn syncing';
+  integrationsSection.classList.add('active');
+
+  try {
+    // First check if logged in
+    const loginStatus = await chrome.runtime.sendMessage({ type: 'CHECK_PINTEREST_LOGIN' });
+
+    if (!loginStatus?.loggedIn) {
+      alert('Please log in to Pinterest in your browser first, then try again.');
+      updatePinterestUI();
+      return;
+    }
+
+    pinterestStatus.textContent = 'Extracting username...';
+
+    let manualEntryUsed = false;
+
+    // Discover boards - username will be auto-extracted if not provided
+    let result = await chrome.runtime.sendMessage({
+      type: 'DISCOVER_PINTEREST_BOARDS'
+      // No username needed - will be auto-extracted
+    });
+
+    // If auto-extraction failed, ask user for their username
+    if (!result || result.loggedOut) {
+      alert('Please log in to Pinterest in your browser first, then try again.');
+      updatePinterestUI();
+      return;
+    }
+
+    if (!result.username) {
+      const manualUsername = prompt(
+        'Could not detect your Pinterest username automatically.\n\n' +
+        'Please enter your Pinterest username:\n' +
+        '(You can find it in your Pinterest profile URL: pinterest.com/YOUR_USERNAME)'
+      );
+
+      if (!manualUsername || manualUsername.trim() === '') {
+        alert('Username is required to connect Pinterest.');
+        updatePinterestUI();
+        return;
+      }
+
+      const manualValue = manualUsername.trim();
+      manualEntryUsed = true;
+      await chrome.storage.local.set({ pinterestUsername: manualValue });
+
+      // Retry with manual username
+      pinterestStatus.textContent = `Discovering boards for @${manualValue}...`;
+      result = await chrome.runtime.sendMessage({
+        type: 'DISCOVER_PINTEREST_BOARDS',
+        username: manualValue
+      });
+    }
+
+    if (!result) {
+      alert('Could not connect to Pinterest. Make sure you are logged in.');
+      updatePinterestUI();
+      return;
+    }
+
+    if (!result.boards || result.boards.length === 0) {
+      alert(`Connected as ${result.username}, but no boards found. Create some boards on Pinterest first.`);
+      updatePinterestUI();
+      return;
+    }
+
+    discoveredBoards = result.boards;
+    discoveredUsername = result.username;
+    boardCount.textContent = discoveredBoards.length.toString();
+
+    // Render board list with checkboxes
+    boardList.innerHTML = discoveredBoards.map((board, index) => `
+      <label class="board-item">
+        <input type="checkbox" data-index="${index}" checked>
+        <span>${board.name}</span>
+      </label>
+    `).join('');
+
+    // Show board selection
+    boardSelection.classList.add('active');
+    pinterestStatus.textContent = `@${result.username} - ${discoveredBoards.length} boards found`;
+    pinterestConnect.textContent = 'Select Boards';
+    pinterestConnect.className = 'connect-btn';
+
+    // If user manually entered username, auto-trigger sync for all boards
+    if (manualEntryUsed) {
+      await chrome.runtime.sendMessage({
+        type: 'TRIGGER_PINTEREST_SYNC',
+        username: result.username,
+        boards: discoveredBoards
+      });
+      startPinterestPolling();
+    }
+
+  } catch (error) {
+    console.error('[OpenMemory] Board discovery failed:', error);
+    alert('Failed to discover boards. Check console for details.');
+    updatePinterestUI();
+  }
+}
+
+// Select all boards
+selectAllBoards.addEventListener('click', () => {
+  const checkboxes = boardList.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+  const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+  checkboxes.forEach(cb => cb.checked = !allChecked);
+});
+
+// Sync selected boards
+syncSelectedBoards.addEventListener('click', async () => {
+  const checkboxes = boardList.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked');
+  const selectedIndices = Array.from(checkboxes).map(cb => parseInt(cb.dataset.index || '0'));
+  const selectedBoards = selectedIndices.map(i => discoveredBoards[i]);
+
+  if (selectedBoards.length === 0) {
+    alert('Please select at least one board to sync.');
+    return;
+  }
+
+  // Use the username discovered earlier
+  if (!discoveredUsername) {
+    alert('Could not get Pinterest username. Please try connecting again.');
+    updatePinterestUI();
+    return;
+  }
+
+  console.log('[OpenMemory] Syncing', selectedBoards.length, 'selected boards for user:', discoveredUsername);
+
+  // Hide board selection
+  boardSelection.classList.remove('active');
+
+  // Update UI for syncing
+  pinterestStatus.textContent = `Syncing ${selectedBoards.length} boards...`;
+  pinterestStatus.className = 'integration-status syncing';
+  pinterestConnect.textContent = 'Syncing...';
+  pinterestConnect.className = 'connect-btn syncing';
+  pinterestProgress.classList.add('active');
+  pinterestSyncStats.classList.add('active');
+  pinterestBoardTotal.textContent = `Boards: ${selectedBoards.length}`;
+  pinterestBoardUpdated.textContent = 'Updated: 0';
+  pinterestBoardArchived.textContent = 'Archived: 0';
+
+  // Start sync with selected boards
+  await chrome.runtime.sendMessage({
+    type: 'TRIGGER_PINTEREST_SYNC',
+    username: discoveredUsername,
+    boards: selectedBoards
+  });
+
+  startPinterestPolling();
+});
+
 async function updatePinterestUI(): Promise<void> {
   try {
     const status = await chrome.runtime.sendMessage({ type: 'GET_PINTEREST_STATUS' });
+    const pins = await chrome.runtime.sendMessage({ type: 'GET_ALL_PINS' });
+    const existingPinCount = pins?.length || 0;
 
-    if (!status) {
-      pinterestStatus.textContent = 'Not connected';
-      pinterestStatus.className = 'integration-status';
-      pinterestConnect.textContent = 'Connect';
-      pinterestConnect.className = 'connect-btn';
-      pinterestProgress.classList.remove('active');
-      integrationsToggle.classList.remove('has-connection');
-      return;
-    }
+      if (!status) {
+        if (existingPinCount > 0) {
+          pinterestStatus.textContent = `${existingPinCount} pins synced`;
+          pinterestStatus.className = 'integration-status';
+        } else {
+          pinterestStatus.textContent = 'Not connected';
+          pinterestStatus.className = 'integration-status';
+        }
+        setPinterestCtaText('Open Pinterest & Sync');
+        pinterestConnect.className = 'connect-btn';
+        pinterestProgress.classList.remove('active');
+        integrationsToggle.classList.remove('has-connection');
+        return;
+      }
 
     if (status.syncStatus === 'syncing') {
       pinterestStatus.textContent = `Syncing...`;
       pinterestStatus.className = 'integration-status syncing';
-      pinterestConnect.textContent = 'Syncing...';
+      setPinterestCtaText('Syncing...');
       pinterestConnect.className = 'connect-btn syncing';
       pinterestProgress.classList.add('active');
       pinterestProgressFill.style.width = `${status.syncProgress || 0}%`;
-      pinterestProgressText.textContent = `Syncing pins... ${status.syncProgress || 0}%`;
+      if (!status.syncProgress) {
+  pinterestProgressText.textContent = 'Syncing boards... please wait';
+  setPinterestCtaText('Open Pinterest & Sync');
+      } else {
+        pinterestProgressText.textContent = `Syncing pins... ${status.syncProgress || 0}%`;
+      }
+      pinterestSyncStats.classList.add('active');
+      pinterestBoardTotal.textContent = `Boards: ${status.boardTotal ?? 0}`;
+      pinterestBoardUpdated.textContent = `Updated: ${status.boardUpdated ?? 0}`;
+      pinterestBoardArchived.textContent = `Archived: ${status.boardArchived ?? 0}`;
       integrationsToggle.classList.add('has-connection');
       startPinterestPolling();
     } else if (status.connected) {
@@ -731,25 +1175,39 @@ async function updatePinterestUI(): Promise<void> {
       const pinCount = status.totalPins || 0;
       pinterestStatus.textContent = `${status.username || 'Connected'} - ${pinCount} pins (Last: ${lastSync})`;
       pinterestStatus.className = 'integration-status connected';
-      pinterestConnect.textContent = 'Disconnect';
-      pinterestConnect.className = 'connect-btn connected';
+      setPinterestCtaText('Open Pinterest & Sync');
+      pinterestConnect.className = 'connect-btn';
       pinterestProgress.classList.remove('active');
+      pinterestSyncStats.classList.add('active');
+      pinterestBoardTotal.textContent = `Boards: ${status.boardTotal ?? 0}`;
+      pinterestBoardUpdated.textContent = `Updated: ${status.boardUpdated ?? 0}`;
+      pinterestBoardArchived.textContent = `Archived: ${status.boardArchived ?? 0}`;
       integrationsToggle.classList.add('has-connection');
       stopPinterestPolling();
     } else if (status.syncStatus === 'error') {
       pinterestStatus.textContent = 'Sync failed - try again';
       pinterestStatus.className = 'integration-status error';
-      pinterestConnect.textContent = 'Retry';
+      setPinterestCtaText('Open Pinterest & Sync');
       pinterestConnect.className = 'connect-btn';
       pinterestProgress.classList.remove('active');
+      pinterestSyncStats.classList.remove('active');
       integrationsToggle.classList.remove('has-connection');
       stopPinterestPolling();
     } else {
-      pinterestStatus.textContent = 'Not connected';
-      pinterestStatus.className = 'integration-status';
-      pinterestConnect.textContent = 'Connect';
-      pinterestConnect.className = 'connect-btn';
+      // Not connected - check if pins exist
+      if (existingPinCount > 0) {
+        pinterestStatus.textContent = `${existingPinCount} pins synced (connect to continue)`;
+        pinterestStatus.className = 'integration-status';
+        setPinterestCtaText('Open Pinterest & Sync');
+        pinterestConnect.className = 'connect-btn';
+      } else {
+        pinterestStatus.textContent = 'Not connected';
+        pinterestStatus.className = 'integration-status';
+        setPinterestCtaText('Open Pinterest & Sync');
+        pinterestConnect.className = 'connect-btn';
+      }
       pinterestProgress.classList.remove('active');
+      pinterestSyncStats.classList.remove('active');
       integrationsToggle.classList.remove('has-connection');
       stopPinterestPolling();
     }
@@ -781,8 +1239,88 @@ function stopPinterestPolling(): void {
   }
 }
 
+// Pinterest reset button - clears all pins and checkpoints for fresh sync
+pinterestReset.addEventListener('click', async () => {
+  if (confirm('This will delete all synced Pinterest pins and start fresh. Continue?')) {
+    try {
+      await chrome.runtime.sendMessage({ type: 'RESET_PINTEREST_SYNC' });
+      await initializeSearch();
+      updatePinterestUI();
+      alert('Pinterest sync has been reset. Click Connect to start fresh.');
+    } catch (err) {
+      console.error('[OpenMemory] Reset failed:', err);
+      alert('Failed to reset Pinterest sync.');
+    }
+  }
+});
+
 // Check Pinterest status on load
 updatePinterestUI();
+
+// ============== INDEXING TRIGGER ==============
+triggerIndexingBtn.addEventListener('click', async () => {
+  triggerIndexingBtn.classList.add('indexing');
+  triggerIndexingBtn.textContent = '⚡';
+  
+  try {
+    itemCountEl.textContent = `${allItems.length} items (Indexing...)`;
+    
+    await chrome.runtime.sendMessage({ type: 'TRIGGER_INDEXING' });
+    
+    // Poll for indexing status updates
+    const pollInterval = setInterval(async () => {
+      try {
+        const status = await chrome.runtime.sendMessage({ type: 'GET_INDEXING_STATUS' });
+        if (status && status.indexed > 0) {
+          const percent = Math.round((status.indexed / status.total) * 100);
+          itemCountEl.textContent = `${allItems.length} items (${percent}% indexed)`;
+          
+          if (percent >= 100) {
+            clearInterval(pollInterval);
+            triggerIndexingBtn.classList.remove('indexing');
+            triggerIndexingBtn.textContent = '⚡';
+          }
+        }
+      } catch (e) {
+        clearInterval(pollInterval);
+      }
+    }, 2000);
+    
+    // Stop polling after 2 minutes
+    setTimeout(() => {
+      clearInterval(pollInterval);
+      triggerIndexingBtn.classList.remove('indexing');
+      triggerIndexingBtn.textContent = '⚡';
+    }, 120000);
+    
+  } catch (err) {
+    console.error('[OpenMemory] Indexing trigger failed:', err);
+    triggerIndexingBtn.classList.remove('indexing');
+    triggerIndexingBtn.textContent = '⚡';
+  }
+});
+
+retryFailedBtn.addEventListener('click', async () => {
+  retryFailedBtn.textContent = '↻...';
+  retryFailedBtn.disabled = true;
+
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'RETRY_FAILED_INDEXING' });
+    if (result?.success) {
+      const count = result.count || 0;
+      bookmarksStatus.textContent = count > 0
+        ? `Retrying ${count} failed links...`
+        : 'No failed links to retry';
+    } else {
+      bookmarksStatus.textContent = 'Retry failed';
+    }
+  } catch (err) {
+    bookmarksStatus.textContent = 'Retry failed';
+  }
+
+  retryFailedBtn.textContent = '↻';
+  retryFailedBtn.disabled = false;
+});
 
 // ============== BOOKMARKS UI ==============
 bookmarksSync.addEventListener('click', async () => {
@@ -830,5 +1368,109 @@ async function updateBookmarksUI(): Promise<void> {
 // Update bookmarks UI on load
 setTimeout(updateBookmarksUI, 500);
 
+// ============== SUPABASE SETTINGS UI ==============
+const supabaseCard = document.getElementById('supabase-card');
+const supabaseStatus = document.getElementById('supabase-status');
+const supabaseToggleSettings = document.getElementById('supabase-toggle-settings');
+const supabaseSettings = document.getElementById('supabase-settings');
+const supabaseUrlInput = document.getElementById('supabase-url') as HTMLInputElement;
+const supabaseKeyInput = document.getElementById('supabase-key') as HTMLInputElement;
+const supabaseSaveBtn = document.getElementById('supabase-save');
+const supabaseCancelBtn = document.getElementById('supabase-cancel');
+
+async function updateSupabaseUI(): Promise<void> {
+  const config = await getSupabaseConfig();
+  if (config) {
+    supabaseStatus!.textContent = 'Connected - AI Search enabled';
+    supabaseStatus!.className = 'integration-status connected';
+    supabaseToggleSettings!.textContent = 'Edit';
+    supabaseUrlInput!.value = config.url;
+    supabaseKeyInput!.value = config.anonKey;
+    isSupabaseAvailable = true;
+  } else {
+    supabaseStatus!.textContent = 'Not configured';
+    supabaseStatus!.className = 'integration-status';
+    supabaseToggleSettings!.textContent = 'Configure';
+    isSupabaseAvailable = false;
+  }
+  updateSearchModeUI();
+}
+
+supabaseToggleSettings?.addEventListener('click', () => {
+  const isVisible = supabaseSettings!.style.display !== 'none';
+  supabaseSettings!.style.display = isVisible ? 'none' : 'block';
+  supabaseToggleSettings!.textContent = isVisible ? (isSupabaseAvailable ? 'Edit' : 'Configure') : 'Hide';
+});
+
+supabaseCancelBtn?.addEventListener('click', () => {
+  supabaseSettings!.style.display = 'none';
+  supabaseToggleSettings!.textContent = isSupabaseAvailable ? 'Edit' : 'Configure';
+});
+
+supabaseSaveBtn?.addEventListener('click', async () => {
+  const url = supabaseUrlInput!.value.trim();
+  const key = supabaseKeyInput!.value.trim();
+
+  if (!url || !key) {
+    alert('Please enter both URL and Anon Key');
+    return;
+  }
+
+  if (!url.startsWith('https://') || !url.includes('.supabase.co')) {
+    alert('Invalid Supabase URL. Should be like: https://xxx.supabase.co');
+    return;
+  }
+
+  if (!key.startsWith('eyJ')) {
+    alert('Invalid Anon Key. Should start with eyJ...');
+    return;
+  }
+
+  // Save to storage
+  await new Promise<void>((resolve) => {
+    chrome.storage.local.set({ supabaseUrl: url, supabaseAnonKey: key }, () => {
+      resolve();
+    });
+  });
+
+  // Update UI
+  supabaseSettings!.style.display = 'none';
+  await updateSupabaseUI();
+
+  alert('Supabase configured! AI Search is now available.');
+});
+
+// Generate Embeddings button
+const generateEmbeddingsBtn = document.getElementById('generate-embeddings');
+const embeddingStatus = document.getElementById('embedding-status');
+
+generateEmbeddingsBtn?.addEventListener('click', async () => {
+  generateEmbeddingsBtn.textContent = '🧠 Loading model...';
+  generateEmbeddingsBtn.setAttribute('disabled', 'true');
+  embeddingStatus!.textContent = 'Initializing local AI model (first time may take 30-60 seconds)...';
+
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'GENERATE_EMBEDDINGS_FOR_BOOKMARKS' });
+
+    if (result) {
+      embeddingStatus!.textContent = `✅ Done! ${result.success} embeddings generated, ${result.failed} failed`;
+      embeddingStatus!.style.color = '#4ade80';
+    } else {
+      embeddingStatus!.textContent = '❌ Failed to generate embeddings';
+      embeddingStatus!.style.color = '#f87171';
+    }
+  } catch (error) {
+    console.error('Embedding generation error:', error);
+    embeddingStatus!.textContent = '❌ Error: ' + (error as Error).message;
+    embeddingStatus!.style.color = '#f87171';
+  }
+
+  generateEmbeddingsBtn.textContent = '🧠 Generate Embeddings (Local AI)';
+  generateEmbeddingsBtn.removeAttribute('disabled');
+});
+
 // ============== INITIALIZE ==============
 initializeSearch();
+
+// Check Supabase availability and update UI
+updateSupabaseUI();

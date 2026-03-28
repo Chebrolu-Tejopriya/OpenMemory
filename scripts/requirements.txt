@@ -1,0 +1,3 @@
+fastembed
+requests
+python-dotenv

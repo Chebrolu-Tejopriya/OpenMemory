@@ -3,7 +3,7 @@
  * Cookie-based login detection and scraping logic
  */
 
-import { db, PinterestPin } from './db';
+import { db, PinterestPin, PinterestBoard } from './db';
 
 // ============== INTERFACES ==============
 export interface PinterestLoginStatus {
@@ -14,14 +14,254 @@ export interface PinterestLoginStatus {
 export interface ScrapedBoard {
   name: string;
   url: string;
+  boardId?: string;
+  pinCount?: number;
 }
 
 export interface ScrapedPin {
   pinId: string;
+  boardId?: string;
   title: string;
   imageUrl: string;
+  imageBlob?: Blob;
   pinUrl: string;
   description?: string;
+}
+
+// ============== INTERNAL API FETCHING ==============
+interface PinterestBoardsResponse {
+  data?: Array<{
+    id?: string;
+    name?: string;
+    url?: string;
+    pin_count?: number;
+    is_secret?: boolean;
+  }>;
+  resource_response?: {
+    data?: Array<{
+      id?: string;
+      name?: string;
+      url?: string;
+      pin_count?: number;
+      is_secret?: boolean;
+    }>;
+    bookmark?: string;
+  };
+}
+
+interface PinterestInitialState {
+  props?: {
+    initialReduxState?: {
+      boards?: Record<string, any> | any[];
+      pins?: Record<string, any> | any[];
+    };
+    initialState?: {
+      resourceResponses?: Array<{
+        response?: {
+          data?: any;
+        };
+      }>;
+    };
+  };
+}
+
+interface PinterestBoardFeedResponse {
+  resource_response?: {
+    data?: Array<{
+      id?: string;
+      title?: string;
+      description?: string;
+      link?: string;
+      images?: { orig?: { url?: string } };
+    }>;
+    bookmark?: string;
+  };
+}
+
+export interface PinterestBoardFeedPin {
+  pinId: string;
+  title: string;
+  description?: string;
+  pinUrl: string;
+  imageUrl: string;
+}
+
+function extractInitialStateJson(html: string): PinterestInitialState | null {
+  const pwsMatch = html.match(/<script id="__PWS_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+  const initialStateMatch = html.match(/<script id="initial-state" type="application\/json">([\s\S]*?)<\/script>/);
+  const jsonText = pwsMatch?.[1] || initialStateMatch?.[1];
+  if (!jsonText) return null;
+
+  try {
+    return JSON.parse(jsonText) as PinterestInitialState;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeBoardUrl(url: string): string {
+  if (!url) return '';
+  if (url.startsWith('http')) return url;
+  return `https://www.pinterest.com${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+function extractBoardsFromState(state: PinterestInitialState): Array<{ id?: string; name?: string; url?: string; pin_count?: number }> {
+  const boards: Array<{ id?: string; name?: string; url?: string; pin_count?: number }> = [];
+
+  const reduxBoards = state?.props?.initialReduxState?.boards;
+  if (reduxBoards) {
+    if (Array.isArray(reduxBoards)) {
+      for (const board of reduxBoards) boards.push(board);
+    } else if (typeof reduxBoards === 'object') {
+      for (const key of Object.keys(reduxBoards)) {
+        const board = reduxBoards[key];
+        if (board) boards.push(board);
+      }
+    }
+  }
+
+  const resourceBoards = state?.props?.initialState?.resourceResponses?.[0]?.response?.data;
+  if (resourceBoards) {
+    if (Array.isArray(resourceBoards)) {
+      for (const board of resourceBoards) boards.push(board);
+    } else if (resourceBoards?.boards && Array.isArray(resourceBoards.boards)) {
+      for (const board of resourceBoards.boards) boards.push(board);
+    }
+  }
+
+  return boards;
+}
+
+function collectBoardsFromObject(value: unknown, found: Array<{ id?: string; name?: string; url?: string; pin_count?: number }>): void {
+  if (!value || typeof value !== 'object') return;
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectBoardsFromObject(item, found);
+    }
+    return;
+  }
+
+  const obj = value as Record<string, any>;
+  const boardId = obj.board_id || obj.id;
+  const boardName = obj.name || obj.title;
+  const boardUrl = obj.url;
+  if (boardId && boardName && boardUrl) {
+    found.push({
+      id: String(boardId),
+      name: String(boardName),
+      url: String(boardUrl),
+      pin_count: typeof obj.pin_count === 'number' ? obj.pin_count : undefined
+    });
+  }
+
+  for (const key of Object.keys(obj)) {
+    collectBoardsFromObject(obj[key], found);
+  }
+}
+
+function extractPinsFromState(state: PinterestInitialState): Array<{ id?: string; title?: string; description?: string; link?: string; images?: { orig?: { url?: string } } }> {
+  const pins: Array<{ id?: string; title?: string; description?: string; link?: string; images?: { orig?: { url?: string } } }> = [];
+
+  const reduxPins = state?.props?.initialReduxState?.pins;
+  if (reduxPins) {
+    if (Array.isArray(reduxPins)) {
+      for (const pin of reduxPins) pins.push(pin);
+    } else if (typeof reduxPins === 'object') {
+      for (const key of Object.keys(reduxPins)) {
+        const pin = reduxPins[key];
+        if (pin) pins.push(pin);
+      }
+    }
+  }
+
+  const resourcePins = state?.props?.initialState?.resourceResponses?.[0]?.response?.data;
+  if (resourcePins) {
+    if (Array.isArray(resourcePins)) {
+      for (const pin of resourcePins) pins.push(pin);
+    }
+  }
+
+  return pins;
+}
+
+export async function fetchPinterestBoards(username: string): Promise<PinterestBoard[]> {
+  const boards: PinterestBoard[] = [];
+  const profileUrl = `https://www.pinterest.com/${username}/_saved/`;
+  const response = await fetch(profileUrl, { credentials: 'include', cache: 'no-store' });
+  if (!response.ok) return boards;
+
+  const html = await response.text();
+  const state = extractInitialStateJson(html);
+  if (state) {
+    const deepBoards: Array<{ id?: string; name?: string; url?: string; pin_count?: number }> = [];
+    const resourceResponses = (state?.props?.initialReduxState as { resourceResponses?: unknown } | undefined)?.resourceResponses;
+    if (resourceResponses) {
+      collectBoardsFromObject(resourceResponses, deepBoards);
+    }
+    const dataList = deepBoards.length > 0 ? deepBoards : extractBoardsFromState(state);
+
+    for (const item of dataList) {
+      if (!item?.id || !item?.url || !item?.name) continue;
+      boards.push({
+        boardId: String(item.id),
+        name: String(item.name),
+        url: normalizeBoardUrl(String(item.url)),
+        pinCount: item.pin_count || 0,
+        archived: false,
+        updatedAt: Date.now()
+      });
+    }
+  }
+
+  if (boards.length === 0) {
+    const linkRegex = new RegExp(`<a[^>]+href="(/${username}/[^\"#?]+)"`, 'gi');
+    const seen = new Set<string>();
+    let match: RegExpExecArray | null;
+    while ((match = linkRegex.exec(html)) !== null) {
+      const url = normalizeBoardUrl(match[1]);
+      if (seen.has(url)) continue;
+      seen.add(url);
+      const slug = match[1].split('/').filter(Boolean).pop() || '';
+      const name = slug.replace(/-/g, ' ');
+      if (!name) continue;
+      boards.push({
+        boardId: `slug:${slug}`,
+        name,
+        url,
+        pinCount: 0,
+        archived: false,
+        updatedAt: Date.now()
+      });
+    }
+  }
+
+  return boards;
+}
+
+export async function fetchPinterestBoardPins(boardId: string, boardUrl: string): Promise<PinterestBoardFeedPin[]> {
+  const pins: PinterestBoardFeedPin[] = [];
+  const response = await fetch(boardUrl, { credentials: 'include', cache: 'no-store' });
+  if (!response.ok) return pins;
+
+  const html = await response.text();
+  const state = extractInitialStateJson(html);
+  if (!state) return pins;
+
+  const dataList = extractPinsFromState(state);
+  for (const item of dataList) {
+    if (!item?.id) continue;
+    const imageUrl = item.images?.orig?.url || '';
+    pins.push({
+      pinId: item.id,
+      title: item.title || '',
+      description: item.description,
+      pinUrl: `https://www.pinterest.com/pin/${item.id}/`,
+      imageUrl
+    });
+  }
+
+  return pins;
 }
 
 // Pinterest domains to check
@@ -70,7 +310,77 @@ export async function checkPinterestLogin(): Promise<PinterestLoginStatus> {
   }
 }
 
-// ============== INJECTED SCRAPING FUNCTIONS ==============
+// Function to extract logged-in username from Pinterest page
+// This focuses on finding the CURRENT USER, not random profiles
+export function extractPinterestUsername(): string | null {
+  console.log('[Pinterest Extract] Starting on:', window.location.href);
+
+  // Method 1: Check for VIEWER (logged-in user) in __PWS_DATA__
+  const pwsData = (window as any).__PWS_DATA__;
+  if (pwsData) {
+    // Viewer is the logged-in user
+    if (pwsData?.props?.context?.viewer?.username) {
+      console.log('[Pinterest Extract] Found viewer:', pwsData.props.context.viewer.username);
+      return pwsData.props.context.viewer.username;
+    }
+
+    // Also check props.initialReduxState for viewer
+    if (pwsData?.props?.initialReduxState?.viewer?.username) {
+      return pwsData.props.initialReduxState.viewer.username;
+    }
+
+    // Search in stringified data for viewer specifically
+    try {
+      const dataStr = JSON.stringify(pwsData);
+      const viewerMatch = dataStr.match(/"viewer"\s*:\s*\{[^}]*"username"\s*:\s*"([^"]+)"/);
+      if (viewerMatch) {
+        console.log('[Pinterest Extract] Found viewer in JSON:', viewerMatch[1]);
+        return viewerMatch[1];
+      }
+    } catch (e) {}
+  }
+
+  // Method 2: Check __INITIAL_STATE__ for viewer
+  const initialState = (window as any).__INITIAL_STATE__;
+  if (initialState) {
+    if (initialState?.viewer?.username) {
+      return initialState.viewer.username;
+    }
+
+    try {
+      const stateStr = JSON.stringify(initialState);
+      const viewerMatch = stateStr.match(/"viewer"\s*:\s*\{[^}]*"username"\s*:\s*"([^"]+)"/);
+      if (viewerMatch) {
+        return viewerMatch[1];
+      }
+    } catch (e) {}
+  }
+
+  // Method 3: Check URL if on settings/profile page
+  const urlMatch = window.location.href.match(/pinterest\.com\/([a-zA-Z0-9_]+)\/(settings|_saved|_created)/);
+  if (urlMatch && !['www', 'in', 'br', 'de', 'fr', 'pin'].includes(urlMatch[1].toLowerCase())) {
+    console.log('[Pinterest Extract] Found in URL:', urlMatch[1]);
+    return urlMatch[1];
+  }
+
+  // Method 4: Find profile avatar/button in header (this is always the logged-in user)
+  const avatarLinks = document.querySelectorAll('[data-test-id="header-profile"] a, [data-test-id="profile-button"], [aria-label*="profile" i] a');
+  for (const link of avatarLinks) {
+    const href = (link as HTMLAnchorElement).href;
+    if (href) {
+      const match = href.match(/pinterest\.com\/([a-zA-Z0-9_]+)\/?$/);
+      if (match && !['pin', 'search', 'ideas', 'today', 'settings', 'business', 'login', 'www'].includes(match[1].toLowerCase())) {
+        console.log('[Pinterest Extract] Found in avatar link:', match[1]);
+        return match[1];
+      }
+    }
+  }
+
+  console.log('[Pinterest Extract] No viewer username found');
+  return null;
+}
+
+// ============== SCRAPING FUNCTIONS ==============
 // These functions are serialized and injected into Pinterest pages
 
 export interface ScrapeBoardsResult {
@@ -83,93 +393,245 @@ export interface ScrapeBoardsResult {
     bodyLength: number;
     foundInJson: boolean;
     jsonBoards: string[];
+    apiBoardCount: number;
+    apiBoards: string[];
   };
 }
 
-export function scrapePinterestBoards(): ScrapeBoardsResult {
+export async function scrapePinterestBoards(): Promise<ScrapeBoardsResult> {
   const boards: ScrapedBoard[] = [];
+  const seenUrls = new Set<string>();
   const pathname = window.location.pathname;
-  const username = pathname.split('/')[1]; // Get username from URL
+  const username = pathname.split('/')[1];
   const baseUrl = window.location.origin;
 
-  let foundInJson = false;
   const jsonBoards: string[] = [];
+  const apiBoards: string[] = [];
+  const skipSlugs = ['_saved', '_created', '_pins', 'pin', 'settings', 'following', 'followers', 'ideas', 'search', 'about', 'home', 'messages', 'notifications', 'today', 'watch', 'shop'];
 
-  // Method 1: Try to find board data in script tags (Pinterest embeds JSON data)
-  const scripts = document.querySelectorAll('script');
-  scripts.forEach(script => {
-    const content = script.textContent || '';
-    // Look for board URLs in JSON data
-    const boardMatches = content.matchAll(/"\/([^"]+)\/([a-zA-Z0-9\-_]+)\/"/g);
-    for (const match of boardMatches) {
-      const [, user, boardSlug] = match;
-      if (user.toLowerCase() === username?.toLowerCase()) {
-        const skipSlugs = ['_saved', '_created', '_pins', 'pin', 'settings', 'following', 'followers'];
-        if (!skipSlugs.includes(boardSlug.toLowerCase()) && /^[a-zA-Z0-9\-_]+$/.test(boardSlug)) {
-          const url = `${baseUrl}/${user}/${boardSlug}/`;
-          if (!boards.some(b => b.url === url)) {
-            foundInJson = true;
-            jsonBoards.push(boardSlug);
-            boards.push({ name: boardSlug.replace(/-/g, ' '), url });
+  // Helper to add board if not duplicate
+  const addBoard = (name: string, url: string) => {
+    // Normalize URL
+    let normalizedUrl = url;
+    if (!normalizedUrl.startsWith('http')) {
+      normalizedUrl = baseUrl + (normalizedUrl.startsWith('/') ? '' : '/') + normalizedUrl;
+    }
+    if (!normalizedUrl.endsWith('/')) {
+      normalizedUrl += '/';
+    }
+
+    if (seenUrls.has(normalizedUrl)) return;
+    seenUrls.add(normalizedUrl);
+
+    // Clean up name
+    const cleanName = (name || '').replace(/-/g, ' ').trim();
+    if (cleanName.length > 0) {
+      boards.push({ name: cleanName, url: normalizedUrl });
+    }
+  };
+
+  // Helper to check if a slug is a valid board
+  const isValidBoardSlug = (slug: string) => {
+    if (!slug) return false;
+    if (skipSlugs.includes(slug.toLowerCase())) return false;
+    if (!/^[a-zA-Z0-9\-_]+$/.test(slug)) return false;
+    return true;
+  };
+
+  console.log('[Pinterest Scraper] Starting board scrape on:', window.location.href);
+  console.log('[Pinterest Scraper] Username from URL:', username);
+
+  // Method 0: Call Pinterest internal boards API for full list
+  if (username) {
+    try {
+      let bookmark: string | undefined = undefined;
+      let rounds = 0;
+      while (rounds < 10) {
+        const data = {
+          options: {
+            username,
+            page_size: 250,
+            bookmarks: bookmark ? [bookmark] : []
+          },
+          context: {}
+        };
+
+        const apiUrl = `${baseUrl}/resource/BoardsResource/get/?source_url=/${username}/boards/&data=${encodeURIComponent(JSON.stringify(data))}`;
+        const response = await fetch(apiUrl, { credentials: 'include', cache: 'no-store' });
+        if (!response.ok) break;
+
+        const json = await response.json();
+        const dataList = json?.resource_response?.data || [];
+        for (const item of dataList) {
+          if (!item?.url || !item?.name) continue;
+          const slug = String(item.url).split('/').filter(Boolean).pop() || '';
+          if (isValidBoardSlug(slug)) {
+            apiBoards.push(item.name);
+            addBoard(item.name, item.url);
           }
+        }
+
+        const nextBookmark = json?.resource_response?.bookmark;
+        if (!nextBookmark || nextBookmark === '-end-') break;
+        bookmark = nextBookmark;
+        rounds++;
+      }
+    } catch (e) {
+      console.log('[Pinterest Scraper] Boards API failed:', e);
+    }
+  }
+
+  // Method 1: Try to find board data from Pinterest's __PWS_DATA__
+  const pwsData = (window as any).__PWS_DATA__;
+  if (pwsData) {
+    try {
+      const dataStr = JSON.stringify(pwsData);
+
+      // Look for board objects with name and url
+      const boardNameMatches = dataStr.matchAll(/"name"\s*:\s*"([^"]+)"[^}]*"url"\s*:\s*"(\/[^"]+)"/g);
+      for (const match of boardNameMatches) {
+        const [, name, url] = match;
+        if (url.toLowerCase().includes(`/${username?.toLowerCase()}/`)) {
+          const slug = url.split('/').filter(Boolean).pop() || '';
+          if (isValidBoardSlug(slug)) {
+            jsonBoards.push(name);
+            addBoard(name, url);
+          }
+        }
+      }
+
+      // Also try reverse order (url then name)
+      const boardUrlMatches = dataStr.matchAll(/"url"\s*:\s*"(\/[^"]+)"[^}]*"name"\s*:\s*"([^"]+)"/g);
+      for (const match of boardUrlMatches) {
+        const [, url, name] = match;
+        if (url.toLowerCase().includes(`/${username?.toLowerCase()}/`)) {
+          const slug = url.split('/').filter(Boolean).pop() || '';
+          if (isValidBoardSlug(slug)) {
+            addBoard(name, url);
+          }
+        }
+      }
+
+      // Look for simple URL patterns
+      const simpleMatches = dataStr.matchAll(/"url"\s*:\s*"\/?([^"\/]+)\/([a-zA-Z0-9\-_]+)\/?"/g);
+      for (const match of simpleMatches) {
+        const [, user, boardSlug] = match;
+        if (user.toLowerCase() === username?.toLowerCase() && isValidBoardSlug(boardSlug)) {
+          addBoard(boardSlug, `/${user}/${boardSlug}/`);
+        }
+      }
+    } catch (e) {
+      console.log('[Pinterest Scraper] Error parsing __PWS_DATA__:', e);
+    }
+  }
+
+  // Method 2: Look for board data in __INITIAL_STATE__
+  const initialState = (window as any).__INITIAL_STATE__;
+  if (initialState) {
+    try {
+      const stateStr = JSON.stringify(initialState);
+      const boardMatches = stateStr.matchAll(/"board"\s*:\s*\{[^}]*"url"\s*:\s*"([^"]+)"[^}]*"name"\s*:\s*"([^"]+)"/g);
+      for (const match of boardMatches) {
+        const [, url, name] = match;
+        if (url.toLowerCase().includes(`/${username?.toLowerCase()}/`)) {
+          const slug = url.split('/').filter(Boolean).pop() || '';
+          if (isValidBoardSlug(slug)) {
+            addBoard(name, url);
+          }
+        }
+      }
+    } catch (e) {
+      console.log('[Pinterest Scraper] Error parsing __INITIAL_STATE__:', e);
+    }
+  }
+
+  // Method 3: Look in all window objects for board data
+  try {
+    for (const key of Object.keys(window)) {
+      if (key.startsWith('__') && key.includes('DATA') || key.includes('STATE') || key.includes('PROPS')) {
+        const data = (window as any)[key];
+        if (data && typeof data === 'object') {
+          const dataStr = JSON.stringify(data);
+          const matches = dataStr.matchAll(/"url"\s*:\s*"\/?([^"\/]+)\/([a-zA-Z0-9\-_]+)\/?"/g);
+          for (const match of matches) {
+            const [, user, boardSlug] = match;
+            if (user.toLowerCase() === username?.toLowerCase() && isValidBoardSlug(boardSlug)) {
+              addBoard(boardSlug, `/${user}/${boardSlug}/`);
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {}
+
+  // Method 4: Scan ALL anchor tags on the page (always do this)
+  const allAnchors = document.querySelectorAll('a[href]');
+  console.log('[Pinterest Scraper] Found', allAnchors.length, 'anchor tags');
+
+  allAnchors.forEach(anchor => {
+    const href = (anchor as HTMLAnchorElement).href || anchor.getAttribute('href') || '';
+    if (!href) return;
+
+    // Match board URL pattern
+    const boardMatch = href.match(/pinterest\.com\/([^\/]+)\/([^\/\?#]+)\/?/);
+    if (boardMatch) {
+      const [, linkUser, boardSlug] = boardMatch;
+      if (linkUser.toLowerCase() === username?.toLowerCase() && isValidBoardSlug(boardSlug)) {
+        // Try to get a better name from the element
+        let name = boardSlug;
+        const textContent = anchor.textContent?.trim();
+        if (textContent && textContent.length > 0 && textContent.length < 100 && !textContent.includes('\n')) {
+          name = textContent;
+        }
+        // Also check for aria-label
+        const ariaLabel = anchor.getAttribute('aria-label');
+        if (ariaLabel && ariaLabel.length > 0 && ariaLabel.length < 100) {
+          name = ariaLabel;
+        }
+        addBoard(name, href);
+      }
+    }
+  });
+
+  // Method 5: Look for board cards/containers with data attributes
+  const boardContainers = document.querySelectorAll('[data-test-id*="board"], [data-test-id*="Board"], [class*="board"], [class*="Board"]');
+  boardContainers.forEach(container => {
+    const link = container.querySelector('a[href]') as HTMLAnchorElement;
+    if (link?.href) {
+      const boardMatch = link.href.match(/pinterest\.com\/([^\/]+)\/([^\/\?#]+)\/?/);
+      if (boardMatch) {
+        const [, linkUser, boardSlug] = boardMatch;
+        if (linkUser.toLowerCase() === username?.toLowerCase() && isValidBoardSlug(boardSlug)) {
+          // Try to find name in container
+          let name = boardSlug;
+          const nameEl = container.querySelector('h2, h3, [class*="name"], [class*="title"]');
+          if (nameEl?.textContent) {
+            name = nameEl.textContent.trim();
+          }
+          addBoard(name, link.href);
         }
       }
     }
   });
 
-  // Method 2: Look for elements with data attributes or aria-labels containing board info
-  if (boards.length === 0) {
-    document.querySelectorAll('[data-test-id*="board"], [data-test-id*="Board"], [role="listitem"]').forEach(el => {
-      const link = el.querySelector('a') as HTMLAnchorElement;
-      const href = link?.href || el.getAttribute('data-href') || '';
-      const boardMatch = href.match(/pinterest\.com\/([^\/]+)\/([^\/]+)\/?$/);
-      if (boardMatch) {
-        const [, linkUser, boardSlug] = boardMatch;
-        if (linkUser.toLowerCase() === username?.toLowerCase()) {
-          const name = el.textContent?.trim().split('\n')[0] || boardSlug.replace(/-/g, ' ');
-          if (!boards.some(b => b.url === href)) {
-            boards.push({ name: name.substring(0, 50), url: href });
-          }
-        }
-      }
-    });
-  }
+  // Method 6: Parse script tags for board data
+  const scripts = document.querySelectorAll('script:not([src])');
+  scripts.forEach(script => {
+    const content = script.textContent || '';
+    if (content.length < 500 || content.length > 5000000) return;
 
-  // Method 3: Look for any element with href attribute (not just <a> tags)
-  if (boards.length === 0) {
-    document.querySelectorAll('[href*="pinterest.com"]').forEach(el => {
-      const href = el.getAttribute('href') || '';
-      const fullUrl = href.startsWith('/') ? baseUrl + href : href;
-      const boardMatch = fullUrl.match(/pinterest\.com\/([^\/]+)\/([^\/]+)\/?$/);
-      if (boardMatch) {
-        const [, linkUser, boardSlug] = boardMatch;
-        const skipSlugs = ['_saved', '_created', '_pins', 'pin', 'settings', 'following', 'followers', 'ideas', 'search'];
-        if (linkUser.toLowerCase() === username?.toLowerCase() && !skipSlugs.includes(boardSlug.toLowerCase())) {
-          const name = boardSlug.replace(/-/g, ' ');
-          if (!boards.some(b => b.url === fullUrl)) {
-            boards.push({ name: name.substring(0, 50), url: fullUrl });
-          }
+    try {
+      const urlMatches = content.matchAll(/"url"\s*:\s*"\/?([^"\/]+)\/([a-zA-Z0-9\-_]+)\/?"/g);
+      for (const match of urlMatches) {
+        const [, user, boardSlug] = match;
+        if (user.toLowerCase() === username?.toLowerCase() && isValidBoardSlug(boardSlug)) {
+          addBoard(boardSlug, `/${user}/${boardSlug}/`);
         }
       }
-    });
-  }
+    } catch (e) {}
+  });
 
-  // Method 4: Parse the HTML for board patterns
-  if (boards.length === 0) {
-    const html = document.body.innerHTML;
-    const boardPattern = new RegExp(`/${username}/([a-zA-Z0-9\\-_]+)/`, 'gi');
-    const matches = html.matchAll(boardPattern);
-    for (const match of matches) {
-      const boardSlug = match[1];
-      const skipSlugs = ['_saved', '_created', '_pins', 'pin', 'settings', 'following', 'followers', 'ideas'];
-      if (!skipSlugs.includes(boardSlug.toLowerCase())) {
-        const url = `${baseUrl}/${username}/${boardSlug}/`;
-        if (!boards.some(b => b.url === url)) {
-          boards.push({ name: boardSlug.replace(/-/g, ' '), url });
-        }
-      }
-    }
-  }
+  console.log('[Pinterest Scraper] Total boards found:', boards.length);
 
   // Collect debug info
   const allLinks = document.querySelectorAll('a');
@@ -181,6 +643,8 @@ export function scrapePinterestBoards(): ScrapeBoardsResult {
     }
   });
 
+  console.log('[Pinterest] Board scrape complete. Found:', boards.length);
+
   return {
     boards,
     debug: {
@@ -189,8 +653,10 @@ export function scrapePinterestBoards(): ScrapeBoardsResult {
       totalLinks: allLinks.length,
       userLinks: userLinks.slice(0, 20),
       bodyLength: document.body.innerHTML.length,
-      foundInJson,
-      jsonBoards: jsonBoards.slice(0, 10)
+      foundInJson: jsonBoards.length > 0,
+      jsonBoards: jsonBoards.slice(0, 10),
+      apiBoardCount: apiBoards.length,
+      apiBoards: apiBoards.slice(0, 10)
     }
   };
 }
@@ -305,13 +771,14 @@ export async function processPin(
   // Store in database (skip image conversion for now - use original URL)
   const pinData: PinterestPin = {
     pinId: pin.pinId,
+    boardId: pin.boardId,
     boardName,
     boardUrl,
     title: pin.title,
     description: pin.description,
     pinUrl: pin.pinUrl,
     originalImageUrl: pin.imageUrl,
-    // imageBlob: undefined - skip for now, use originalImageUrl directly
+    imageBlob: pin.imageBlob,
     syncedAt: Date.now()
   };
 
@@ -347,7 +814,7 @@ async function ensureOffscreenDocument(): Promise<void> {
   }
 }
 
-async function convertImageToWebP(imageUrl: string): Promise<Blob | undefined> {
+export async function convertImageToWebP(imageUrl: string): Promise<Blob | undefined> {
   await ensureOffscreenDocument();
 
   try {
@@ -387,6 +854,9 @@ export async function updatePinterestIntegration(updates: Partial<{
   syncStatus: 'idle' | 'syncing' | 'error';
   syncProgress: number;
   totalPins: number;
+  boardTotal: number;
+  boardUpdated: number;
+  boardArchived: number;
 }>): Promise<void> {
   await db.integrations.where('name').equals('pinterest').modify(updates);
 }

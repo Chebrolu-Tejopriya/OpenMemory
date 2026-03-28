@@ -361,6 +361,49 @@
       color: #4ade80;
     }
 
+    .index-btn {
+      background: transparent;
+      border: 1px solid #333333;
+      border-radius: 4px;
+      color: #888888;
+      cursor: pointer;
+      padding: 4px 8px;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+
+    .retry-btn {
+      background: transparent;
+      border: 1px solid #333333;
+      border-radius: 4px;
+      color: #888888;
+      cursor: pointer;
+      padding: 4px 8px;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+
+    .retry-btn:hover {
+      border-color: #ffffff;
+      color: #ffffff;
+    }
+
+    .index-btn:hover {
+      border-color: #ffffff;
+      color: #ffffff;
+    }
+
+    .index-btn.indexing {
+      animation: pulse 1s infinite;
+      color: #4ade80;
+      border-color: #4ade80;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
     /* Integrations Section */
     .integrations-section {
       padding: 16px;
@@ -482,6 +525,22 @@
       cursor: not-allowed;
     }
 
+    .reset-btn {
+      background: transparent;
+      border: 1px solid #333333;
+      border-radius: 6px;
+      color: #666666;
+      cursor: pointer;
+      padding: 6px 12px;
+      font-size: 11px;
+      transition: all 0.2s;
+    }
+
+    .reset-btn:hover {
+      border-color: #E60023;
+      color: #E60023;
+    }
+
     /* Sync Progress */
     .sync-progress {
       margin-top: 12px;
@@ -510,6 +569,125 @@
       font-size: 11px;
       color: #888888;
       margin-top: 4px;
+    }
+
+    .sync-stats {
+      margin-top: 8px;
+      display: none;
+      font-size: 11px;
+      color: #888888;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .sync-stats.active {
+      display: flex;
+    }
+
+    .sync-stat {
+      padding: 4px 6px;
+      border: 1px solid #333333;
+      border-radius: 4px;
+      background: #111111;
+      color: #cccccc;
+    }
+
+    /* Board Selection */
+    .board-selection {
+      display: none;
+      padding: 12px;
+      border-top: 1px solid #333333;
+      background: #0a0a0a;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .board-selection.active {
+      display: block;
+    }
+
+    .board-selection-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .board-selection-header h4 {
+      font-size: 12px;
+      color: #ffffff;
+      margin: 0;
+    }
+
+    .board-selection-info {
+      font-size: 11px;
+      color: #888888;
+      margin-bottom: 8px;
+    }
+
+    .board-list {
+      max-height: 180px;
+      overflow-y: auto;
+      border: 1px solid #333333;
+      border-radius: 4px;
+      margin-bottom: 12px;
+    }
+
+    .board-item {
+      display: flex;
+      align-items: center;
+      padding: 8px;
+      border-bottom: 1px solid #222222;
+      font-size: 12px;
+      color: #cccccc;
+      cursor: pointer;
+    }
+
+    .board-item:last-child {
+      border-bottom: none;
+    }
+
+    .board-item:hover {
+      background: #1a1a1a;
+    }
+
+    .board-item input {
+      margin-right: 8px;
+    }
+
+    .board-selection-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .select-all-btn, .sync-selected-btn {
+      flex: 1;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .select-all-btn {
+      background: transparent;
+      border: 1px solid #333333;
+      color: #888888;
+    }
+
+    .select-all-btn:hover {
+      border-color: #ffffff;
+      color: #ffffff;
+    }
+
+    .sync-selected-btn {
+      background: #E60023;
+      border: 1px solid #E60023;
+      color: #ffffff;
+    }
+
+    .sync-selected-btn:hover {
+      background: #c4001f;
     }
 
     /* Pinterest Card Styling */
@@ -547,19 +725,138 @@
       opacity: 0.5;
     }
 
+    /* Supabase Settings */
+    .supabase-settings {
+      padding: 12px;
+      background: #111111;
+      border: 1px solid #333333;
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+
+    .settings-field {
+      margin-bottom: 12px;
+    }
+
+    .settings-field label {
+      display: block;
+      font-size: 11px;
+      color: #888888;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .settings-field input {
+      width: 100%;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-family: inherit;
+      background: #000000;
+      border: 1px solid #333333;
+      border-radius: 4px;
+      color: #ffffff;
+      outline: none;
+    }
+
+    .settings-field input:focus {
+      border-color: #3ECF8E;
+    }
+
+    .settings-field input::placeholder {
+      color: #555555;
+    }
+
+    .settings-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .settings-save-btn {
+      flex: 1;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-family: inherit;
+      background: #3ECF8E;
+      color: #000000;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    .settings-save-btn:hover {
+      background: #2eb67d;
+    }
+
+    .settings-cancel-btn {
+      padding: 8px 12px;
+      font-size: 12px;
+      font-family: inherit;
+      background: transparent;
+      color: #888888;
+      border: 1px solid #333333;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .settings-cancel-btn:hover {
+      border-color: #555555;
+      color: #ffffff;
+    }
+
+    /* Search Mode Toggle */
+    .search-mode-btn {
+      background: none;
+      border: 1px solid #333333;
+      border-radius: 4px;
+      padding: 4px 8px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: all 0.15s ease;
+      display: none;
+    }
+
+    .search-mode-btn.local-mode {
+      color: #888888;
+    }
+
+    .search-mode-btn.local-mode:hover {
+      border-color: #555555;
+      color: #ffffff;
+    }
+
+    .search-mode-btn.ai-mode {
+      color: #a78bfa;
+      border-color: #a78bfa;
+      background: rgba(167, 139, 250, 0.1);
+    }
+
+    .search-mode-btn.ai-mode:hover {
+      background: rgba(167, 139, 250, 0.2);
+    }
+
+    /* AI Search indicator */
+    .status.ai-search {
+      color: #a78bfa;
+    }
+
   </style>
 </head>
 <body>
   <header class="header">
     <nav class="nav">
       <div class="logo">OpenMemory</div>
-      <div style="display: flex; align-items: center; gap: 12px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <button class="search-mode-btn" id="search-mode-toggle" title="Toggle AI/Local search">📝 Local</button>
         <button class="integrations-toggle" id="integrations-toggle" title="Integrations">
           <svg viewBox="0 0 24 24" width="14" height="14">
             <path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
           </svg>
         </button>
         <span class="nav-link" id="item-count">Loading...</span>
+        <button class="index-btn" id="trigger-indexing" title="Start indexing">⚡</button>
+        <button class="retry-btn" id="retry-failed" title="Retry failed links">↻</button>
       </div>
     </nav>
     <div class="search-container">
@@ -574,13 +871,49 @@
         <div id="suggestions" class="suggestions"></div>
       </div>
     </div>
-  </header>
-
-  <!-- Integrations Section -->
-  <div class="integrations-section" id="integrations-section">
+    <!-- Integrations Section - Inside header so it appears below nav -->
+    <div class="integrations-section" id="integrations-section">
     <div class="integrations-header">
       <h3>Integrations</h3>
       <button class="close-btn" id="close-integrations">&times;</button>
+    </div>
+
+    <!-- Supabase Settings -->
+    <div class="integration-card" id="supabase-card" style="margin-bottom: 8px;">
+      <div class="integration-icon">
+        <svg viewBox="0 0 109 113" width="32" height="32">
+          <path fill="#3ECF8E" d="M63.7076 110.284C60.8481 113.885 55.0502 111.912 54.9813 107.314L53.9738 40.0627L99.1935 40.0627C107.384 40.0627 111.952 49.5228 106.859 55.9374L63.7076 110.284Z"/>
+          <path fill="#3ECF8E" fill-opacity="0.2" d="M63.7076 110.284C60.8481 113.885 55.0502 111.912 54.9813 107.314L53.9738 40.0627L99.1935 40.0627C107.384 40.0627 111.952 49.5228 106.859 55.9374L63.7076 110.284Z"/>
+          <path fill="#3ECF8E" d="M45.317 2.07103C48.1765 -1.53037 53.9745 0.442937 54.0434 5.041L54.4849 72.2922H9.83113C1.64038 72.2922 -2.9279 62.8321 2.1655 56.4175L45.317 2.07103Z"/>
+        </svg>
+      </div>
+      <div class="integration-info" style="flex: 1;">
+        <div class="integration-name">Supabase (AI Search)</div>
+        <div class="integration-status" id="supabase-status">Not configured</div>
+      </div>
+      <button class="connect-btn" id="supabase-toggle-settings">Configure</button>
+    </div>
+
+    <!-- Supabase Settings Form (hidden by default) -->
+    <div class="supabase-settings" id="supabase-settings" style="display: none;">
+      <div class="settings-field">
+        <label for="supabase-url">Project URL</label>
+        <input type="text" id="supabase-url" placeholder="https://xxx.supabase.co" />
+      </div>
+      <div class="settings-field">
+        <label for="supabase-key">Anon Key</label>
+        <input type="password" id="supabase-key" placeholder="eyJhbGciOiJIUzI1NiIs..." />
+      </div>
+      <div class="settings-actions">
+        <button class="settings-save-btn" id="supabase-save">Save</button>
+        <button class="settings-cancel-btn" id="supabase-cancel">Cancel</button>
+      </div>
+      <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #333;">
+        <button class="settings-save-btn" id="generate-embeddings" style="width: 100%; background: #a78bfa;">
+          🧠 Generate Embeddings (Local AI)
+        </button>
+        <div id="embedding-status" style="font-size: 11px; color: #888; margin-top: 8px;"></div>
+      </div>
     </div>
 
     <!-- Chrome Bookmarks -->
@@ -608,7 +941,15 @@
         <div class="integration-name">Pinterest</div>
         <div class="integration-status" id="pinterest-status">Not connected</div>
       </div>
-      <button class="connect-btn" id="pinterest-connect">Connect</button>
+      <div style="display: flex; gap: 8px;">
+        <button class="connect-btn" id="pinterest-connect">Connect</button>
+        <button class="reset-btn" id="pinterest-reset" title="Reset and sync from beginning">Reset</button>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px; color: #888888; font-size: 11px;">
+      <input type="checkbox" id="pinterest-deep-sync" style="accent-color: #E60023;">
+      <label for="pinterest-deep-sync">Deep Sync (full scroll)</label>
     </div>
 
     <!-- Sync Progress Bar -->
@@ -618,7 +959,28 @@
       </div>
       <div class="progress-text" id="pinterest-progress-text">Syncing pins...</div>
     </div>
+
+    <div class="sync-stats" id="pinterest-sync-stats">
+      <div class="sync-stat" id="pinterest-board-total">Boards: 0</div>
+      <div class="sync-stat" id="pinterest-board-updated">Updated: 0</div>
+      <div class="sync-stat" id="pinterest-board-archived">Archived: 0</div>
+    </div>
+
+    <!-- Board Selection Section -->
+    <div class="board-selection" id="board-selection">
+      <div class="board-selection-header">
+        <h4>Select Boards to Sync</h4>
+        <button class="close-btn" id="close-board-selection">&times;</button>
+      </div>
+      <div class="board-selection-info">Found <span id="board-count">0</span> boards</div>
+      <div class="board-list" id="board-list"></div>
+      <div class="board-selection-actions">
+        <button class="select-all-btn" id="select-all-boards">Select All</button>
+        <button class="sync-selected-btn" id="sync-selected-boards">Sync Selected</button>
+      </div>
+    </div>
   </div>
+  </header>
 
   <main class="container">
     <div id="active-filter" class="active-filter" style="display: none;">

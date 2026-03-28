@@ -28,6 +28,7 @@ export interface IndexingQueueItem {
 export interface PinterestPin {
   id?: number;
   pinId: string;           // Unique Pinterest ID
+  boardId?: string;        // Pinterest board id
   boardName: string;       // Board name for path display
   boardUrl: string;        // Board URL
   title: string;           // Pin title/alt-text
@@ -48,6 +49,29 @@ export interface Integration {
   syncStatus: 'idle' | 'syncing' | 'error';
   syncProgress?: number;   // 0-100
   totalPins?: number;
+  boardTotal?: number;
+  boardUpdated?: number;
+  boardArchived?: number;
+}
+
+// Pinterest sync checkpoint - tracks which boards have been synced
+export interface PinterestSyncCheckpoint {
+  id?: number;
+  username: string;       // Pinterest username
+  boardUrl: string;       // Board URL that was synced
+  boardName: string;      // Board name
+  pinCount: number;       // Number of pins synced from this board
+  syncedAt: number;       // When this board was completed
+}
+
+export interface PinterestBoard {
+  id?: number;
+  boardId: string;        // Pinterest board id
+  name: string;           // Board name
+  url: string;            // Board URL
+  pinCount: number;       // pin_count from Pinterest
+  archived: boolean;      // true if removed on Pinterest
+  updatedAt: number;      // last sync timestamp
 }
 
 class OpenMemoryDB extends Dexie {
@@ -55,6 +79,8 @@ class OpenMemoryDB extends Dexie {
   queue!: Table<IndexingQueueItem, number>;
   pins!: Table<PinterestPin, number>;
   integrations!: Table<Integration, number>;
+  pinterestCheckpoints!: Table<PinterestSyncCheckpoint, number>;
+  pinterestBoards!: Table<PinterestBoard, number>;
 
   constructor() {
     super('OpenMemoryDB');
@@ -70,6 +96,32 @@ class OpenMemoryDB extends Dexie {
       queue: '++id, url, priority',
       pins: '++id, &pinId, boardName, syncedAt',
       integrations: '++id, &name, connected'
+    });
+
+    this.version(3).stores({
+      bookmarks: '++id, &url, title, folder, contentType, indexStatus',
+      queue: '++id, url, priority',
+      pins: '++id, &pinId, boardName, syncedAt',
+      integrations: '++id, &name, connected',
+      pinterestCheckpoints: '++id, username, boardUrl'
+    });
+
+    this.version(4).stores({
+      bookmarks: '++id, &url, title, folder, contentType, indexStatus',
+      queue: '++id, url, priority',
+      pins: '++id, &pinId, boardName, syncedAt',
+      integrations: '++id, &name, connected',
+      pinterestCheckpoints: '++id, username, boardUrl',
+      pinterestBoards: '++id, &boardId, url, archived, updatedAt'
+    });
+
+    this.version(5).stores({
+      bookmarks: '++id, &url, title, folder, contentType, indexStatus',
+      queue: '++id, url, priority',
+      pins: '++id, &pinId, boardId, boardUrl, syncedAt',
+      integrations: '++id, &name, connected',
+      pinterestCheckpoints: '++id, username, boardUrl',
+      pinterestBoards: '++id, &boardId, url, archived, updatedAt'
     });
   }
 }
@@ -142,4 +194,21 @@ export async function getNextQueueBatch(limit: number = 5): Promise<IndexingQueu
     .reverse()
     .limit(limit)
     .toArray();
+}
+
+// Pinterest checkpoint helpers
+export async function getSyncedBoards(username: string): Promise<string[]> {
+  const checkpoints = await db.pinterestCheckpoints
+    .where('username')
+    .equals(username)
+    .toArray();
+  return checkpoints.map(c => c.boardUrl);
+}
+
+export async function addCheckpoint(checkpoint: Omit<PinterestSyncCheckpoint, 'id'>): Promise<void> {
+  await db.pinterestCheckpoints.add(checkpoint);
+}
+
+export async function clearCheckpoints(username: string): Promise<void> {
+  await db.pinterestCheckpoints.where('username').equals(username).delete();
 }
