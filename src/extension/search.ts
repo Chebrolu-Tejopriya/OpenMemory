@@ -135,6 +135,84 @@ async function searchSupabase(query: string, limit = 50, folder?: string): Promi
   return searchSupabaseVector(query, limit, folder);
 }
 
+// ============== HYBRID SEARCH ==============
+interface HybridResult {
+  url: string;
+  title: string;
+  folder: string | null;
+  keywordScore: number;  // Score from MiniSearch (0-1 normalized)
+  semanticScore: number; // Score from vector search (0-1)
+  combinedScore: number; // Weighted combination
+  source: 'chrome' | 'pinterest';
+  item?: SearchableItem;
+}
+
+async function hybridSearch(query: string, limit = 50, folder?: string): Promise<HybridResult[]> {
+  const resultMap = new Map<string, HybridResult>();
+
+  // Run local MiniSearch and Supabase search in parallel
+  const [localResults, supabaseResults] = await Promise.all([
+    Promise.resolve(search(query)), // Local MiniSearch
+    isSupabaseAvailable ? searchSupabase(query, limit, folder) : Promise.resolve([])
+  ]);
+
+  // Normalize MiniSearch scores (they can be > 1)
+  const maxLocalScore = Math.max(...localResults.map(r => r.score), 1);
+
+  // Add local results to map
+  for (const result of localResults) {
+    const url = result.item.source === 'chrome' ? result.item.url : result.item.pinUrl;
+    const normalizedScore = result.score / maxLocalScore;
+
+    resultMap.set(url, {
+      url,
+      title: result.item.title,
+      folder: result.item.source === 'chrome' ? result.item.folder || null : result.item.boardName || null,
+      keywordScore: normalizedScore,
+      semanticScore: 0,
+      combinedScore: normalizedScore * 0.6, // Keyword weight: 60%
+      source: result.item.source,
+      item: result.item
+    });
+  }
+
+  // Add/merge Supabase results
+  for (const result of supabaseResults) {
+    const existing = resultMap.get(result.url);
+    const semanticScore = result.similarity || 0;
+
+    if (existing) {
+      // Found in both - boost the score!
+      existing.semanticScore = semanticScore;
+      existing.combinedScore = (existing.keywordScore * 0.5) + (semanticScore * 0.5) + 0.2; // Bonus for appearing in both
+    } else {
+      // Only in semantic search
+      resultMap.set(result.url, {
+        url: result.url,
+        title: result.title,
+        folder: result.folder,
+        keywordScore: 0,
+        semanticScore: semanticScore,
+        combinedScore: semanticScore * 0.4, // Semantic weight: 40%
+        source: 'chrome',
+        item: undefined
+      });
+    }
+  }
+
+  // Sort by combined score and return top results
+  const sorted = Array.from(resultMap.values())
+    .sort((a, b) => b.combinedScore - a.combinedScore)
+    .slice(0, limit);
+
+  // Apply folder filter if set
+  if (folder) {
+    return sorted.filter(r => r.folder?.toLowerCase().startsWith(folder.toLowerCase()));
+  }
+
+  return sorted;
+}
+
 // ============== INTERFACES ==============
 type SearchableItem = (IndexedBookmark & { source: 'chrome' }) | (PinterestPin & { source: 'pinterest' });
 
@@ -183,8 +261,6 @@ const pinterestBoardArchived = document.getElementById('pinterest-board-archived
 const pinterestDeepSync = document.getElementById('pinterest-deep-sync') as HTMLInputElement;
 const bookmarksStatus = document.getElementById('bookmarks-status') as HTMLDivElement;
 const bookmarksSync = document.getElementById('bookmarks-sync') as HTMLButtonElement;
-const triggerIndexingBtn = document.getElementById('trigger-indexing') as HTMLButtonElement;
-const retryFailedBtn = document.getElementById('retry-failed') as HTMLButtonElement;
 
 // Board selection elements
 const boardSelection = document.getElementById('board-selection') as HTMLDivElement;
@@ -212,8 +288,7 @@ let currentFolder: string | null = null;
 let selectedSuggestionIndex = -1;
 const ITEMS_PER_PAGE = 20;
 
-// Search mode: 'local' (MiniSearch) or 'ai' (Supabase semantic)
-let searchMode: 'local' | 'ai' = 'local';
+// Supabase availability flag
 let isSupabaseAvailable = false;
 
 // Object URL cache for Pinterest images
@@ -282,41 +357,11 @@ async function initializeSearch(): Promise<void> {
 
     console.log(`[OpenMemory] Loaded ${bookmarksCount} bookmarks, ${pinsCount} pins`);
 
-    // Auto-trigger indexing if items exist but not indexed
+    // Auto-trigger indexing silently in background
     const queueCount = await db.queue.count();
     if (queueCount > 0) {
-      console.log(`[OpenMemory] Starting auto-indexing for ${queueCount} items...`);
-      triggerIndexingBtn.classList.add('indexing');
-      await chrome.runtime.sendMessage({ type: 'TRIGGER_INDEXING' });
-      
-      // Poll for completion
-      const pollInterval = setInterval(async () => {
-        try {
-          const status = await chrome.runtime.sendMessage({ type: 'GET_INDEXING_STATUS' });
-          if (status) {
-            const percent = Math.round((status.indexed / status.total) * 100);
-            if (pinsCount > 0 && bookmarksCount > 0) {
-              itemCountEl.textContent = `${bookmarksCount} 📚 ${pinsCount} 📌 (${percent}%)`;
-            } else if (pinsCount > 0) {
-              itemCountEl.textContent = `${pinsCount} pins (${percent}%)`;
-            } else {
-              itemCountEl.textContent = `${bookmarksCount} items (${percent}%)`;
-            }
-            
-            if (percent >= 100) {
-              clearInterval(pollInterval);
-              triggerIndexingBtn.classList.remove('indexing');
-            }
-          }
-        } catch (e) {
-          clearInterval(pollInterval);
-        }
-      }, 3000);
-      
-      setTimeout(() => {
-        clearInterval(pollInterval);
-        triggerIndexingBtn.classList.remove('indexing');
-      }, 120000);
+      console.log(`[OpenMemory] Auto-indexing ${queueCount} items in background...`);
+      chrome.runtime.sendMessage({ type: 'TRIGGER_INDEXING' });
     }
   } catch (err) {
     console.error('[OpenMemory] Failed to load data:', err);
@@ -370,17 +415,7 @@ function initializeMiniSearch(): void {
 }
 
 async function updateIndexingStatus(): Promise<void> {
-  try {
-    const response = await chrome.runtime.sendMessage({ type: 'GET_INDEXING_STATUS' });
-    if (response && response.indexed > 0) {
-      const percent = Math.round((response.indexed / response.total) * 100);
-      if (percent < 100) {
-        itemCountEl.textContent = `${allItems.length} items (${percent}% indexed)`;
-      }
-    }
-  } catch (err) {
-    // Background might not be ready, ignore
-  }
+  // Indexing happens automatically in background - no need to show progress
 }
 
 // ============== SEARCH FUNCTION ==============
@@ -725,29 +760,10 @@ function clearFilter(): void {
 
 // ============== SEARCH MODE UI ==============
 function updateSearchModeUI(): void {
+  // Hide the toggle button - we use unified smart search now
   const toggleBtn = document.getElementById('search-mode-toggle');
   if (toggleBtn) {
-    if (isSupabaseAvailable) {
-      toggleBtn.style.display = 'inline-flex';
-      toggleBtn.textContent = searchMode === 'ai' ? '🧠 AI' : '📝 Local';
-      toggleBtn.title = searchMode === 'ai'
-        ? 'AI Semantic Search (click for Local)'
-        : 'Local Keyword Search (click for AI)';
-      toggleBtn.className = searchMode === 'ai' ? 'search-mode-btn ai-mode' : 'search-mode-btn local-mode';
-    } else {
-      toggleBtn.style.display = 'none';
-    }
-  }
-}
-
-function toggleSearchMode(): void {
-  if (!isSupabaseAvailable) return;
-  searchMode = searchMode === 'local' ? 'ai' : 'local';
-  updateSearchModeUI();
-
-  // Re-run search if there's a query
-  if (searchInput.value.trim()) {
-    performSearch();
+    toggleBtn.style.display = 'none';
   }
 }
 
@@ -769,38 +785,40 @@ async function performSearch(): Promise<void> {
 
   const filterInfo = currentFolder ? ` in ${currentFolder}` : '';
 
-  if (searchMode === 'ai' && isSupabaseAvailable) {
-    // AI Semantic Search via Supabase
-    statusEl.textContent = `🧠 Searching with AI...`;
+  try {
+    if (isSupabaseAvailable) {
+      // Smart Search: Keywords + AI combined (like Google)
+      statusEl.textContent = `Searching...`;
 
-    try {
-      const supabaseResults = await searchSupabase(query, 50, currentFolder || undefined);
+      const hybridResults = await hybridSearch(query, 50, currentFolder || undefined);
 
-      // Convert Supabase results to SearchResult format
-      currentResults = supabaseResults.map(r => ({
-        item: {
+      // Convert hybrid results to SearchResult format
+      currentResults = hybridResults.map(r => ({
+        item: r.item || {
           id: undefined,
           url: r.url,
           title: r.title,
           folder: r.folder,
           indexStatus: 'indexed' as const,
-          source: 'chrome' as const
+          source: r.source
         } as SearchableItem,
-        score: r.similarity,
-        matchField: 'title' as const,
+        score: r.combinedScore,
+        matchField: r.keywordScore > 0 ? 'title' as const : 'extendedContent' as const,
         snippet: undefined
       }));
 
-      statusEl.textContent = `🧠 ${currentResults.length} results (AI Search)${filterInfo}`;
-    } catch (error) {
-      console.error('[OpenMemory] AI search failed:', error);
-      statusEl.textContent = 'AI search failed, try Local mode';
-      currentResults = [];
+      statusEl.textContent = `${currentResults.length} results found${filterInfo}`;
+
+    } else {
+      // Local MiniSearch only (Supabase not configured)
+      currentResults = search(query);
+      statusEl.textContent = `${currentResults.length} results found${filterInfo}`;
     }
-  } else {
-    // Local MiniSearch
+  } catch (error) {
+    console.error('[OpenMemory] Search failed:', error);
+    // Fallback to local search on error
     currentResults = search(query);
-    statusEl.textContent = `📝 ${currentResults.length} inspirations found${filterInfo}`;
+    statusEl.textContent = `${currentResults.length} results found${filterInfo}`;
   }
 
   displayedCount = 0;
@@ -823,12 +841,6 @@ function showMore(): void {
 
 // ============== EVENT LISTENERS ==============
 removeFilterBtn.addEventListener('click', clearFilter);
-
-// Search mode toggle
-const searchModeToggle = document.getElementById('search-mode-toggle');
-if (searchModeToggle) {
-  searchModeToggle.addEventListener('click', toggleSearchMode);
-}
 
 suggestionsEl.addEventListener('click', (e) => {
   const target = e.target as HTMLElement;
@@ -1258,69 +1270,6 @@ pinterestReset.addEventListener('click', async () => {
 updatePinterestUI();
 
 // ============== INDEXING TRIGGER ==============
-triggerIndexingBtn.addEventListener('click', async () => {
-  triggerIndexingBtn.classList.add('indexing');
-  triggerIndexingBtn.textContent = '⚡';
-  
-  try {
-    itemCountEl.textContent = `${allItems.length} items (Indexing...)`;
-    
-    await chrome.runtime.sendMessage({ type: 'TRIGGER_INDEXING' });
-    
-    // Poll for indexing status updates
-    const pollInterval = setInterval(async () => {
-      try {
-        const status = await chrome.runtime.sendMessage({ type: 'GET_INDEXING_STATUS' });
-        if (status && status.indexed > 0) {
-          const percent = Math.round((status.indexed / status.total) * 100);
-          itemCountEl.textContent = `${allItems.length} items (${percent}% indexed)`;
-          
-          if (percent >= 100) {
-            clearInterval(pollInterval);
-            triggerIndexingBtn.classList.remove('indexing');
-            triggerIndexingBtn.textContent = '⚡';
-          }
-        }
-      } catch (e) {
-        clearInterval(pollInterval);
-      }
-    }, 2000);
-    
-    // Stop polling after 2 minutes
-    setTimeout(() => {
-      clearInterval(pollInterval);
-      triggerIndexingBtn.classList.remove('indexing');
-      triggerIndexingBtn.textContent = '⚡';
-    }, 120000);
-    
-  } catch (err) {
-    console.error('[OpenMemory] Indexing trigger failed:', err);
-    triggerIndexingBtn.classList.remove('indexing');
-    triggerIndexingBtn.textContent = '⚡';
-  }
-});
-
-retryFailedBtn.addEventListener('click', async () => {
-  retryFailedBtn.textContent = '↻...';
-  retryFailedBtn.disabled = true;
-
-  try {
-    const result = await chrome.runtime.sendMessage({ type: 'RETRY_FAILED_INDEXING' });
-    if (result?.success) {
-      const count = result.count || 0;
-      bookmarksStatus.textContent = count > 0
-        ? `Retrying ${count} failed links...`
-        : 'No failed links to retry';
-    } else {
-      bookmarksStatus.textContent = 'Retry failed';
-    }
-  } catch (err) {
-    bookmarksStatus.textContent = 'Retry failed';
-  }
-
-  retryFailedBtn.textContent = '↻';
-  retryFailedBtn.disabled = false;
-});
 
 // ============== BOOKMARKS UI ==============
 bookmarksSync.addEventListener('click', async () => {
@@ -1349,20 +1298,8 @@ bookmarksSync.addEventListener('click', async () => {
 });
 
 async function updateBookmarksUI(): Promise<void> {
-  try {
-    const bookmarkCount = allItems.filter(i => i.source === 'chrome').length;
-    const response = await chrome.runtime.sendMessage({ type: 'GET_INDEXING_STATUS' });
-
-    if (response) {
-      const percent = response.total > 0 ? Math.round((response.indexed / response.total) * 100) : 0;
-      bookmarksStatus.textContent = `${response.total} bookmarks (${percent}% indexed)`;
-    } else {
-      bookmarksStatus.textContent = `${bookmarkCount} bookmarks`;
-    }
-  } catch {
-    const bookmarkCount = allItems.filter(i => i.source === 'chrome').length;
-    bookmarksStatus.textContent = `${bookmarkCount} bookmarks`;
-  }
+  const bookmarkCount = allItems.filter(i => i.source === 'chrome').length;
+  bookmarksStatus.textContent = `${bookmarkCount} bookmarks`;
 }
 
 // Update bookmarks UI on load
@@ -1440,34 +1377,6 @@ supabaseSaveBtn?.addEventListener('click', async () => {
   alert('Supabase configured! AI Search is now available.');
 });
 
-// Generate Embeddings button
-const generateEmbeddingsBtn = document.getElementById('generate-embeddings');
-const embeddingStatus = document.getElementById('embedding-status');
-
-generateEmbeddingsBtn?.addEventListener('click', async () => {
-  generateEmbeddingsBtn.textContent = '🧠 Loading model...';
-  generateEmbeddingsBtn.setAttribute('disabled', 'true');
-  embeddingStatus!.textContent = 'Initializing local AI model (first time may take 30-60 seconds)...';
-
-  try {
-    const result = await chrome.runtime.sendMessage({ type: 'GENERATE_EMBEDDINGS_FOR_BOOKMARKS' });
-
-    if (result) {
-      embeddingStatus!.textContent = `✅ Done! ${result.success} embeddings generated, ${result.failed} failed`;
-      embeddingStatus!.style.color = '#4ade80';
-    } else {
-      embeddingStatus!.textContent = '❌ Failed to generate embeddings';
-      embeddingStatus!.style.color = '#f87171';
-    }
-  } catch (error) {
-    console.error('Embedding generation error:', error);
-    embeddingStatus!.textContent = '❌ Error: ' + (error as Error).message;
-    embeddingStatus!.style.color = '#f87171';
-  }
-
-  generateEmbeddingsBtn.textContent = '🧠 Generate Embeddings (Local AI)';
-  generateEmbeddingsBtn.removeAttribute('disabled');
-});
 
 // ============== INITIALIZE ==============
 initializeSearch();

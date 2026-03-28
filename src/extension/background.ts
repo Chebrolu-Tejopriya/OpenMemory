@@ -25,12 +25,12 @@ import {
 } from './supabase';
 
 // ============== CONSTANTS ==============
-const BATCH_SIZE = 5;
-const IDLE_THRESHOLD = 60; // seconds
-const FETCH_TIMEOUT = 10000; // 10 seconds
+const BATCH_SIZE = 20; // Process more items at once
+const IDLE_THRESHOLD = 30; // seconds - start sooner
+const FETCH_TIMEOUT = 8000; // 8 seconds
 const MAX_CONTENT_LENGTH = 500;
 const ALARM_NAME = 'checkIndexing';
-const ALARM_PERIOD_MINUTES = 5;
+const ALARM_PERIOD_MINUTES = 2; // Check more frequently
 
 // Pinterest sync constants
 const PINTEREST_ALARM = 'pinterestSync';

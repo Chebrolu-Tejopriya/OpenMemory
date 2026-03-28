@@ -836,6 +836,16 @@
       background: rgba(167, 139, 250, 0.2);
     }
 
+    .search-mode-btn.hybrid-mode {
+      color: #4ade80;
+      border-color: #4ade80;
+      background: rgba(74, 222, 128, 0.1);
+    }
+
+    .search-mode-btn.hybrid-mode:hover {
+      background: rgba(74, 222, 128, 0.2);
+    }
+
     /* AI Search indicator */
     .status.ai-search {
       color: #a78bfa;
@@ -848,15 +858,12 @@
     <nav class="nav">
       <div class="logo">OpenMemory</div>
       <div style="display: flex; align-items: center; gap: 8px;">
-        <button class="search-mode-btn" id="search-mode-toggle" title="Toggle AI/Local search">📝 Local</button>
-        <button class="integrations-toggle" id="integrations-toggle" title="Integrations">
+                <button class="integrations-toggle" id="integrations-toggle" title="Integrations">
           <svg viewBox="0 0 24 24" width="14" height="14">
-            <path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+            <path fill="currentColor" d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7 1.49 0 2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"/>
           </svg>
         </button>
         <span class="nav-link" id="item-count">Loading...</span>
-        <button class="index-btn" id="trigger-indexing" title="Start indexing">⚡</button>
-        <button class="retry-btn" id="retry-failed" title="Retry failed links">↻</button>
       </div>
     </nav>
     <div class="search-container">
@@ -907,12 +914,6 @@
       <div class="settings-actions">
         <button class="settings-save-btn" id="supabase-save">Save</button>
         <button class="settings-cancel-btn" id="supabase-cancel">Cancel</button>
-      </div>
-      <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #333;">
-        <button class="settings-save-btn" id="generate-embeddings" style="width: 100%; background: #a78bfa;">
-          🧠 Generate Embeddings (Local AI)
-        </button>
-        <div id="embedding-status" style="font-size: 11px; color: #888; margin-top: 8px;"></div>
       </div>
     </div>
 
