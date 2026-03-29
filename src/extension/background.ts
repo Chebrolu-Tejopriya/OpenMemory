@@ -24,6 +24,7 @@ import {
   setSupabaseConfig,
   getSyncStatus,
   updateSyncStatus,
+  getPinterestBoards,
   resyncPinterestBoard,
   bulkInsertPinterestPins,
   PinterestPinInsert
@@ -1562,6 +1563,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           totalPins
         );
 
+        try {
+          fetch('http://localhost:3000/run-embeddings', { method: 'POST' }).catch(error => {
+            console.log('[Pinterest Import] Embedding trigger failed:', error);
+          });
+        } catch (error) {
+          console.log('[Pinterest Import] Embedding trigger failed:', error);
+        }
+
         sendResponse({
           success: true,
           pinsExtracted: result.pins.length,
@@ -1627,6 +1636,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const boardUrl = result.boardInfo?.url || tab.url;
 
         const uploadResult = await uploadPinsToSupabase(result.pins, boardName, boardUrl);
+
+        try {
+          fetch('http://localhost:3000/run-embeddings', { method: 'POST' }).catch(error => {
+            console.log('[Pinterest Import] Embedding trigger failed:', error);
+          });
+        } catch (error) {
+          console.log('[Pinterest Import] Embedding trigger failed:', error);
+        }
 
         sendResponse({
           success: true,
@@ -1805,7 +1822,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'GET_PINTEREST_BOARDS_SUPABASE') {
-    sendResponse({ success: false, error: 'Boards now tracked in backend' });
+    (async () => {
+      try {
+        if (!(await isSupabaseConfigured())) {
+          sendResponse({ success: false, error: 'Supabase not configured' });
+          return;
+        }
+
+        const boards = await getPinterestBoards();
+        sendResponse({ success: true, boards });
+      } catch (error) {
+        sendResponse({ success: false, error: (error as Error).message });
+      }
+    })();
     return true;
   }
 
@@ -1893,6 +1922,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             .filter(pin => isValidSupabasePinPayload(pin));
 
           const result = await resyncPinterestBoard(boardUrl, payloads, boardName, totalPins ?? null);
+          try {
+            fetch('http://localhost:3000/run-embeddings', { method: 'POST' }).catch(error => {
+              console.log('[Pinterest Resync] Embedding trigger failed:', error);
+            });
+          } catch (error) {
+            console.log('[Pinterest Resync] Embedding trigger failed:', error);
+          }
           sendResponse({ success: true, ...result });
         } finally {
           chrome.tabs.remove(tabId).catch(() => undefined);
@@ -1903,6 +1939,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true;
   }
+
 
   if (message.type === 'SYNC_ALL_TO_SUPABASE') {
     (async () => {

@@ -1409,7 +1409,7 @@ async function updatePinterestBoardsUI(): Promise<void> {
       pinterestBoardsList.innerHTML = '';
       pinterestBoardsMessage.textContent = response?.error
         ? response.error
-        : 'Pinterest boards are not available yet.';
+        : 'No boards imported yet';
       pinterestBoardsMessage.style.color = '#fbbf24';
       pinterestBoardsMessage.style.display = 'block';
       return;
@@ -1419,7 +1419,7 @@ async function updatePinterestBoardsUI(): Promise<void> {
     if (boards.length === 0) {
       pinterestBoardsSection.style.display = 'block';
       pinterestBoardsList.innerHTML = '';
-      pinterestBoardsMessage.textContent = 'No imported boards yet. Import a board to see it here.';
+      pinterestBoardsMessage.textContent = 'No boards imported yet';
       pinterestBoardsMessage.style.color = '#fbbf24';
       pinterestBoardsMessage.style.display = 'block';
       return;
@@ -1430,7 +1430,7 @@ async function updatePinterestBoardsUI(): Promise<void> {
     pinterestBoardsMessage.style.color = '#4ade80';
     pinterestBoardsList.innerHTML = boards.map((board) => {
       const lastSynced = board.last_synced_at
-        ? new Date(board.last_synced_at).toLocaleString()
+        ? formatRelativeTime(board.last_synced_at)
         : 'Never';
       const totalPins = typeof board.total_pins === 'number' ? board.total_pins : '-';
       const importedPins = typeof board.imported_pins === 'number' ? board.imported_pins : 0;
@@ -1441,7 +1441,8 @@ async function updatePinterestBoardsUI(): Promise<void> {
         <div class="board-row" data-board-url="${encodedBoardUrl}">
           <div class="board-meta">
             <div class="board-name" title="${escapeHtml(board.board_name || 'Untitled')}">${escapeHtml(board.board_name || 'Untitled')}</div>
-            <div class="board-stats">Total: ${totalPins} • Imported: ${importedPins}</div>
+            <div class="board-stats">Total: ${totalPins}</div>
+            <div class="board-stats">Imported: ${importedPins}</div>
             <div class="board-sync">Last synced: ${escapeHtml(lastSynced)}</div>
           </div>
           <div class="board-action">
@@ -1453,10 +1454,25 @@ async function updatePinterestBoardsUI(): Promise<void> {
   } catch (error) {
     pinterestBoardsSection.style.display = 'block';
     pinterestBoardsList.innerHTML = '';
-    pinterestBoardsMessage.textContent = 'Failed to load boards. Make sure pinterest_boards exists in Supabase.';
+    pinterestBoardsMessage.textContent = 'Failed to load boards';
     pinterestBoardsMessage.style.color = '#fbbf24';
     pinterestBoardsMessage.style.display = 'block';
   }
+}
+
+function formatRelativeTime(timestamp: string): string {
+  const now = Date.now();
+  const then = new Date(timestamp).getTime();
+  const diffMs = Math.max(0, now - then);
+  const seconds = Math.floor(diffMs / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (seconds < 60) return 'just now';
+  if (minutes < 60) return `${minutes} min${minutes === 1 ? '' : 's'} ago`;
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  return `${days} day${days === 1 ? '' : 's'} ago`;
 }
 
 pinterestBoardsList?.addEventListener('click', async (event) => {
@@ -1499,6 +1515,8 @@ pinterestBoardsList?.addEventListener('click', async (event) => {
     button.textContent = 'Resync';
   }
 });
+
+// ============== PINTEREST EMBEDDINGS BACKFILL ==============
 
 // ============== PINTEREST RESYNC CURRENT BOARD ==============
 pinterestResyncBtn?.addEventListener('click', async () => {

@@ -734,13 +734,14 @@ export async function bulkInsertPinterestPins(
     const batch = pins.slice(i, i + BATCH_SIZE);
     const { error, data } = await client
       .from('pinterest_pins')
-      .insert(batch);
+      .insert(batch)
+      .select('id');
 
     if (error) {
       failed += batch.length;
       batch.forEach(pin => console.log({ pin_url: pin.pin_url, error: error.message }));
     } else {
-      success += data?.length ?? batch.length;
+      success += data ? data.length : batch.length;
     }
   }
 
@@ -773,6 +774,19 @@ export async function resyncPinterestBoard(
   });
 
   return { added, total };
+}
+
+export async function getPinterestNullEmbeddingCount(): Promise<number> {
+  const client = await getSupabaseClient();
+  if (!client) return 0;
+
+  const { count, error } = await client
+    .from('pinterest_pins')
+    .select('id', { count: 'exact', head: true })
+    .is('embedding', null);
+
+  if (error) return 0;
+  return count ?? 0;
 }
 
 /**
