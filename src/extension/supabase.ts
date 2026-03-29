@@ -3,6 +3,8 @@
  * Handles incremental bookmark sync with Supabase backend
  */
 
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+
 // Supabase configuration - set these in chrome.storage.local
 interface SupabaseConfig {
   url: string;
@@ -30,6 +32,8 @@ interface SupabaseBookmark {
 // ============== CONFIGURATION ==============
 
 let cachedConfig: SupabaseConfig | null = null;
+let cachedClient: SupabaseClient | null = null;
+let cachedClientKey: string | null = null;
 
 async function getSupabaseConfig(): Promise<SupabaseConfig | null> {
   if (cachedConfig) return cachedConfig;
@@ -45,6 +49,25 @@ async function getSupabaseConfig(): Promise<SupabaseConfig | null> {
   }
 
   return null;
+}
+
+async function getSupabaseClient(): Promise<SupabaseClient | null> {
+  const config = await getSupabaseConfig();
+  if (!config) return null;
+
+  const cacheKey = `${config.url}|${config.anonKey}`;
+  if (cachedClient && cachedClientKey === cacheKey) {
+    return cachedClient;
+  }
+
+  cachedClient = createClient(config.url, config.anonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false
+    }
+  });
+  cachedClientKey = cacheKey;
+  return cachedClient;
 }
 
 export async function setSupabaseConfig(url: string, anonKey: string): Promise<void> {
@@ -454,7 +477,7 @@ export function updateSyncStatus(updates: Partial<SyncStatus>): void {
 
 // ============== PINTEREST PIN SYNC OPERATIONS ==============
 
-interface PinterestPinPayload {
+export interface PinterestPinPayload {
   pin_id: string;
   board_name: string;
   board_url?: string;
@@ -462,6 +485,27 @@ interface PinterestPinPayload {
   description?: string;
   pin_url: string;
   image_url?: string;
+  image?: string;
+}
+
+export interface PinterestBoardRow {
+  id?: string;
+  board_name: string | null;
+  board_url: string;
+  total_pins: number | null;
+  imported_pins: number | null;
+  last_synced_at: string | null;
+}
+
+export interface PinterestPinInsert {
+  pin_id: string;
+  pin_url: string;
+  image_url: string;
+  title: string;
+  description: string | null;
+  board_name: string;
+  board_url: string;
+  created_at: string;
 }
 
 interface SupabasePinterestPin {
@@ -473,13 +517,48 @@ interface SupabasePinterestPin {
   description: string | null;
   pin_url: string;
   image_url: string | null;
+  image: string | null;
   embedding: number[] | null;
   similarity?: number;
   synced_at: string;
 }
 
+function chunkArray<T>(items: T[], chunkSize: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    chunks.push(items.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
+async function getSupabaseCount(endpoint: string): Promise<number> {
+  const config = await getSupabaseConfig();
+  if (!config) return 0;
+
+  try {
+    const response = await fetch(`${config.url}/rest/v1/${endpoint}`, {
+      headers: {
+        'apikey': config.anonKey,
+        'Authorization': `Bearer ${config.anonKey}`,
+        'Prefer': 'count=exact'
+      }
+    });
+
+    if (!response.ok) return 0;
+
+    const countHeader = response.headers.get('content-range');
+    if (countHeader) {
+      const match = countHeader.match(/\/(\d+)/);
+      if (match) return parseInt(match[1], 10);
+    }
+    return 0;
+  } catch {
+    return 0;
+  }
+}
+
 /**
- * UPSERT a Pinterest pin to Supabase using pin_id as unique key
+ * UPSERT a Pinterest pin to Supabase using pin_url as unique key
  */
 export async function upsertPinterestPin(
   pin: PinterestPinPayload,
@@ -494,20 +573,24 @@ export async function upsertPinterestPin(
   try {
     // Check if pin exists and if title changed
     const { data: existing } = await supabaseRequest<SupabasePinterestPin[]>(
-      `pinterest_pins?pin_id=eq.${encodeURIComponent(pin.pin_id)}&select=id,title,embedding`
+      `pinterest_pins?pin_url=eq.${encodeURIComponent(pin.pin_url)}&select=id,title,embedding`
     );
 
     const existingPin = existing?.[0];
     const titleChanged = existingPin && existingPin.title !== pin.title;
     const needsEmbedding = forceEmbedding || !existingPin || titleChanged || !existingPin.embedding;
 
-    // Generate embedding if needed
+    // Generate embedding if needed (non-blocking)
     let embedding: number[] | null = null;
     if (needsEmbedding) {
       const textForEmbedding = `${pin.title || ''} ${pin.description || ''} ${pin.board_name}`.trim();
       if (textForEmbedding.length > 0) {
-        embedding = await generateEmbedding(textForEmbedding);
-        console.log('[Supabase] Generated embedding for pin:', pin.pin_id);
+        try {
+          embedding = await generateEmbedding(textForEmbedding);
+        } catch {
+          embedding = null;
+        }
+        console.log('Embedding success:', !!embedding);
       }
     }
 
@@ -520,6 +603,7 @@ export async function upsertPinterestPin(
       description: pin.description || null,
       pin_url: pin.pin_url,
       image_url: pin.image_url || null,
+      image: pin.image || null,
       synced_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -529,19 +613,55 @@ export async function upsertPinterestPin(
     }
 
     // UPSERT using Supabase's on_conflict
+    const requestPayload = { ...payload, embedding: embedding || null };
+
     const { error } = await supabaseRequest<SupabasePinterestPin[]>(
-      'pinterest_pins?on_conflict=pin_id',
+      'pinterest_pins?on_conflict=pin_url',
       {
         method: 'POST',
         headers: {
           'Prefer': 'resolution=merge-duplicates,return=representation'
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(requestPayload)
       }
     );
 
     if (error) {
+      console.log({ pin_url: pin.pin_url, error });
       return { success: false, error };
+    }
+
+    return { success: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.log({ pin_url: pin.pin_url, error: message });
+    return { success: false, error: message };
+  }
+}
+
+// ============== PINTEREST BOARD TRACKING ==============
+
+export async function upsertPinterestBoard(
+  board: Omit<PinterestBoardRow, 'id'>
+): Promise<{ success: boolean; error?: string }> {
+  const client = await getSupabaseClient();
+  if (!client) {
+    return { success: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const { error } = await client
+      .from('pinterest_boards')
+      .upsert({
+        board_name: board.board_name,
+        board_url: board.board_url,
+        total_pins: board.total_pins,
+        imported_pins: board.imported_pins,
+        last_synced_at: board.last_synced_at
+      }, { onConflict: 'board_url' });
+
+    if (error) {
+      return { success: false, error: error.message };
     }
 
     return { success: true };
@@ -549,6 +669,110 @@ export async function upsertPinterestPin(
     const message = err instanceof Error ? err.message : 'Unknown error';
     return { success: false, error: message };
   }
+}
+
+export async function getPinterestBoards(): Promise<PinterestBoardRow[]> {
+  const client = await getSupabaseClient();
+  if (!client) return [];
+
+  const { data, error } = await client
+    .from('pinterest_boards')
+    .select('board_name,board_url,total_pins,imported_pins,last_synced_at')
+    .order('last_synced_at', { ascending: false, nullsFirst: false });
+
+  if (error || !data) return [];
+  return data as PinterestBoardRow[];
+}
+
+export async function getPinterestPinsCountByBoard(boardUrl: string): Promise<number> {
+  const client = await getSupabaseClient();
+  if (!client) return 0;
+
+  const { count, error } = await client
+    .from('pinterest_pins')
+    .select('pin_url', { count: 'exact', head: true })
+    .eq('board_url', boardUrl);
+
+  if (error) return 0;
+  return count ?? 0;
+}
+
+export async function getExistingPinterestPinUrls(pinUrls: string[]): Promise<Set<string>> {
+  if (pinUrls.length === 0) return new Set();
+  const client = await getSupabaseClient();
+  if (!client) return new Set();
+
+  const existing = new Set<string>();
+  const chunks = chunkArray(pinUrls, 50);
+
+  for (const chunk of chunks) {
+    const { data, error } = await client
+      .from('pinterest_pins')
+      .select('pin_url')
+      .in('pin_url', chunk);
+
+    if (!error && data) {
+      data.forEach((row: { pin_url: string }) => existing.add(row.pin_url));
+    }
+  }
+
+  return existing;
+}
+
+export async function bulkInsertPinterestPins(
+  pins: PinterestPinInsert[]
+): Promise<{ success: number; failed: number }>
+{
+  const client = await getSupabaseClient();
+  if (!client) return { success: 0, failed: pins.length };
+
+  const BATCH_SIZE = 50;
+  let success = 0;
+  let failed = 0;
+
+  for (let i = 0; i < pins.length; i += BATCH_SIZE) {
+    const batch = pins.slice(i, i + BATCH_SIZE);
+    const { error, data } = await client
+      .from('pinterest_pins')
+      .insert(batch);
+
+    if (error) {
+      failed += batch.length;
+      batch.forEach(pin => console.log({ pin_url: pin.pin_url, error: error.message }));
+    } else {
+      success += data?.length ?? batch.length;
+    }
+  }
+
+  return { success, failed };
+}
+
+export async function resyncPinterestBoard(
+  boardUrl: string,
+  pins: PinterestPinInsert[],
+  boardName?: string,
+  totalPins?: number | null
+): Promise<{ added: number; total: number }>
+{
+  const existingUrls = await getExistingPinterestPinUrls(pins.map(pin => pin.pin_url));
+  const newPins = pins.filter(pin => !existingUrls.has(pin.pin_url));
+
+  let added = 0;
+  if (newPins.length > 0) {
+    const result = await bulkInsertPinterestPins(newPins);
+    added = result.success;
+  }
+
+  const total = await getPinterestPinsCountByBoard(boardUrl);
+  await upsertPinterestBoard({
+    board_name: boardName || null,
+    board_url: boardUrl,
+    total_pins: totalPins ?? null,
+    imported_pins: total,
+    last_synced_at: new Date().toISOString()
+  });
+
+  return { added, total };
 }
 
 /**

@@ -25,6 +25,26 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_items_source ON items(source);
   CREATE INDEX IF NOT EXISTS idx_items_url ON items(url);
   CREATE INDEX IF NOT EXISTS idx_items_intent ON items(intent);
+
+  CREATE TABLE IF NOT EXISTS pinterest_pins (
+    id TEXT PRIMARY KEY,
+    pin_url TEXT NOT NULL UNIQUE,
+    image TEXT,
+    title TEXT,
+    board_url TEXT,
+    created_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS pinterest_boards (
+    id TEXT PRIMARY KEY,
+    board_name TEXT,
+    board_url TEXT NOT NULL UNIQUE,
+    total_pins INTEGER,
+    imported_pins INTEGER,
+    last_synced_at TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_pinterest_pins_board_url ON pinterest_pins(board_url);
 `);
 
 export interface InsertItem {
@@ -37,6 +57,51 @@ export interface InsertItem {
   embedding: number[];
   created_at: string;
 }
+
+export interface PinterestPinRow {
+  id: string;
+  pin_url: string;
+  image: string | null;
+  title: string | null;
+  board_url: string | null;
+  created_at: string | null;
+}
+
+export interface PinterestBoardRow {
+  id: string;
+  board_name: string | null;
+  board_url: string;
+  total_pins: number | null;
+  imported_pins: number | null;
+  last_synced_at: string | null;
+}
+
+const insertPinterestPinStmt = db.prepare(`
+  INSERT INTO pinterest_pins (id, pin_url, image, title, board_url, created_at)
+  VALUES (@id, @pin_url, @image, @title, @board_url, @created_at)
+  ON CONFLICT(pin_url) DO UPDATE SET
+    image = COALESCE(@image, image),
+    title = COALESCE(@title, title),
+    board_url = COALESCE(@board_url, board_url)
+`);
+
+const insertPinterestBoardStmt = db.prepare(`
+  INSERT INTO pinterest_boards (id, board_name, board_url, total_pins, imported_pins, last_synced_at)
+  VALUES (@id, @board_name, @board_url, @total_pins, @imported_pins, @last_synced_at)
+  ON CONFLICT(board_url) DO UPDATE SET
+    board_name = COALESCE(@board_name, board_name),
+    total_pins = COALESCE(@total_pins, total_pins),
+    imported_pins = COALESCE(@imported_pins, imported_pins),
+    last_synced_at = COALESCE(@last_synced_at, last_synced_at)
+`);
+
+const getBoardPinsCountStmt = db.prepare(`
+  SELECT COUNT(*) as count FROM pinterest_pins WHERE board_url = ?
+`);
+
+const getBoardsStmt = db.prepare(`
+  SELECT * FROM pinterest_boards ORDER BY last_synced_at DESC
+`);
 
 const insertStmt = db.prepare(`
   INSERT INTO items (source, title, url, folder, intent, metadata, embedding, created_at, ingested_at)
@@ -101,6 +166,63 @@ export function getAllItems() {
 export function getAllFolders(): string[] {
   const rows = getFoldersStmt.all() as Array<{ folder: string }>;
   return rows.map(r => r.folder);
+}
+
+export function upsertPinterestPins(pins: PinterestPinRow[]): number {
+  const now = new Date().toISOString();
+  const insertMany = db.transaction((pins: PinterestPinRow[]) => {
+    let count = 0;
+    for (const pin of pins) {
+      insertPinterestPinStmt.run({
+        id: pin.id,
+        pin_url: pin.pin_url,
+        image: pin.image || null,
+        title: pin.title || null,
+        board_url: pin.board_url || null,
+        created_at: pin.created_at || now
+      });
+      count++;
+    }
+    return count;
+  });
+  return insertMany(pins);
+}
+
+export function getExistingPinterestPinUrls(pinUrls: string[]): Set<string> {
+  const existing = new Set<string>();
+  const CHUNK_SIZE = 200;
+
+  for (let i = 0; i < pinUrls.length; i += CHUNK_SIZE) {
+    const chunk = pinUrls.slice(i, i + CHUNK_SIZE);
+    if (chunk.length === 0) continue;
+
+    const placeholders = chunk.map(() => '?').join(',');
+    const stmt = db.prepare(`SELECT pin_url FROM pinterest_pins WHERE pin_url IN (${placeholders})`);
+    const rows = stmt.all(...chunk) as Array<{ pin_url: string }>;
+    rows.forEach(row => existing.add(row.pin_url));
+  }
+
+  return existing;
+}
+
+export function getPinterestPinsCountByBoard(boardUrl: string): number {
+  const row = getBoardPinsCountStmt.get(boardUrl) as { count: number } | undefined;
+  return row?.count ?? 0;
+}
+
+export function upsertPinterestBoard(board: PinterestBoardRow): void {
+  insertPinterestBoardStmt.run({
+    id: board.id,
+    board_name: board.board_name,
+    board_url: board.board_url,
+    total_pins: board.total_pins,
+    imported_pins: board.imported_pins,
+    last_synced_at: board.last_synced_at
+  });
+}
+
+export function getPinterestBoards(): PinterestBoardRow[] {
+  return getBoardsStmt.all() as PinterestBoardRow[];
 }
 
 export { db };

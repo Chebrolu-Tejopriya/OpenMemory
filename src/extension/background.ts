@@ -20,11 +20,13 @@ import {
   deleteBookmark,
   updateBookmark,
   bulkUpsertBookmarks,
-  bulkUpsertPinterestPins,
   isSupabaseConfigured,
   setSupabaseConfig,
   getSyncStatus,
-  updateSyncStatus
+  updateSyncStatus,
+  resyncPinterestBoard,
+  bulkInsertPinterestPins,
+  PinterestPinInsert
 } from './supabase';
 
 // ============== CONSTANTS ==============
@@ -43,6 +45,7 @@ const BATCH_DELAY_MS = 1200; // 50 pins/min = 1.2s delay
 // Supabase auto-sync constants
 const SUPABASE_SYNC_ALARM = 'supabaseAutoSync';
 const SUPABASE_SYNC_MINUTES = 5; // Auto-sync every 5 minutes
+
 
 // Blog URL patterns
 const BLOG_URL_PATTERNS = [
@@ -440,7 +443,7 @@ chrome.bookmarks.onMoved.addListener(async (id, moveInfo) => {
     if (await isSupabaseConfigured()) {
       console.log('[Supabase] Updating bookmark folder...');
       const result = await updateBookmark(bookmark.url, {
-        folder: newFolderPath || null
+        folder: newFolderPath || undefined
       });
 
       if (result.success) {
@@ -907,6 +910,18 @@ function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function extractPinId(pinUrl: string): string {
+  const match = pinUrl.match(/\/pin\/(\d+)/);
+  return match?.[1] || '';
+}
+
+function isValidSupabasePinPayload(pin: { pin_url: string; image_url: string; pin_id: string }): boolean {
+  if (!pin.pin_url || !pin.image_url) return false;
+  if (pin.image_url.startsWith('data:')) return false;
+  if (!pin.pin_id) return false;
+  return true;
+}
+
 // ============== AUTOMATIC SUPABASE SYNC ==============
 let supabaseSyncInProgress = false;
 
@@ -1211,128 +1226,45 @@ async function uploadPinsToSupabase(
   pins: ExtractedPin[],
   boardName: string,
   boardUrl: string,
-  onProgress?: (percent: number) => void
-): Promise<{ success: number; failed: number }> {
-  if (!(await isSupabaseConfigured())) {
-    console.log('[Pinterest Import] Supabase not configured, saving to local DB only');
-    // Save to local DB
-    for (const pin of pins) {
-      try {
-        await processPin({
-          pinId: pin.pinId,
-          title: pin.title,
-          description: pin.description,
-          imageUrl: pin.imageUrl,
-          pinUrl: pin.pinUrl
-        }, boardName, boardUrl);
-      } catch (e) {
-        // Pin might already exist
-      }
+  totalPins?: number | null
+): Promise<{ added: number; total: number; failed: number }> {
+  // Save to local DB
+  for (const pin of pins) {
+    try {
+      await processPin({
+        pinId: pin.pinId || extractPinId(pin.pinUrl),
+        title: pin.title,
+        description: pin.description,
+        imageUrl: pin.imageUrl,
+        pinUrl: pin.pinUrl
+      }, boardName, boardUrl);
+    } catch (e) {
+      // Pin might already exist
     }
-    return { success: pins.length, failed: 0 };
   }
 
-  const BATCH_SIZE = 50;
-  let successCount = 0;
-  let failedCount = 0;
-
-  // Process in batches
-  for (let i = 0; i < pins.length; i += BATCH_SIZE) {
-    const batch = pins.slice(i, i + BATCH_SIZE);
-
-    const payloads = batch.map(pin => ({
-      pin_id: pin.pinId,
+  const now = new Date().toISOString();
+  const payloads: PinterestPinInsert[] = pins
+    .map(pin => ({
+      pin_id: extractPinId(pin.pinUrl),
+      pin_url: pin.pinUrl,
+      image_url: pin.imageUrl,
+      title: pin.title || '',
+      description: pin.description || null,
       board_name: boardName,
       board_url: boardUrl,
-      title: pin.title?.trim() || '',
-      description: pin.description?.trim(),
-      pin_url: pin.pinUrl,
-      image_url: pin.imageUrl
-    }));
+      created_at: now
+    }))
+    .filter(pin => isValidSupabasePinPayload(pin));
 
-    // Try with retry
-    let retries = 2;
-    let batchSuccess = false;
-
-    while (retries > 0 && !batchSuccess) {
-      try {
-        const result = await bulkUpsertPinterestPins(payloads);
-        successCount += result.success;
-        failedCount += result.failed;
-        batchSuccess = true;
-      } catch (error) {
-        retries--;
-        if (retries === 0) {
-          console.error('[Pinterest Import] Batch upload failed after retries:', error);
-          failedCount += batch.length;
-        } else {
-          await delay(1000); // Wait before retry
-        }
-      }
-    }
-
-    // Also save to local DB
-    for (const pin of batch) {
-      try {
-        await processPin({
-          pinId: pin.pinId,
-          title: pin.title,
-          description: pin.description,
-          imageUrl: pin.imageUrl,
-          pinUrl: pin.pinUrl
-        }, boardName, boardUrl);
-      } catch (e) {
-        // Pin might already exist
-      }
-    }
-
-    // Report progress
-    if (onProgress) {
-      const progress = Math.round(((i + batch.length) / pins.length) * 100);
-      onProgress(progress);
-    }
-  }
-
-  console.log(`[Pinterest Import] Upload complete: ${successCount} success, ${failedCount} failed`);
-  return { success: successCount, failed: failedCount };
+  const result = await resyncPinterestBoard(boardUrl, payloads, boardName, totalPins ?? null);
+  const failed = Math.max(0, payloads.length - result.added);
+  return { added: result.added, total: result.total, failed };
 }
 
 // ============== PINTEREST PINS SUPABASE SYNC ==============
 async function syncPinterestPinsToSupabase(): Promise<{ success: number; failed: number }> {
-  if (!(await isSupabaseConfigured())) {
-    console.log('[Supabase] Not configured, skipping Pinterest sync');
-    return { success: 0, failed: 0 };
-  }
-
-  try {
-    // Get all local Pinterest pins
-    const allPins = await db.pins.toArray();
-    console.log('[Supabase] Found', allPins.length, 'local Pinterest pins');
-
-    if (allPins.length === 0) {
-      return { success: 0, failed: 0 };
-    }
-
-    const pinPayloads = allPins.map(p => ({
-      pin_id: p.pinId,
-      board_name: p.boardName,
-      board_url: p.boardUrl,
-      title: p.title,
-      description: p.description,
-      pin_url: p.pinUrl,
-      image_url: p.originalImageUrl
-    }));
-
-    const result = await bulkUpsertPinterestPins(pinPayloads, (processed, total) => {
-      console.log(`[Supabase] Pinterest sync progress: ${processed}/${total}`);
-    });
-
-    console.log('[Supabase] Pinterest pins sync complete:', result.success, 'synced,', result.failed, 'failed');
-    return result;
-  } catch (error) {
-    console.error('[Supabase] Pinterest sync failed:', error);
-    return { success: 0, failed: 0 };
-  }
+  return { success: 0, failed: 0 };
 }
 
 // ============== LOCAL EMBEDDINGS ==============
@@ -1595,7 +1527,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // Send import request to content script
         const result = await chrome.tabs.sendMessage(tab.id, {
           type: 'PINTEREST_IMPORT_BOARD',
-          maxPins: message.maxPins || 300
+          maxPins: message.maxPins || 2000
         });
 
         if (!result || !result.success) {
@@ -1617,6 +1549,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // Process and upload pins to Supabase in batches
         const boardName = result.boardInfo?.name || 'Unknown Board';
         const boardUrl = result.boardInfo?.url || tab.url;
+        const totalPins = typeof result.stats?.expectedCount === 'number'
+          ? result.stats.expectedCount
+          : null;
 
         console.log(`[Pinterest Import] Uploading ${result.pins.length} pins from "${boardName}"`);
 
@@ -1624,17 +1559,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           result.pins,
           boardName,
           boardUrl,
-          (progress) => {
-            // Could send progress to sidepanel here
-            console.log(`[Pinterest Import] Upload progress: ${progress}%`);
-          }
+          totalPins
         );
 
         sendResponse({
           success: true,
           pinsExtracted: result.pins.length,
-          pinsUploaded: uploadResult.success,
+          pinsUploaded: uploadResult.added,
           pinsFailed: uploadResult.failed,
+          totalPins: uploadResult.total,
           boardName,
           stats: result.stats
         });
@@ -1698,7 +1631,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({
           success: true,
           pinsExtracted: result.pins.length,
-          pinsUploaded: uploadResult.success,
+          pinsUploaded: uploadResult.added,
           boardName
         });
 
@@ -1871,6 +1804,106 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === 'GET_PINTEREST_BOARDS_SUPABASE') {
+    sendResponse({ success: false, error: 'Boards now tracked in backend' });
+    return true;
+  }
+
+  if (message.type === 'RESYNC_PINTEREST_BOARD') {
+    (async () => {
+      try {
+        const boardUrl = message.boardUrl as string | undefined;
+        const boardName = message.boardName as string | undefined;
+        const maxPins = typeof message.maxPins === 'number' ? message.maxPins : 400;
+
+        if (!boardUrl) {
+          sendResponse({ success: false, error: 'Missing boardUrl' });
+          return;
+        }
+
+        if (!(await isSupabaseConfigured())) {
+          sendResponse({ success: false, error: 'Supabase not configured' });
+          return;
+        }
+
+        const tab = await chrome.tabs.create({ url: boardUrl, active: false });
+        const tabId = tab.id;
+        if (!tabId) {
+          sendResponse({ success: false, error: 'Failed to open Pinterest tab' });
+          return;
+        }
+
+        try {
+          await waitForTabLoad(tabId);
+          await delay(1000);
+
+          try {
+            await chrome.scripting.executeScript({
+              target: { tabId },
+              files: ['pinterest_active.js']
+            });
+          } catch (error) {
+            // Script might already be injected
+          }
+
+          await delay(400);
+
+          const pinsResponse = await chrome.tabs.sendMessage(tabId, {
+            type: 'PINTEREST_ACTIVE_FETCH_PINS',
+            boardUrl,
+            maxPins
+          });
+
+          const pins = (pinsResponse?.pins || []) as Array<{ pinId: string; title: string; description?: string; imageUrl: string; pinUrl: string }>;
+          if (!pins.length) {
+            sendResponse({ success: false, error: 'No pins found for this board' });
+            return;
+          }
+
+          for (const pin of pins) {
+            try {
+              await processPin({
+                pinId: pin.pinId,
+                title: pin.title,
+                description: pin.description,
+                imageUrl: pin.imageUrl,
+                pinUrl: pin.pinUrl
+              }, boardName || 'Pinterest', boardUrl);
+            } catch (error) {
+              // Skip duplicates
+            }
+          }
+
+          const totalPins = typeof pinsResponse?.stats?.expectedCount === 'number'
+            ? pinsResponse.stats.expectedCount
+            : null;
+
+          const now = new Date().toISOString();
+          const payloads: PinterestPinInsert[] = pins
+            .map(pin => ({
+              pin_id: extractPinId(pin.pinUrl),
+              pin_url: pin.pinUrl,
+              image_url: pin.imageUrl,
+              title: pin.title || '',
+              description: pin.description || null,
+              board_name: boardName || 'Pinterest',
+              board_url: boardUrl,
+              created_at: now
+            }))
+            .filter(pin => isValidSupabasePinPayload(pin));
+
+          const result = await resyncPinterestBoard(boardUrl, payloads, boardName, totalPins ?? null);
+          sendResponse({ success: true, ...result });
+        } finally {
+          chrome.tabs.remove(tabId).catch(() => undefined);
+        }
+      } catch (error) {
+        sendResponse({ success: false, error: (error as Error).message });
+      }
+    })();
+    return true;
+  }
+
   if (message.type === 'SYNC_ALL_TO_SUPABASE') {
     (async () => {
       try {
@@ -1905,7 +1938,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
 
         console.log('[Supabase] Full sync complete:', result);
-        sendResponse({ success: true, ...result });
+        sendResponse({ ...result, success: true });
       } catch (error) {
         updateSyncStatus({ syncInProgress: false });
         sendResponse({ success: false, error: (error as Error).message });

@@ -307,6 +307,9 @@ const pinterestBoardTotal = document.getElementById('pinterest-board-total') as 
 const pinterestBoardUpdated = document.getElementById('pinterest-board-updated') as HTMLDivElement;
 const pinterestBoardArchived = document.getElementById('pinterest-board-archived') as HTMLDivElement;
 const pinterestDeepSync = document.getElementById('pinterest-deep-sync') as HTMLInputElement;
+if (pinterestDeepSync) {
+  pinterestDeepSync.checked = true;
+}
 const bookmarksStatus = document.getElementById('bookmarks-status') as HTMLDivElement;
 const bookmarksSync = document.getElementById('bookmarks-sync') as HTMLButtonElement;
 
@@ -320,10 +323,14 @@ const syncSelectedBoards = document.getElementById('sync-selected-boards') as HT
 
 // Pinterest Import elements
 const pinterestImportBtn = document.getElementById('pinterest-import-current') as HTMLButtonElement;
+const pinterestResyncBtn = document.getElementById('pinterest-resync-current') as HTMLButtonElement;
 const pinterestImportProgress = document.getElementById('pinterest-import-progress') as HTMLDivElement;
 const pinterestImportProgressFill = document.getElementById('pinterest-import-progress-fill') as HTMLDivElement;
 const pinterestImportStatus = document.getElementById('pinterest-import-status') as HTMLDivElement;
 const pinterestImportResult = document.getElementById('pinterest-import-result') as HTMLDivElement;
+const pinterestBoardsSection = document.getElementById('pinterest-boards-section') as HTMLDivElement;
+const pinterestBoardsList = document.getElementById('pinterest-boards-list') as HTMLDivElement;
+const pinterestBoardsMessage = document.getElementById('pinterest-boards-message') as HTMLDivElement;
 
 interface DiscoveredBoard {
   name: string;
@@ -332,6 +339,14 @@ interface DiscoveredBoard {
 
 let discoveredBoards: DiscoveredBoard[] = [];
 let discoveredUsername: string | null = null;
+
+interface PinterestBoardRow {
+  board_name: string | null;
+  board_url: string;
+  total_pins: number | null;
+  imported_pins: number | null;
+  last_synced_at: string | null;
+}
 
 // ============== STATE ==============
 let allItems: SearchableItem[] = [];
@@ -977,6 +992,7 @@ integrationsToggle.addEventListener('click', () => {
   integrationsSection.classList.toggle('active');
   if (integrationsSection.classList.contains('active')) {
     updatePinterestUI();
+    updatePinterestBoardsUI();
   }
 });
 
@@ -1018,9 +1034,11 @@ pinterestImportBtn?.addEventListener('click', async () => {
   pinterestImportBtn.textContent = 'Importing...';
 
   try {
+    const deepSync = pinterestDeepSync?.checked ?? true;
+    const maxPins = deepSync ? 2000 : 1200;
     const result = await chrome.runtime.sendMessage({
       type: 'PINTEREST_IMPORT_CURRENT_BOARD',
-      maxPins: 300
+      maxPins
     });
 
     pinterestImportProgress.style.display = 'none';
@@ -1113,7 +1131,20 @@ async function openPinterestActiveSync(): Promise<void> {
     await chrome.storage.local.set({ pinterestUsername: username });
   }
 
-  // Use FAST sync (API-based, no tab opening)
+  const deepSync = pinterestDeepSync?.checked ?? true;
+  if (deepSync) {
+    setPinterestCtaText('Syncing...');
+    pinterestStatus.textContent = 'Syncing (deep)...';
+    pinterestStatus.className = 'integration-status syncing';
+    pinterestProgress.classList.add('active');
+
+    console.log('[OpenMemory] Starting deep Pinterest sync for:', username);
+    chrome.runtime.sendMessage({ type: 'TRIGGER_PINTEREST_SYNC', username, deepSync: true });
+    startPinterestPolling();
+    return;
+  }
+
+  // Fast sync (API-based, fewer pins)
   setPinterestCtaText('Syncing...');
   pinterestStatus.textContent = 'Syncing via API...';
   pinterestStatus.className = 'integration-status syncing';
@@ -1288,10 +1319,10 @@ async function updatePinterestUI(): Promise<void> {
     const pins = await chrome.runtime.sendMessage({ type: 'GET_ALL_PINS' });
     const existingPinCount = pins?.length || 0;
 
-      if (!status) {
-        if (existingPinCount > 0) {
-          pinterestStatus.textContent = `${existingPinCount} pins synced`;
-          pinterestStatus.className = 'integration-status';
+    if (!status) {
+      if (existingPinCount > 0) {
+        pinterestStatus.textContent = `${existingPinCount} pins synced`;
+        pinterestStatus.className = 'integration-status';
         } else {
           pinterestStatus.textContent = 'Not connected';
           pinterestStatus.className = 'integration-status';
@@ -1299,11 +1330,12 @@ async function updatePinterestUI(): Promise<void> {
         setPinterestCtaText('Sync Pinterest');
         pinterestConnect.className = 'connect-btn';
         pinterestProgress.classList.remove('active');
-        integrationsToggle.classList.remove('has-connection');
-        return;
-      }
+      integrationsToggle.classList.remove('has-connection');
+      await updatePinterestBoardsUI();
+      return;
+    }
 
-    if (status.syncStatus === 'syncing') {
+      if (status.syncStatus === 'syncing') {
       pinterestStatus.textContent = `Syncing...`;
       pinterestStatus.className = 'integration-status syncing';
       setPinterestCtaText('Syncing...');
@@ -1363,10 +1395,165 @@ async function updatePinterestUI(): Promise<void> {
       integrationsToggle.classList.remove('has-connection');
       stopPinterestPolling();
     }
+    await updatePinterestBoardsUI();
   } catch (err) {
     console.error('[OpenMemory] Failed to get Pinterest status:', err);
   }
 }
+
+async function updatePinterestBoardsUI(): Promise<void> {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'GET_PINTEREST_BOARDS_SUPABASE' });
+    if (!response?.success || !Array.isArray(response.boards)) {
+      pinterestBoardsSection.style.display = 'block';
+      pinterestBoardsList.innerHTML = '';
+      pinterestBoardsMessage.textContent = response?.error
+        ? response.error
+        : 'Pinterest boards are not available yet.';
+      pinterestBoardsMessage.style.color = '#fbbf24';
+      pinterestBoardsMessage.style.display = 'block';
+      return;
+    }
+
+    const boards = response.boards as PinterestBoardRow[];
+    if (boards.length === 0) {
+      pinterestBoardsSection.style.display = 'block';
+      pinterestBoardsList.innerHTML = '';
+      pinterestBoardsMessage.textContent = 'No imported boards yet. Import a board to see it here.';
+      pinterestBoardsMessage.style.color = '#fbbf24';
+      pinterestBoardsMessage.style.display = 'block';
+      return;
+    }
+
+    pinterestBoardsSection.style.display = 'block';
+    pinterestBoardsMessage.style.display = 'none';
+    pinterestBoardsMessage.style.color = '#4ade80';
+    pinterestBoardsList.innerHTML = boards.map((board) => {
+      const lastSynced = board.last_synced_at
+        ? new Date(board.last_synced_at).toLocaleString()
+        : 'Never';
+      const totalPins = typeof board.total_pins === 'number' ? board.total_pins : '-';
+      const importedPins = typeof board.imported_pins === 'number' ? board.imported_pins : 0;
+      const encodedBoardUrl = encodeURIComponent(board.board_url);
+      const encodedBoardName = encodeURIComponent(board.board_name || 'Pinterest');
+
+      return `
+        <div class="board-row" data-board-url="${encodedBoardUrl}">
+          <div class="board-meta">
+            <div class="board-name" title="${escapeHtml(board.board_name || 'Untitled')}">${escapeHtml(board.board_name || 'Untitled')}</div>
+            <div class="board-stats">Total: ${totalPins} • Imported: ${importedPins}</div>
+            <div class="board-sync">Last synced: ${escapeHtml(lastSynced)}</div>
+          </div>
+          <div class="board-action">
+            <button class="resync-btn" data-board-url="${encodedBoardUrl}" data-board-name="${encodedBoardName}">Resync</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (error) {
+    pinterestBoardsSection.style.display = 'block';
+    pinterestBoardsList.innerHTML = '';
+    pinterestBoardsMessage.textContent = 'Failed to load boards. Make sure pinterest_boards exists in Supabase.';
+    pinterestBoardsMessage.style.color = '#fbbf24';
+    pinterestBoardsMessage.style.display = 'block';
+  }
+}
+
+pinterestBoardsList?.addEventListener('click', async (event) => {
+  const target = event.target as HTMLElement;
+  const button = target.closest('.resync-btn') as HTMLButtonElement | null;
+  if (!button) return;
+
+  const boardUrl = button.dataset.boardUrl ? decodeURIComponent(button.dataset.boardUrl) : undefined;
+  const boardName = button.dataset.boardName ? decodeURIComponent(button.dataset.boardName) : 'Pinterest';
+  if (!boardUrl) return;
+
+  button.disabled = true;
+  button.textContent = 'Resyncing...';
+  pinterestBoardsMessage.style.display = 'none';
+
+  try {
+    const result = await chrome.runtime.sendMessage({
+      type: 'RESYNC_PINTEREST_BOARD',
+      boardUrl,
+      boardName
+    });
+
+    if (result?.success) {
+      pinterestBoardsMessage.textContent = `Added ${result.added} new pins`;
+      pinterestBoardsMessage.style.color = '#4ade80';
+      pinterestBoardsMessage.style.display = 'block';
+      await initializeSearch();
+      await updatePinterestBoardsUI();
+    } else {
+      pinterestBoardsMessage.textContent = result?.error || 'Resync failed';
+      pinterestBoardsMessage.style.color = '#f87171';
+      pinterestBoardsMessage.style.display = 'block';
+    }
+  } catch (error) {
+    pinterestBoardsMessage.textContent = error instanceof Error ? error.message : 'Resync failed';
+    pinterestBoardsMessage.style.color = '#f87171';
+    pinterestBoardsMessage.style.display = 'block';
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Resync';
+  }
+});
+
+// ============== PINTEREST RESYNC CURRENT BOARD ==============
+pinterestResyncBtn?.addEventListener('click', async () => {
+  console.log('[OpenMemory] Pinterest resync current board clicked');
+
+  pinterestImportResult.style.display = 'none';
+  pinterestImportProgress.style.display = 'block';
+  pinterestImportProgressFill.style.width = '0%';
+  pinterestImportStatus.textContent = 'Resyncing board...';
+  pinterestImportStatus.style.color = '#fbbf24';
+  pinterestResyncBtn.disabled = true;
+  pinterestResyncBtn.textContent = 'Resyncing...';
+
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.url || !tab.url.includes('pinterest.com')) {
+      throw new Error('Please open a Pinterest board page first');
+    }
+
+    const result = await chrome.runtime.sendMessage({
+      type: 'RESYNC_PINTEREST_BOARD',
+      boardUrl: tab.url
+    });
+
+    pinterestImportProgress.style.display = 'none';
+
+    if (result?.success) {
+      pinterestImportResult.style.display = 'block';
+      pinterestImportResult.style.background = 'rgba(74, 222, 128, 0.1)';
+      pinterestImportResult.style.color = '#4ade80';
+      pinterestImportResult.innerHTML = `
+        <strong>Resync complete!</strong><br>
+        Added ${result.added} new pins<br>
+        Total stored: ${result.total}
+      `;
+
+      await initializeSearch();
+      updatePinterestUI();
+    } else {
+      pinterestImportResult.style.display = 'block';
+      pinterestImportResult.style.background = 'rgba(248, 113, 113, 0.1)';
+      pinterestImportResult.style.color = '#f87171';
+      pinterestImportResult.textContent = result?.error || 'Resync failed';
+    }
+  } catch (error) {
+    pinterestImportProgress.style.display = 'none';
+    pinterestImportResult.style.display = 'block';
+    pinterestImportResult.style.background = 'rgba(248, 113, 113, 0.1)';
+    pinterestImportResult.style.color = '#f87171';
+    pinterestImportResult.textContent = error instanceof Error ? error.message : 'Resync failed';
+  } finally {
+    pinterestResyncBtn.disabled = false;
+    pinterestResyncBtn.textContent = 'Resync';
+  }
+});
 
 function startPinterestPolling(): void {
   if (pinterestPollingInterval) return;
