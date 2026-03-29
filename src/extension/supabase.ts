@@ -113,8 +113,11 @@ async function generateEmbedding(text: string): Promise<number[] | null> {
     return null;
   }
 
+  const embeddingUrl = `${config.url}/functions/v1/generate-embedding`;
+  console.log('[Supabase] Calling embedding function:', embeddingUrl);
+
   try {
-    const response = await fetch(`${config.url}/functions/v1/generate-embedding`, {
+    const response = await fetch(embeddingUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${config.anonKey}`,
@@ -123,12 +126,16 @@ async function generateEmbedding(text: string): Promise<number[] | null> {
       body: JSON.stringify({ text })
     });
 
+    console.log('[Supabase] Embedding response status:', response.status);
+
     if (!response.ok) {
-      console.error('[Supabase] Embedding generation failed:', response.status);
+      const errorText = await response.text();
+      console.error('[Supabase] Embedding generation failed:', response.status, errorText);
       return null;
     }
 
     const result = await response.json();
+    console.log('[Supabase] Embedding result:', result.embedding ? `array of ${result.embedding.length}` : 'null', result.fallback ? '(fallback)' : '');
     return result.embedding || null;
   } catch (err) {
     console.error('[Supabase] Embedding generation error:', err);
@@ -146,7 +153,10 @@ export async function upsertBookmark(
   bookmark: BookmarkPayload,
   forceEmbedding = false
 ): Promise<{ success: boolean; error?: string }> {
+  console.log('[Supabase] upsertBookmark called for:', bookmark.url);
+
   const config = await getSupabaseConfig();
+  console.log('[Supabase] Config:', config ? 'present' : 'missing');
 
   if (!config) {
     return { success: false, error: 'Supabase not configured' };
@@ -154,20 +164,28 @@ export async function upsertBookmark(
 
   try {
     // First, check if bookmark exists and if title changed
-    const { data: existing } = await supabaseRequest<SupabaseBookmark[]>(
+    console.log('[Supabase] Checking if bookmark exists...');
+    const { data: existing, error: fetchError } = await supabaseRequest<SupabaseBookmark[]>(
       `bookmarks?url=eq.${encodeURIComponent(bookmark.url)}&select=id,title,embedding`
     );
+
+    if (fetchError) {
+      console.error('[Supabase] Error checking existing bookmark:', fetchError);
+    }
 
     const existingBookmark = existing?.[0];
     const titleChanged = existingBookmark && existingBookmark.title !== bookmark.title;
     const needsEmbedding = forceEmbedding || !existingBookmark || titleChanged || !existingBookmark.embedding;
 
+    console.log('[Supabase] Existing:', !!existingBookmark, 'Needs embedding:', needsEmbedding);
+
     // Generate embedding if needed
     let embedding: number[] | null = null;
     if (needsEmbedding) {
       const textForEmbedding = `${bookmark.title} ${bookmark.folder || ''}`.trim();
+      console.log('[Supabase] Generating embedding for text:', textForEmbedding.substring(0, 100));
       embedding = await generateEmbedding(textForEmbedding);
-      console.log('[Supabase] Generated embedding for:', bookmark.title.substring(0, 50));
+      console.log('[Supabase] Embedding result:', embedding ? `${embedding.length} dimensions` : 'null');
     }
 
     // Prepare payload
@@ -183,8 +201,10 @@ export async function upsertBookmark(
       payload.embedding = embedding;
     }
 
+    console.log('[Supabase] Sending upsert request...');
+
     // UPSERT using Supabase's on_conflict
-    const { error } = await supabaseRequest<SupabaseBookmark[]>(
+    const { data, error } = await supabaseRequest<SupabaseBookmark[]>(
       'bookmarks?on_conflict=url',
       {
         method: 'POST',
@@ -196,13 +216,15 @@ export async function upsertBookmark(
     );
 
     if (error) {
+      console.error('[Supabase] Upsert error:', error);
       return { success: false, error };
     }
 
-    console.log('[Supabase] Upserted bookmark:', bookmark.url.substring(0, 50));
+    console.log('[Supabase] Upsert success:', bookmark.url.substring(0, 50));
     return { success: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[Supabase] Exception in upsertBookmark:', message, err);
     return { success: false, error: message };
   }
 }
@@ -214,6 +236,8 @@ export async function deleteBookmark(
   urlOrChromeId: string,
   byField: 'url' | 'chrome_id' = 'url'
 ): Promise<{ success: boolean; error?: string }> {
+  console.log('[Supabase] deleteBookmark called:', { value: urlOrChromeId.substring(0, 50), byField });
+
   const config = await getSupabaseConfig();
 
   if (!config) {
@@ -221,19 +245,24 @@ export async function deleteBookmark(
   }
 
   try {
+    const endpoint = `bookmarks?${byField}=eq.${encodeURIComponent(urlOrChromeId)}`;
+    console.log('[Supabase] Delete endpoint:', endpoint);
+
     const { error } = await supabaseRequest<null>(
-      `bookmarks?${byField}=eq.${encodeURIComponent(urlOrChromeId)}`,
+      endpoint,
       { method: 'DELETE' }
     );
 
     if (error) {
+      console.error('[Supabase] Delete error:', error);
       return { success: false, error };
     }
 
-    console.log('[Supabase] Deleted bookmark:', urlOrChromeId.substring(0, 50));
+    console.log('[Supabase] Delete successful:', urlOrChromeId.substring(0, 50));
     return { success: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[Supabase] Delete exception:', message);
     return { success: false, error: message };
   }
 }

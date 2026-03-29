@@ -318,6 +318,13 @@ const boardList = document.getElementById('board-list') as HTMLDivElement;
 const selectAllBoards = document.getElementById('select-all-boards') as HTMLButtonElement;
 const syncSelectedBoards = document.getElementById('sync-selected-boards') as HTMLButtonElement;
 
+// Pinterest Import elements
+const pinterestImportBtn = document.getElementById('pinterest-import-current') as HTMLButtonElement;
+const pinterestImportProgress = document.getElementById('pinterest-import-progress') as HTMLDivElement;
+const pinterestImportProgressFill = document.getElementById('pinterest-import-progress-fill') as HTMLDivElement;
+const pinterestImportStatus = document.getElementById('pinterest-import-status') as HTMLDivElement;
+const pinterestImportResult = document.getElementById('pinterest-import-result') as HTMLDivElement;
+
 interface DiscoveredBoard {
   name: string;
   url: string;
@@ -997,6 +1004,81 @@ pinterestConnect.addEventListener('click', async () => {
   }
 });
 
+// ============== PINTEREST IMPORT CURRENT BOARD ==============
+pinterestImportBtn?.addEventListener('click', async () => {
+  console.log('[OpenMemory] Pinterest import current board clicked');
+
+  // Reset UI
+  pinterestImportResult.style.display = 'none';
+  pinterestImportProgress.style.display = 'block';
+  pinterestImportProgressFill.style.width = '0%';
+  pinterestImportStatus.textContent = 'Starting import...';
+  pinterestImportStatus.style.color = '#fbbf24';
+  pinterestImportBtn.disabled = true;
+  pinterestImportBtn.textContent = 'Importing...';
+
+  try {
+    const result = await chrome.runtime.sendMessage({
+      type: 'PINTEREST_IMPORT_CURRENT_BOARD',
+      maxPins: 300
+    });
+
+    pinterestImportProgress.style.display = 'none';
+
+    if (result?.success) {
+      pinterestImportResult.style.display = 'block';
+      pinterestImportResult.style.background = 'rgba(74, 222, 128, 0.1)';
+      pinterestImportResult.style.color = '#4ade80';
+      pinterestImportResult.innerHTML = `
+        <strong>Import successful!</strong><br>
+        Board: ${result.boardName || 'Unknown'}<br>
+        Pins extracted: ${result.pinsExtracted}<br>
+        Pins uploaded: ${result.pinsUploaded}
+        ${result.pinsFailed > 0 ? `<br>Failed: ${result.pinsFailed}` : ''}
+      `;
+
+      // Refresh the search data
+      await initializeSearch();
+      updatePinterestUI();
+    } else {
+      pinterestImportResult.style.display = 'block';
+      pinterestImportResult.style.background = 'rgba(248, 113, 113, 0.1)';
+      pinterestImportResult.style.color = '#f87171';
+      pinterestImportResult.textContent = result?.error || 'Import failed';
+    }
+  } catch (error) {
+    console.error('[OpenMemory] Pinterest import error:', error);
+    pinterestImportProgress.style.display = 'none';
+    pinterestImportResult.style.display = 'block';
+    pinterestImportResult.style.background = 'rgba(248, 113, 113, 0.1)';
+    pinterestImportResult.style.color = '#f87171';
+    pinterestImportResult.textContent = error instanceof Error ? error.message : 'Import failed';
+  } finally {
+    pinterestImportBtn.disabled = false;
+    pinterestImportBtn.textContent = 'Import';
+  }
+});
+
+// Listen for import progress updates
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === 'PINTEREST_IMPORT_PROGRESS_UPDATE' && message.progress) {
+    const { status, pinsCollected, message: statusMessage } = message.progress;
+
+    if (pinterestImportProgress.style.display !== 'none') {
+      const percent = Math.min(95, pinsCollected / 3); // Rough estimate
+      pinterestImportProgressFill.style.width = `${percent}%`;
+      pinterestImportStatus.textContent = statusMessage || `Importing... ${pinsCollected} pins`;
+
+      if (status === 'complete') {
+        pinterestImportProgressFill.style.width = '100%';
+        pinterestImportStatus.style.color = '#4ade80';
+      } else if (status === 'error') {
+        pinterestImportStatus.style.color = '#f87171';
+      }
+    }
+  }
+});
+
 async function openPinterestActiveSync(): Promise<void> {
   const status = await chrome.runtime.sendMessage({ type: 'GET_PINTEREST_STATUS' });
 
@@ -1341,8 +1423,10 @@ bookmarksSync.addEventListener('click', async () => {
       // Refresh search data
       await initializeSearch();
     } else {
-      bookmarksStatus.textContent = 'Already up to date';
+      bookmarksStatus.textContent = `${result?.totalCount || 0} bookmarks - up to date`;
     }
+    // Update count display
+    await updateBookmarksUI();
   } catch (err) {
     console.error('[OpenMemory] Bookmark sync failed:', err);
     bookmarksStatus.textContent = 'Sync failed';
@@ -1350,14 +1434,29 @@ bookmarksSync.addEventListener('click', async () => {
 
   bookmarksSync.textContent = 'Sync';
   bookmarksSync.disabled = false;
-
-  // Update count after a moment
-  setTimeout(updateBookmarksUI, 1000);
 });
 
 async function updateBookmarksUI(): Promise<void> {
-  const bookmarkCount = allItems.filter(i => i.source === 'chrome').length;
-  bookmarksStatus.textContent = `${bookmarkCount} bookmarks`;
+  try {
+    // Get actual Chrome bookmark count (not local DB count)
+    const result = await chrome.runtime.sendMessage({ type: 'GET_CHROME_BOOKMARK_COUNT' });
+    const chromeCount = result?.count || 0;
+    bookmarksStatus.textContent = `${chromeCount} bookmarks`;
+
+    // Also update the main count display
+    const pinsCount = allItems.filter(i => i.source === 'pinterest').length;
+    if (pinsCount > 0 && chromeCount > 0) {
+      itemCountEl.textContent = `${chromeCount} 📚 ${pinsCount} 📌`;
+    } else if (pinsCount > 0) {
+      itemCountEl.textContent = `${pinsCount} pins`;
+    } else {
+      itemCountEl.textContent = `${chromeCount} items`;
+    }
+  } catch (err) {
+    // Fallback to local count
+    const bookmarkCount = allItems.filter(i => i.source === 'chrome').length;
+    bookmarksStatus.textContent = `${bookmarkCount} bookmarks`;
+  }
 }
 
 // Update bookmarks UI on load

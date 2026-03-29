@@ -194,21 +194,25 @@ async function importChromeBookmarks(): Promise<number> {
 }
 
 // Sync new Chrome bookmarks (call periodically or on demand)
-async function syncChromeBookmarks(): Promise<number> {
+async function syncChromeBookmarks(): Promise<{ newCount: number; totalCount: number }> {
   try {
     const tree = await chrome.bookmarks.getTree();
     const existingUrls = new Set((await db.bookmarks.toArray()).map(b => b.url));
     const newBookmarks: IndexedBookmark[] = [];
+    let totalChromeBookmarks = 0;
 
     function extractBookmarks(nodes: chrome.bookmarks.BookmarkTreeNode[], folderPath: string = '') {
       for (const node of nodes) {
-        if (node.url && !existingUrls.has(node.url)) {
-          newBookmarks.push({
-            url: node.url,
-            title: node.title || node.url,
-            folder: folderPath || null,
-            indexStatus: 'pending' as const
-          });
+        if (node.url) {
+          totalChromeBookmarks++;
+          if (!existingUrls.has(node.url)) {
+            newBookmarks.push({
+              url: node.url,
+              title: node.title || node.url,
+              folder: folderPath || null,
+              indexStatus: 'pending' as const
+            });
+          }
         } else if (node.children) {
           const newPath = folderPath ? `${folderPath}/${node.title}` : node.title;
           extractBookmarks(node.children, newPath);
@@ -231,9 +235,34 @@ async function syncChromeBookmarks(): Promise<number> {
       console.log('[OpenMemory] Synced', newBookmarks.length, 'new Chrome bookmarks');
     }
 
-    return newBookmarks.length;
+    console.log('[OpenMemory] Total Chrome bookmarks:', totalChromeBookmarks, 'Local DB:', existingUrls.size + newBookmarks.length);
+    return { newCount: newBookmarks.length, totalCount: totalChromeBookmarks };
   } catch (error) {
     console.error('[OpenMemory] Failed to sync Chrome bookmarks:', error);
+    return { newCount: 0, totalCount: 0 };
+  }
+}
+
+// Get actual Chrome bookmark count
+async function getChromeBookmarkCount(): Promise<number> {
+  try {
+    const tree = await chrome.bookmarks.getTree();
+    let count = 0;
+
+    function countBookmarks(nodes: chrome.bookmarks.BookmarkTreeNode[]) {
+      for (const node of nodes) {
+        if (node.url) {
+          count++;
+        } else if (node.children) {
+          countBookmarks(node.children);
+        }
+      }
+    }
+
+    countBookmarks(tree);
+    return count;
+  } catch (error) {
+    console.error('[OpenMemory] Failed to count Chrome bookmarks:', error);
     return 0;
   }
 }
@@ -242,15 +271,19 @@ async function syncChromeBookmarks(): Promise<number> {
 
 // Listen for bookmark creation
 chrome.bookmarks.onCreated.addListener(async (id, bookmark) => {
-  if (bookmark.url) {
-    const existing = await db.bookmarks.where('url').equals(bookmark.url).first();
-    if (!existing) {
-      // Get parent folder path
-      let folderPath = '';
-      if (bookmark.parentId) {
-        folderPath = await getBookmarkFolderPath(bookmark.parentId);
-      }
+  console.log('[OpenMemory] Bookmark created event fired:', { id, url: bookmark.url, title: bookmark.title });
 
+  if (bookmark.url) {
+    // Get parent folder path
+    let folderPath = '';
+    if (bookmark.parentId) {
+      folderPath = await getBookmarkFolderPath(bookmark.parentId);
+    }
+
+    const existing = await db.bookmarks.where('url').equals(bookmark.url).first();
+    console.log('[OpenMemory] Existing bookmark check:', existing ? 'exists' : 'new');
+
+    if (!existing) {
       // Add to local Dexie DB
       await db.bookmarks.add({
         url: bookmark.url,
@@ -266,9 +299,15 @@ chrome.bookmarks.onCreated.addListener(async (id, bookmark) => {
       });
 
       console.log('[OpenMemory] Added new bookmark:', bookmark.title);
+    }
 
-      // Sync to Supabase (incremental - only this bookmark)
-      if (await isSupabaseConfigured()) {
+    // ALWAYS sync to Supabase when a bookmark is created (regardless of local state)
+    const isConfigured = await isSupabaseConfigured();
+    console.log('[Supabase] Is configured:', isConfigured);
+
+    if (isConfigured) {
+      console.log('[Supabase] Syncing bookmark to Supabase...');
+      try {
         const result = await upsertBookmark({
           url: bookmark.url,
           title: bookmark.title || bookmark.url,
@@ -277,38 +316,64 @@ chrome.bookmarks.onCreated.addListener(async (id, bookmark) => {
         });
 
         if (result.success) {
-          console.log('[Supabase] Synced new bookmark:', bookmark.title);
+          console.log('[Supabase] ✓ Synced bookmark:', bookmark.title);
         } else {
-          console.warn('[Supabase] Failed to sync bookmark:', result.error);
+          console.error('[Supabase] ✗ Failed to sync bookmark:', result.error);
         }
+      } catch (err) {
+        console.error('[Supabase] Exception during sync:', err);
       }
+    } else {
+      console.log('[Supabase] Not configured, skipping sync');
     }
   }
 });
 
 // Listen for bookmark removal
 chrome.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
-  console.log('[OpenMemory] Bookmark removed:', id);
+  console.log('[OpenMemory] Bookmark removed:', id, removeInfo);
 
-  // Try to find the bookmark by chrome_id in removeInfo
-  // Since we don't have the URL directly, we need to delete by chrome_id
-  if (await isSupabaseConfigured()) {
-    // Delete from Supabase using chrome_id
-    const result = await deleteBookmark(id, 'chrome_id');
+  // Get the URL from removeInfo.node (available in Chrome)
+  const removedUrl = (removeInfo as any).node?.url;
+  console.log('[OpenMemory] Removed bookmark URL:', removedUrl);
 
-    if (result.success) {
-      console.log('[Supabase] Deleted bookmark with chrome_id:', id);
-    } else {
-      console.warn('[Supabase] Failed to delete bookmark:', result.error);
+  // Delete from local Dexie DB
+  if (removedUrl) {
+    try {
+      await db.bookmarks.where('url').equals(removedUrl).delete();
+      await db.queue.where('url').equals(removedUrl).delete();
+      console.log('[OpenMemory] Deleted from local DB:', removedUrl);
+    } catch (err) {
+      console.warn('[OpenMemory] Failed to delete from local DB:', err);
     }
   }
 
-  // Optionally delete from local DB too
-  // If you want to keep deleted bookmarks locally, comment this out
-  // await db.bookmarks.where('url').equals(removeInfo.node?.url || '').delete();
+  // Delete from Supabase
+  if (await isSupabaseConfigured()) {
+    let deleted = false;
+
+    // Try to delete by URL first (more reliable)
+    if (removedUrl) {
+      const result = await deleteBookmark(removedUrl, 'url');
+      if (result.success) {
+        console.log('[Supabase] ✓ Deleted bookmark by URL:', removedUrl);
+        deleted = true;
+      }
+    }
+
+    // Fallback: try to delete by chrome_id
+    if (!deleted) {
+      const result = await deleteBookmark(id, 'chrome_id');
+      if (result.success) {
+        console.log('[Supabase] ✓ Deleted bookmark by chrome_id:', id);
+      } else {
+        console.warn('[Supabase] ✗ Failed to delete bookmark:', result.error);
+      }
+    }
+  }
 });
 
-// Listen for bookmark changes (title or folder move)
+// Listen for bookmark changes (title change)
 chrome.bookmarks.onChanged.addListener(async (id, changeInfo) => {
   console.log('[OpenMemory] Bookmark changed:', id, changeInfo);
 
@@ -320,7 +385,6 @@ chrome.bookmarks.onChanged.addListener(async (id, changeInfo) => {
       return; // Folder change, not a bookmark
     }
 
-    const oldTitle = changeInfo.title;
     const newTitle = bookmark.title;
 
     // Update local Dexie DB
@@ -328,18 +392,19 @@ chrome.bookmarks.onChanged.addListener(async (id, changeInfo) => {
       title: newTitle || bookmark.url
     });
 
-    console.log('[OpenMemory] Updated bookmark title:', newTitle);
+    console.log('[OpenMemory] Updated bookmark title locally:', newTitle);
 
     // Sync to Supabase - will regenerate embedding if title changed
     if (await isSupabaseConfigured()) {
+      console.log('[Supabase] Updating bookmark title...');
       const result = await updateBookmark(bookmark.url, {
         title: newTitle || bookmark.url
       });
 
       if (result.success) {
-        console.log('[Supabase] Updated bookmark:', bookmark.url.substring(0, 50));
+        console.log('[Supabase] ✓ Updated bookmark title:', bookmark.url.substring(0, 50));
       } else {
-        console.warn('[Supabase] Failed to update bookmark:', result.error);
+        console.warn('[Supabase] ✗ Failed to update bookmark:', result.error);
       }
     }
   } catch (error) {
@@ -369,18 +434,19 @@ chrome.bookmarks.onMoved.addListener(async (id, moveInfo) => {
       folder: newFolderPath || null
     });
 
-    console.log('[OpenMemory] Updated bookmark folder:', newFolderPath);
+    console.log('[OpenMemory] Updated bookmark folder locally:', newFolderPath);
 
     // Sync to Supabase - folder change doesn't require embedding regeneration
     if (await isSupabaseConfigured()) {
+      console.log('[Supabase] Updating bookmark folder...');
       const result = await updateBookmark(bookmark.url, {
         folder: newFolderPath || null
       });
 
       if (result.success) {
-        console.log('[Supabase] Updated bookmark folder:', bookmark.url.substring(0, 50));
+        console.log('[Supabase] ✓ Updated bookmark folder:', bookmark.url.substring(0, 50));
       } else {
-        console.warn('[Supabase] Failed to update bookmark folder:', result.error);
+        console.warn('[Supabase] ✗ Failed to update bookmark folder:', result.error);
       }
     }
   } catch (error) {
@@ -1130,6 +1196,107 @@ async function fastPinterestSync(username: string): Promise<{ boards: number; pi
   }
 }
 
+// ============== PINTEREST BATCH UPLOAD ==============
+interface ExtractedPin {
+  pinId: string;
+  title: string;
+  description?: string;
+  imageUrl: string;
+  pinUrl: string;
+  source: 'pinterest';
+  type: 'image';
+}
+
+async function uploadPinsToSupabase(
+  pins: ExtractedPin[],
+  boardName: string,
+  boardUrl: string,
+  onProgress?: (percent: number) => void
+): Promise<{ success: number; failed: number }> {
+  if (!(await isSupabaseConfigured())) {
+    console.log('[Pinterest Import] Supabase not configured, saving to local DB only');
+    // Save to local DB
+    for (const pin of pins) {
+      try {
+        await processPin({
+          pinId: pin.pinId,
+          title: pin.title,
+          description: pin.description,
+          imageUrl: pin.imageUrl,
+          pinUrl: pin.pinUrl
+        }, boardName, boardUrl);
+      } catch (e) {
+        // Pin might already exist
+      }
+    }
+    return { success: pins.length, failed: 0 };
+  }
+
+  const BATCH_SIZE = 50;
+  let successCount = 0;
+  let failedCount = 0;
+
+  // Process in batches
+  for (let i = 0; i < pins.length; i += BATCH_SIZE) {
+    const batch = pins.slice(i, i + BATCH_SIZE);
+
+    const payloads = batch.map(pin => ({
+      pin_id: pin.pinId,
+      board_name: boardName,
+      board_url: boardUrl,
+      title: pin.title?.trim() || '',
+      description: pin.description?.trim(),
+      pin_url: pin.pinUrl,
+      image_url: pin.imageUrl
+    }));
+
+    // Try with retry
+    let retries = 2;
+    let batchSuccess = false;
+
+    while (retries > 0 && !batchSuccess) {
+      try {
+        const result = await bulkUpsertPinterestPins(payloads);
+        successCount += result.success;
+        failedCount += result.failed;
+        batchSuccess = true;
+      } catch (error) {
+        retries--;
+        if (retries === 0) {
+          console.error('[Pinterest Import] Batch upload failed after retries:', error);
+          failedCount += batch.length;
+        } else {
+          await delay(1000); // Wait before retry
+        }
+      }
+    }
+
+    // Also save to local DB
+    for (const pin of batch) {
+      try {
+        await processPin({
+          pinId: pin.pinId,
+          title: pin.title,
+          description: pin.description,
+          imageUrl: pin.imageUrl,
+          pinUrl: pin.pinUrl
+        }, boardName, boardUrl);
+      } catch (e) {
+        // Pin might already exist
+      }
+    }
+
+    // Report progress
+    if (onProgress) {
+      const progress = Math.round(((i + batch.length) / pins.length) * 100);
+      onProgress(progress);
+    }
+  }
+
+  console.log(`[Pinterest Import] Upload complete: ${successCount} success, ${failedCount} failed`);
+  return { success: successCount, failed: failedCount };
+}
+
 // ============== PINTEREST PINS SUPABASE SYNC ==============
 async function syncPinterestPinsToSupabase(): Promise<{ success: number; failed: number }> {
   if (!(await isSupabaseConfigured())) {
@@ -1399,6 +1566,152 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // ============== NEW PINTEREST IMPORT HANDLERS ==============
+
+  // Import current board (triggered from popup/sidepanel)
+  if (message.type === 'PINTEREST_IMPORT_CURRENT_BOARD') {
+    (async () => {
+      try {
+        // Get current active tab
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab?.id || !tab.url?.includes('pinterest.com')) {
+          sendResponse({ success: false, error: 'Please open a Pinterest board page first' });
+          return;
+        }
+
+        // Inject content script if needed
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ['pinterest_active.js']
+          });
+        } catch (e) {
+          // Script might already be injected
+        }
+
+        // Wait for script to load
+        await delay(500);
+
+        // Send import request to content script
+        const result = await chrome.tabs.sendMessage(tab.id, {
+          type: 'PINTEREST_IMPORT_BOARD',
+          maxPins: message.maxPins || 300
+        });
+
+        if (!result || !result.success) {
+          sendResponse({
+            success: false,
+            error: result?.error || 'Failed to extract pins'
+          });
+          return;
+        }
+
+        if (result.pins.length === 0) {
+          sendResponse({
+            success: false,
+            error: 'No pins found on this page'
+          });
+          return;
+        }
+
+        // Process and upload pins to Supabase in batches
+        const boardName = result.boardInfo?.name || 'Unknown Board';
+        const boardUrl = result.boardInfo?.url || tab.url;
+
+        console.log(`[Pinterest Import] Uploading ${result.pins.length} pins from "${boardName}"`);
+
+        const uploadResult = await uploadPinsToSupabase(
+          result.pins,
+          boardName,
+          boardUrl,
+          (progress) => {
+            // Could send progress to sidepanel here
+            console.log(`[Pinterest Import] Upload progress: ${progress}%`);
+          }
+        );
+
+        sendResponse({
+          success: true,
+          pinsExtracted: result.pins.length,
+          pinsUploaded: uploadResult.success,
+          pinsFailed: uploadResult.failed,
+          boardName,
+          stats: result.stats
+        });
+
+      } catch (error) {
+        console.error('[Pinterest Import] Error:', error);
+        sendResponse({
+          success: false,
+          error: error instanceof Error ? error.message : 'Import failed'
+        });
+      }
+    })();
+    return true;
+  }
+
+  // Handle progress updates from content script
+  if (message.type === 'PINTEREST_IMPORT_PROGRESS') {
+    const progress = message.progress;
+    // Broadcast to any listening sidepanel/popup
+    chrome.runtime.sendMessage({
+      type: 'PINTEREST_IMPORT_PROGRESS_UPDATE',
+      progress
+    }).catch(() => {});
+    return false; // Sync response
+  }
+
+  // Quick import (no scrolling, just what's visible)
+  if (message.type === 'PINTEREST_QUICK_IMPORT') {
+    (async () => {
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab?.id || !tab.url?.includes('pinterest.com')) {
+          sendResponse({ success: false, error: 'Please open a Pinterest page first' });
+          return;
+        }
+
+        // Inject and extract
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ['pinterest_active.js']
+          });
+        } catch (e) {}
+
+        await delay(300);
+
+        const result = await chrome.tabs.sendMessage(tab.id, {
+          type: 'PINTEREST_QUICK_EXTRACT'
+        });
+
+        if (!result?.pins?.length) {
+          sendResponse({ success: false, error: 'No pins found' });
+          return;
+        }
+
+        const boardName = result.boardInfo?.name || 'Pinterest';
+        const boardUrl = result.boardInfo?.url || tab.url;
+
+        const uploadResult = await uploadPinsToSupabase(result.pins, boardName, boardUrl);
+
+        sendResponse({
+          success: true,
+          pinsExtracted: result.pins.length,
+          pinsUploaded: uploadResult.success,
+          boardName
+        });
+
+      } catch (error) {
+        sendResponse({
+          success: false,
+          error: error instanceof Error ? error.message : 'Quick import failed'
+        });
+      }
+    })();
+    return true;
+  }
+
   if (message.type === 'PINTEREST_ACTIVE_BOARDS') {
     (async () => {
       try {
@@ -1507,7 +1820,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // Chrome bookmarks messages
   if (message.type === 'SYNC_CHROME_BOOKMARKS') {
-    syncChromeBookmarks().then(count => sendResponse({ success: true, count }));
+    syncChromeBookmarks().then(result => sendResponse({
+      success: true,
+      count: result.newCount,
+      totalCount: result.totalCount
+    }));
+    return true;
+  }
+
+  if (message.type === 'GET_CHROME_BOOKMARK_COUNT') {
+    getChromeBookmarkCount().then(count => sendResponse({ count }));
     return true;
   }
 

@@ -943,9 +943,31 @@
         <div class="integration-status" id="pinterest-status">Not connected</div>
       </div>
       <div style="display: flex; gap: 8px;">
-        <button class="connect-btn" id="pinterest-connect">Connect</button>
+        <button class="connect-btn" id="pinterest-connect">Sync All</button>
         <button class="reset-btn" id="pinterest-reset" title="Reset and sync from beginning">Reset</button>
       </div>
+    </div>
+
+    <!-- Import Current Board Section -->
+    <div id="pinterest-import-section" style="margin-top: 12px; padding: 12px; background: #111111; border: 1px solid #333333; border-radius: 8px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+        <span style="font-size: 12px; color: #ffffff;">Import Current Board</span>
+        <button class="connect-btn" id="pinterest-import-current" style="background: #E60023; font-size: 11px; padding: 6px 12px;">
+          Import
+        </button>
+      </div>
+      <div style="font-size: 11px; color: #888888; margin-bottom: 8px;">
+        Open a Pinterest board in a tab, then click Import
+      </div>
+      <!-- Import Progress -->
+      <div id="pinterest-import-progress" style="display: none;">
+        <div style="height: 4px; background: #333333; border-radius: 2px; overflow: hidden; margin-bottom: 6px;">
+          <div id="pinterest-import-progress-fill" style="height: 100%; background: #E60023; width: 0%; transition: width 0.3s ease;"></div>
+        </div>
+        <div id="pinterest-import-status" style="font-size: 11px; color: #fbbf24;">Importing...</div>
+      </div>
+      <!-- Import Result -->
+      <div id="pinterest-import-result" style="display: none; font-size: 11px; padding: 8px; border-radius: 4px; margin-top: 8px;"></div>
     </div>
 
     <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px; color: #888888; font-size: 11px;">
