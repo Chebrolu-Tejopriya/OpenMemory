@@ -8,6 +8,9 @@ import MiniSearch from 'minisearch';
 import { db, IndexedBookmark, PinterestPin } from './db';
 
 // ============== SUPABASE SEARCH ==============
+const DEBUG_SEARCH = false;
+const DEBUG_VECTOR_ONLY = false;
+
 interface SupabaseBookmark {
   id: string;
   url: string;
@@ -15,6 +18,7 @@ interface SupabaseBookmark {
   folder: string | null;
   chrome_id: string | null;
   similarity: number;
+  created_at?: string | null;
 }
 
 interface SupabaseSearchResult {
@@ -25,6 +29,12 @@ interface SupabaseSearchResult {
   folder_or_board: string | null;
   image_url: string | null;
   similarity: number;
+  description?: string | null;
+  similarity_raw?: number;
+  keyword_score?: number;  // 1.0 for text/keyword matches, 0 for vector-only matches
+  recency_score?: number;
+  final_score?: number;
+  created_at?: string | null;
 }
 
 async function getSupabaseConfig(): Promise<{ url: string; anonKey: string } | null> {
@@ -41,14 +51,10 @@ async function getSupabaseConfig(): Promise<{ url: string; anonKey: string } | n
 
 // Generate embedding via Supabase Edge Function (uses HF with token)
 async function generateLocalEmbedding(text: string): Promise<number[] | null> {
-  const config = await getSupabaseConfig();
-  if (!config) return null;
-
   try {
-    const response = await fetch(`${config.url}/functions/v1/generate-embedding`, {
+    const response = await fetch('http://localhost:3000/embed', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${config.anonKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ text })
@@ -60,7 +66,12 @@ async function generateLocalEmbedding(text: string): Promise<number[] | null> {
     }
 
     const result = await response.json();
-    return Array.isArray(result.embedding) ? result.embedding : null;
+    const embedding = Array.isArray(result.embedding) ? result.embedding : null;
+    if (!embedding || embedding.length !== 384) {
+      console.error('[Search] Invalid embedding length:', embedding ? embedding.length : 'null');
+      return null;
+    }
+    return embedding;
   } catch (error) {
     console.error('[Search] Embedding failed:', error);
     return null;
@@ -68,86 +79,205 @@ async function generateLocalEmbedding(text: string): Promise<number[] | null> {
 }
 
 // Search using vector similarity (semantic search) - includes both bookmarks AND Pinterest pins
-async function searchSupabaseVector(query: string, limit = 50, folder?: string): Promise<SupabaseSearchResult[]> {
+async function searchSupabaseVector(
+  query: string,
+  limit = 50,
+  folder?: string,
+  source?: 'chrome' | 'pinterest' | 'all',
+  board?: string | null
+): Promise<SupabaseSearchResult[]> {
   const config = await getSupabaseConfig();
   if (!config) return [];
 
+  const requestHeaders = {
+    'apikey': config.anonKey,
+    'Authorization': `Bearer ${config.anonKey}`,
+    'Content-Type': 'application/json'
+  };
+
   try {
-    // Generate embedding locally
-    const embedding = await generateLocalEmbedding(query);
-    if (!embedding) {
-      console.log('[Search] No embedding, falling back to text search');
-      const bookmarkResults = await searchSupabaseText(query, limit, folder);
-      // Convert to unified format
-      return bookmarkResults.map(b => ({
+    // ALWAYS do BOTH text search AND vector search in parallel
+    // Text search finds exact keyword matches, vector search finds semantic matches
+    const embeddingPromise = generateLocalEmbedding(query);
+    const textSearchPromise = Promise.all([
+      searchSupabaseText(query, limit, folder),
+      searchSupabasePinsText(query, limit, board || null)
+    ]);
+
+    const [embedding, [bookmarkTextResults, pinTextResults]] = await Promise.all([
+      embeddingPromise,
+      textSearchPromise
+    ]);
+
+    // Convert text search results - these are KEYWORD matches (high priority)
+    const textResults: SupabaseSearchResult[] = [
+      ...bookmarkTextResults.map(b => ({
         source: 'chrome' as const,
         item_id: b.id,
         url: b.url,
         title: b.title,
         folder_or_board: b.folder,
         image_url: null,
-        similarity: b.similarity
-      }));
+        similarity: 0.5, // Base similarity for text matches
+        keyword_score: 1.0, // HIGH keyword score - these are exact matches!
+        created_at: b.created_at ?? null
+      })),
+      ...pinTextResults.map(p => ({
+        source: 'pinterest' as const,
+        item_id: p.pin_id ?? p.id,
+        url: p.pin_url,
+        title: p.title || 'Untitled',
+        folder_or_board: p.board_name || null,
+        image_url: p.image_url || null,
+        similarity: 0.5,
+        keyword_score: 1.0, // HIGH keyword score
+        description: p.description || null,
+        created_at: p.synced_at ?? null
+      }))
+    ];
+
+    if (DEBUG_SEARCH) {
+      console.log('[Search] Text search results:', textResults.length);
     }
 
-    // Use combined search that includes both bookmarks and Pinterest pins
-    const response = await fetch(`${config.url}/rest/v1/rpc/search_all_items`, {
-      method: 'POST',
-      headers: {
-        'apikey': config.anonKey,
-        'Authorization': `Bearer ${config.anonKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        query_embedding: embedding,
-        match_count: limit,
-        filter_folder: folder || null
+    // If no embedding, return text results only
+    if (!embedding) {
+      console.log('[Search] No embedding, using text search only');
+      return textResults.slice(0, limit);
+    }
+
+    // Do vector search
+    const [bookmarkResponse, pinResponse] = await Promise.all([
+      fetch(`${config.url}/rest/v1/rpc/search_bookmarks`, {
+        method: 'POST',
+        headers: requestHeaders,
+        body: JSON.stringify({
+          query_embedding: embedding,
+          match_count: limit,
+          filter_folder: folder || null
+        })
+      }),
+      fetch(`${config.url}/rest/v1/rpc/search_pinterest_pins`, {
+        method: 'POST',
+        headers: requestHeaders,
+        body: JSON.stringify({
+          query_embedding: embedding,
+          match_count: limit,
+          filter_board: board || null
+        })
       })
+    ]);
+
+    const bookmarkResults = bookmarkResponse.ok ? await bookmarkResponse.json() : [];
+    const pinResults = pinResponse.ok ? await pinResponse.json() : [];
+
+    // Convert vector search results - these are SEMANTIC matches (lower priority)
+    const vectorResults: SupabaseSearchResult[] = [
+      ...(Array.isArray(bookmarkResults) ? bookmarkResults : []).map((b: SupabaseBookmark & { created_at?: string | null }) => ({
+        source: 'chrome' as const,
+        item_id: b.id,
+        url: b.url,
+        title: b.title,
+        folder_or_board: b.folder,
+        image_url: null,
+        similarity: b.similarity,
+        keyword_score: 0, // Will be computed later based on actual keyword match
+        created_at: b.created_at ?? null
+      })),
+      ...(Array.isArray(pinResults) ? pinResults : []).map((p: any) => ({
+        source: 'pinterest' as const,
+        item_id: p.pin_id ?? p.id,
+        url: p.pin_url,
+        title: p.title || 'Untitled',
+        folder_or_board: p.board_name || null,
+        image_url: p.image_url || null,
+        similarity: typeof p.similarity_raw === 'number' ? 1 - p.similarity_raw : p.similarity,
+        similarity_raw: p.similarity_raw,
+        keyword_score: 0,
+        description: p.description || null,
+        created_at: p.synced_at ?? null
+      }))
+    ];
+
+    if (DEBUG_SEARCH) {
+      console.log('[Search] Vector search results:', vectorResults.length);
+    }
+
+    // Merge results: text matches first, then vector matches (dedupe by URL)
+    const seenUrls = new Set<string>();
+    const mergedResults: SupabaseSearchResult[] = [];
+
+    // Add text results first (keyword matches have priority)
+    for (const result of textResults) {
+      if (!seenUrls.has(result.url)) {
+        seenUrls.add(result.url);
+        mergedResults.push(result);
+      }
+    }
+
+    // Add vector results that weren't already in text results
+    for (const result of vectorResults) {
+      if (!seenUrls.has(result.url)) {
+        seenUrls.add(result.url);
+        mergedResults.push(result);
+      } else {
+        // Update existing result with vector similarity if it has a text match
+        const existing = mergedResults.find(r => r.url === result.url);
+        if (existing && result.similarity > (existing.similarity || 0)) {
+          existing.similarity = result.similarity;
+          existing.similarity_raw = result.similarity_raw;
+        }
+      }
+    }
+
+    // Sort: keyword matches first, then by similarity
+    mergedResults.sort((a, b) => {
+      const keywordDiff = (b.keyword_score || 0) - (a.keyword_score || 0);
+      if (keywordDiff !== 0) return keywordDiff;
+      return (b.similarity || 0) - (a.similarity || 0);
     });
 
-    if (!response.ok) {
-      console.log('[Search] Combined vector search failed, falling back to text');
-      const bookmarkResults = await searchSupabaseText(query, limit, folder);
-      return bookmarkResults.map(b => ({
-        source: 'chrome' as const,
-        item_id: b.id,
-        url: b.url,
-        title: b.title,
-        folder_or_board: b.folder,
-        image_url: null,
-        similarity: b.similarity
-      }));
+    if (DEBUG_SEARCH) {
+      console.log('[Search] Merged results:', mergedResults.length);
+      console.log('[Search] Top 5:', mergedResults.slice(0, 5).map(r => ({
+        title: r.title,
+        keyword: r.keyword_score,
+        similarity: r.similarity
+      })));
     }
 
-    const results = await response.json();
-
-    // If no vector results, fall back to text search
-    if (!results || results.length === 0) {
-      const bookmarkResults = await searchSupabaseText(query, limit, folder);
-      return bookmarkResults.map(b => ({
-        source: 'chrome' as const,
-        item_id: b.id,
-        url: b.url,
-        title: b.title,
-        folder_or_board: b.folder,
-        image_url: null,
-        similarity: b.similarity
-      }));
-    }
-
-    return results;
+    return mergedResults.slice(0, limit);
   } catch (error) {
-    console.error('[Search] Vector search error:', error);
-    const bookmarkResults = await searchSupabaseText(query, limit, folder);
-    return bookmarkResults.map(b => ({
-      source: 'chrome' as const,
-      item_id: b.id,
-      url: b.url,
-      title: b.title,
-      folder_or_board: b.folder,
-      image_url: null,
-      similarity: b.similarity
-    }));
+    console.error('[Search] Search error:', error);
+    // Fallback to text search only
+    const [bookmarkResults, pinResults] = await Promise.all([
+      searchSupabaseText(query, limit, folder),
+      searchSupabasePinsText(query, limit, board || null)
+    ]);
+    return [
+      ...bookmarkResults.map(b => ({
+        source: 'chrome' as const,
+        item_id: b.id,
+        url: b.url,
+        title: b.title,
+        folder_or_board: b.folder,
+        image_url: null,
+        similarity: b.similarity,
+        keyword_score: 1.0
+      })),
+      ...pinResults.map(p => ({
+        source: 'pinterest' as const,
+        item_id: p.pin_id,
+        url: p.pin_url,
+        title: p.title || 'Pinterest Pin',
+        folder_or_board: p.board_name || null,
+        image_url: p.image_url || null,
+        similarity: p.similarity,
+        keyword_score: 1.0,
+        description: p.description || null,
+        created_at: p.synced_at ?? null
+      }))
+    ].slice(0, limit);
   }
 }
 
@@ -179,8 +309,44 @@ async function searchSupabaseText(query: string, limit = 50, folder?: string): P
 }
 
 // Main search function - uses vector search with text fallback
-async function searchSupabase(query: string, limit = 50, folder?: string): Promise<SupabaseSearchResult[]> {
-  return searchSupabaseVector(query, limit, folder);
+async function searchSupabase(
+  query: string,
+  limit = 50,
+  folder?: string,
+  source?: 'chrome' | 'pinterest' | 'all',
+  board?: string | null
+): Promise<SupabaseSearchResult[]> {
+  return searchSupabaseVector(query, limit, folder, source, board);
+}
+
+async function searchSupabasePinsText(
+  query: string,
+  limit = 50,
+  board?: string | null
+): Promise<any[]> {
+  const config = await getSupabaseConfig();
+  if (!config) return [];
+
+  try {
+    const response = await fetch(`${config.url}/rest/v1/rpc/search_pinterest_pins_text`, {
+      method: 'POST',
+      headers: {
+        'apikey': config.anonKey,
+        'Authorization': `Bearer ${config.anonKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        search_query: query,
+        match_count: limit,
+        filter_board: board || null
+      })
+    });
+
+    if (!response.ok) return [];
+    return await response.json();
+  } catch {
+    return [];
+  }
 }
 
 // ============== HYBRID SEARCH ==============
@@ -188,39 +354,261 @@ interface HybridResult {
   url: string;
   title: string;
   folder: string | null;
-  keywordScore: number;  // Score from MiniSearch (0-1 normalized)
+  textScore: number;     // Keyword match score (0-1)
   semanticScore: number; // Score from vector search (0-1)
+  similarityRaw?: number | null;
+  recencyScore: number;  // Recency score (0-1)
   combinedScore: number; // Weighted combination
   source: 'chrome' | 'pinterest';
   item?: SearchableItem;
+  imageUrl?: string | null;
+  createdAt?: number | null;
+  searchableText?: string;
 }
 
-async function hybridSearch(query: string, limit = 50, folder?: string): Promise<HybridResult[]> {
+type SourceFilter = 'all' | 'pinterest' | 'bookmarks';
+type TimeFilter = 'all' | 'recent' | 'older';
+
+interface SearchFilters {
+  source: SourceFilter;
+  board: string | null;
+  time: TimeFilter;
+  folder: string | null;
+}
+
+const RELEVANCE_RATIO = 0.2;
+const MIN_RELEVANCE_SCORE = 0.05;
+const MIN_SOURCE_RESULTS = 20;
+const STOPWORDS = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'to', 'for', 'in', 'on', 'with']);
+const RECENT_DAYS = 30;
+const RECENT_WINDOW_MS = RECENT_DAYS * 24 * 60 * 60 * 1000;
+
+function getSearchPoolLimit(): number {
+  return Math.max(allItems.length, 1);
+}
+
+function buildSearchableText(input: Array<string | null | undefined>): string {
+  return input
+    .filter(Boolean)
+    .map(text => String(text))
+    .join(' ')
+    .toLowerCase();
+}
+
+function normalizeTextForMatch(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getRequiredTerms(terms: string[]): string[] {
+  return terms.filter(term => term.length > 2 && !STOPWORDS.has(term));
+}
+
+function normalizeTerm(term: string): string {
+  if (term.endsWith('s') && term.length > 3) {
+    return term.slice(0, -1);
+  }
+  return term;
+}
+
+function extractQuotedPhrases(query: string): string[] {
+  const phrases: string[] = [];
+  const regex = /"([^"]+)"/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(query)) !== null) {
+    if (match[1]) phrases.push(match[1]);
+  }
+  return phrases;
+}
+
+function matchesQueryRequirements(
+  text: string,
+  terms: string[],
+  normalizedQuery: string,
+  options: { requirePhrase: boolean; requireAllTerms: boolean }
+): boolean {
+  const requiredTerms = getRequiredTerms(terms).map(normalizeTerm);
+  if (requiredTerms.length === 0) return true;
+
+  const normalizedText = normalizeTextForMatch(text);
+  const quotedPhrases = extractQuotedPhrases(normalizedQuery).map(normalizeTextForMatch);
+  const requiresLandingPage = normalizeTextForMatch(normalizedQuery).includes('landing page');
+
+  if (options.requirePhrase && requiresLandingPage && !normalizedText.includes('landing page')) {
+    return false;
+  }
+
+  for (const phrase of quotedPhrases) {
+    if (phrase && !normalizedText.includes(phrase)) return false;
+  }
+
+  if (options.requireAllTerms) {
+    for (const term of requiredTerms) {
+      if (!normalizedText.includes(term)) return false;
+    }
+    return true;
+  }
+
+  const minHits = Math.max(1, Math.ceil(requiredTerms.length * 0.6));
+  let hits = 0;
+  for (const term of requiredTerms) {
+    if (normalizedText.includes(term)) hits += 1;
+  }
+  return hits >= minHits;
+}
+
+function filterRelevantResults(results: HybridResult[], terms: string[], normalizedQuery: string): HybridResult[] {
+  if (results.length === 0) return results;
+
+  const requireKeywordMatch = terms.length >= 2;
+  const strictOptions = { requirePhrase: true, requireAllTerms: true };
+  const relaxedBookmarkOptions = { requirePhrase: false, requireAllTerms: false };
+  const relaxedPinterestOptions = { requirePhrase: false, requireAllTerms: false };
+  const semanticFloorBySource: Record<HybridResult['source'], number> = {
+    chrome: 0.5,
+    pinterest: 0.45
+  };
+
+  const bySource: Record<HybridResult['source'], HybridResult[]> = {
+    chrome: [],
+    pinterest: []
+  };
+
+  results.forEach(result => {
+    bySource[result.source].push(result);
+  });
+
+  const buildSourceResults = (source: HybridResult['source']): HybridResult[] => {
+    const sourceResults = bySource[source];
+    const strictMatches = sourceResults.filter(result => {
+      const searchableText = result.searchableText || '';
+      return matchesQueryRequirements(searchableText, terms, normalizedQuery, strictOptions);
+    });
+
+    let combined = strictMatches;
+    if (combined.length < MIN_SOURCE_RESULTS) {
+      const relaxedOptions = source === 'chrome'
+        ? relaxedBookmarkOptions
+        : relaxedPinterestOptions;
+      const relaxedMatches = sourceResults.filter(result => {
+        const searchableText = result.searchableText || '';
+        const matchesQuery = matchesQueryRequirements(searchableText, terms, normalizedQuery, relaxedOptions);
+        if (!matchesQuery) {
+          if (result.semanticScore < semanticFloorBySource[source]) return false;
+        }
+        return true;
+      });
+
+      const seen = new Set(combined.map(item => item.url));
+      const appended = relaxedMatches.filter(item => !seen.has(item.url));
+      combined = [...combined, ...appended];
+    }
+
+    const sourceMax = combined.reduce((max, item) => Math.max(max, item.combinedScore), 0);
+    const threshold = Math.max(sourceMax * RELEVANCE_RATIO, MIN_RELEVANCE_SCORE);
+
+    return combined.filter(result => {
+      if (result.combinedScore < threshold) return false;
+
+      if (requireKeywordMatch && result.textScore <= 0 && result.semanticScore < semanticFloorBySource[source]) {
+        return false;
+      }
+
+      if (!result.item) {
+        const hasStrongSemantic = result.semanticScore >= 0.2;
+        const hasKeywordMatch = result.textScore > 0;
+        return hasKeywordMatch || hasStrongSemantic;
+      }
+
+      return true;
+    });
+  };
+
+  const filteredBySource = {
+    chrome: buildSourceResults('chrome'),
+    pinterest: buildSourceResults('pinterest')
+  };
+
+  return [...filteredBySource.chrome, ...filteredBySource.pinterest];
+}
+
+function mixSourcesByScore(results: HybridResult[]): HybridResult[] {
+  if (results.length < 2) return results;
+
+  // Sort by keyword score first (primary), then combined score, then prefer bookmarks
+  return results.sort((a, b) => {
+    // Primary: keyword matches come first
+    const keywordDiff = b.textScore - a.textScore;
+    if (Math.abs(keywordDiff) > 0.1) return keywordDiff;
+
+    // Secondary: combined score
+    const scoreDiff = b.combinedScore - a.combinedScore;
+    if (Math.abs(scoreDiff) > 0.05) return scoreDiff;
+
+    // Tertiary: prefer bookmarks when scores are close
+    if (a.source === 'chrome' && b.source !== 'chrome') return -1;
+    if (b.source === 'chrome' && a.source !== 'chrome') return 1;
+
+    return 0;
+  });
+}
+
+async function hybridSearch(query: string, limit = getSearchPoolLimit(), filters?: SearchFilters): Promise<HybridResult[]> {
+  const normalizedQuery = normalizeQuery(query);
+  const terms = tokenizeQuery(normalizedQuery);
   const resultMap = new Map<string, HybridResult>();
 
-  // Run local MiniSearch and Supabase search in parallel
-  const [localResults, supabaseResults] = await Promise.all([
-    Promise.resolve(search(query)), // Local MiniSearch
-    isSupabaseAvailable ? searchSupabase(query, limit, folder) : Promise.resolve([])
-  ]);
+  const useSupabase = isSupabaseAvailable;
+  const localResultsPromise = DEBUG_VECTOR_ONLY && useSupabase
+    ? Promise.resolve([])
+    : Promise.resolve(search(normalizedQuery));
+  const supabaseResultsPromise = useSupabase
+    ? searchSupabase(
+        normalizedQuery,
+        limit,
+        filters?.folder || undefined,
+        filters?.source === 'bookmarks' ? 'chrome' : filters?.source === 'pinterest' ? 'pinterest' : 'all',
+        filters?.board || null
+      )
+    : Promise.resolve([]);
 
-  // Normalize MiniSearch scores (they can be > 1)
-  const maxLocalScore = Math.max(...localResults.map(r => r.score), 1);
+  const [localResults, supabaseResults] = await Promise.all([
+    localResultsPromise,
+    supabaseResultsPromise
+  ]);
 
   // Add local results to map
   for (const result of localResults) {
     const url = result.item.source === 'chrome' ? result.item.url : result.item.pinUrl;
-    const normalizedScore = result.score / maxLocalScore;
+    const folderOrBoard = result.item.source === 'chrome'
+      ? result.item.folder || null
+      : result.item.boardName || null;
+    const createdAt = getItemTimestamp(result.item);
+    const extraText = result.item.source === 'chrome'
+      ? result.item.extendedContent || null
+      : result.item.description || null;
+    const textScore = computeTextMatchScore(result.item.title, folderOrBoard, terms, extraText);
 
     resultMap.set(url, {
       url,
       title: result.item.title,
-      folder: result.item.source === 'chrome' ? result.item.folder || null : result.item.boardName || null,
-      keywordScore: normalizedScore,
+      folder: folderOrBoard,
+      textScore,
       semanticScore: 0,
-      combinedScore: normalizedScore * 0.6, // Keyword weight: 60%
+      recencyScore: 0,
+      combinedScore: 0,
       source: result.item.source,
-      item: result.item
+      item: result.item,
+      createdAt,
+      searchableText: buildSearchableText([
+        result.item.title,
+        folderOrBoard,
+        extraText,
+        result.item.source === 'pinterest' ? 'pinterest' : 'bookmark'
+      ])
     });
   }
 
@@ -228,37 +616,129 @@ async function hybridSearch(query: string, limit = 50, folder?: string): Promise
   for (const result of supabaseResults) {
     const existing = resultMap.get(result.url);
     const semanticScore = result.similarity || 0;
+    const createdAt = result.created_at ? Date.parse(result.created_at) : null;
+    // USE keyword_score from Supabase if it exists (from text search), otherwise compute it
+    const textScore = result.keyword_score !== undefined && result.keyword_score > 0
+      ? result.keyword_score
+      : computeTextMatchScore(result.title, result.folder_or_board, terms, result.description || null);
+    const recencyScore = result.recency_score ?? 0;
+    const finalScore = result.final_score ?? 0;
+    const similarityRaw = result.similarity_raw ?? null;
 
     if (existing) {
-      // Found in both - boost the score!
-      existing.semanticScore = semanticScore;
-      existing.combinedScore = (existing.keywordScore * 0.5) + (semanticScore * 0.5) + 0.2; // Bonus for appearing in both
+      existing.semanticScore = Math.max(existing.semanticScore, semanticScore);
+      // Keep the HIGHER textScore (keyword matches from text search should win)
+      existing.textScore = Math.max(existing.textScore, textScore);
+      if (result.final_score !== undefined) {
+        existing.combinedScore = Math.max(existing.combinedScore, finalScore);
+        existing.recencyScore = Math.max(existing.recencyScore, recencyScore);
+        existing.similarityRaw = similarityRaw;
+      }
+      if (!existing.createdAt && createdAt) {
+        existing.createdAt = createdAt;
+      }
     } else {
-      // Only in semantic search - could be bookmark or Pinterest pin
       resultMap.set(result.url, {
         url: result.url,
         title: result.title,
         folder: result.folder_or_board,
-        keywordScore: 0,
+        textScore, // Now uses keyword_score from text search if available
         semanticScore: semanticScore,
-        combinedScore: semanticScore * 0.4, // Semantic weight: 40%
+        similarityRaw: similarityRaw,
+        recencyScore: recencyScore,
+        combinedScore: finalScore,
         source: result.source, // 'chrome' or 'pinterest'
-        item: undefined
+        item: undefined,
+        imageUrl: result.image_url ?? null,
+        createdAt,
+        searchableText: buildSearchableText([
+          result.title,
+          result.folder_or_board,
+          result.description || null,
+          result.source
+        ])
       });
     }
   }
 
-  // Sort by combined score and return top results
-  const sorted = Array.from(resultMap.values())
-    .sort((a, b) => b.combinedScore - a.combinedScore)
-    .slice(0, limit);
-
-  // Apply folder filter if set
-  if (folder) {
-    return sorted.filter(r => r.folder?.toLowerCase().startsWith(folder.toLowerCase()));
+  let results = Array.from(resultMap.values());
+  if (filters) {
+    results = applyFilters(results, filters);
   }
 
-  return sorted;
+  const resultsNeedingScores = results.filter(result => result.combinedScore <= 0);
+  if (resultsNeedingScores.length > 0) {
+    applyRecencyScores(resultsNeedingScores);
+    resultsNeedingScores.forEach(result => {
+      // Source boost: bookmarks get priority
+      const sourceBoost = result.source === 'chrome' ? 1.0 : 0.0;
+      // Keyword-first scoring: keyword matches are the primary signal
+      result.combinedScore =
+        (0.55 * result.textScore) +      // Keyword is PRIMARY
+        (0.10 * result.semanticScore) +  // Vector is secondary
+        (0.15 * result.recencyScore) +
+        (0.20 * sourceBoost);
+    });
+  }
+
+  // Sort by keyword score first, then combined score
+  results.sort((a, b) => {
+    const keywordDiff = b.textScore - a.textScore;
+    if (Math.abs(keywordDiff) > 0.1) return keywordDiff;
+    return b.combinedScore - a.combinedScore;
+  });
+
+  if (DEBUG_SEARCH) {
+    results.forEach(result => {
+      console.log('[Search Debug]', {
+        title: result.title,
+        vector_similarity: result.semanticScore,
+        similarity_raw: result.similarityRaw ?? null,
+        keyword_score: result.textScore,
+        recency_score: result.recencyScore,
+        final_score: result.combinedScore
+      });
+    });
+
+    const topFiveByVector = [...results]
+      .sort((a, b) => b.semanticScore - a.semanticScore)
+      .slice(0, 5);
+    console.log('[Search Debug] Top 5 vector similarities', topFiveByVector.map(result => ({
+      title: result.title,
+      similarity_raw: result.similarityRaw ?? null,
+      vector_similarity: result.semanticScore
+    })));
+
+    const similarityZeroCount = results.filter(result => result.semanticScore === 0).length;
+    if (results.length > 0 && similarityZeroCount / results.length > 0.9) {
+      console.warn('[Search Debug] Vector similarity is near-zero for most results. Check embedding content and match_count pool.');
+    }
+
+    if (results.length > 0 && results.every(result => result.semanticScore === 0)) {
+      console.error('[Search Debug] Vector similarity is 0 for all results. Check embedding generation and RPC query usage.');
+    }
+
+    if (normalizeQuery(query) === 'fintech') {
+      const topFive = [...results]
+        .sort((a, b) => b.combinedScore - a.combinedScore)
+        .slice(0, 5);
+      const fintechRegex = /fintech|finance|bank|banking|payment|payments|card|crypto|wallet|lending|invest|trading|loan|account|fund|billing|invoice/i;
+      const invalid = topFive.filter(result => !fintechRegex.test(result.title || '') && !fintechRegex.test(result.folder || ''));
+      if (invalid.length > 0) {
+        console.warn('[Search Debug] Fintech ranking likely incorrect. Top 5 results missing fintech content.', {
+          topTitles: topFive.map(result => result.title)
+        });
+      }
+    }
+  }
+
+  const sorted = results
+    .sort((a, b) => b.combinedScore - a.combinedScore);
+  if (DEBUG_VECTOR_ONLY) {
+    return [...sorted].sort((a, b) => b.semanticScore - a.semanticScore);
+  }
+
+  return mixSourcesByScore(filterRelevantResults(sorted, terms, normalizedQuery));
 }
 
 // ============== INTERFACES ==============
@@ -269,6 +749,12 @@ interface SearchResult {
   score: number;
   matchField: 'title' | 'folder' | 'extendedContent' | 'boardName';
   snippet?: string;
+  debugScores?: {
+    semantic: number;
+    keyword: number;
+    recency: number;
+    final: number;
+  };
 }
 
 interface SearchableDocument {
@@ -287,9 +773,11 @@ const resultsEl = document.getElementById('results') as HTMLDivElement;
 const statusEl = document.getElementById('status') as HTMLDivElement;
 const loadMoreBtn = document.getElementById('load-more-btn') as HTMLButtonElement;
 const suggestionsEl = document.getElementById('suggestions') as HTMLDivElement;
-const activeFilterEl = document.getElementById('active-filter') as HTMLDivElement;
-const filterTextEl = document.getElementById('filter-text') as HTMLSpanElement;
-const removeFilterBtn = document.getElementById('remove-filter') as HTMLSpanElement;
+const filterChipsEl = document.getElementById('filter-chips') as HTMLDivElement;
+const filterAddBtn = document.getElementById('filter-add') as HTMLButtonElement;
+const filterMenuEl = document.getElementById('filter-menu') as HTMLDivElement;
+const filterBoardSection = document.getElementById('filter-board-section') as HTMLDivElement;
+const filterFolderSection = document.getElementById('filter-folder-section') as HTMLDivElement;
 const itemCountEl = document.getElementById('item-count') as HTMLSpanElement;
 
 // Integrations UI elements
@@ -355,6 +843,10 @@ let miniSearch: MiniSearch<SearchableDocument> | null = null;
 let currentResults: SearchResult[] = [];
 let displayedCount = 0;
 let currentFolder: string | null = null;
+let selectedSourceFilter: SourceFilter = 'all';
+let selectedBoardFilter: string | null = null;
+let selectedTimeFilter: TimeFilter = 'all';
+let selectedFolderFilter: string | null = null;
 let selectedSuggestionIndex = -1;
 const ITEMS_PER_PAGE = 20;
 
@@ -412,6 +904,8 @@ async function initializeSearch(): Promise<void> {
 
     // Initialize MiniSearch
     initializeMiniSearch();
+
+    updateFilterOptions();
 
     const pinsCount = pins.length;
     const bookmarksCount = bookmarks.length || allItems.filter(i => i.source === 'chrome').length;
@@ -490,14 +984,15 @@ async function updateIndexingStatus(): Promise<void> {
 
 // ============== SEARCH FUNCTION ==============
 function search(query: string): SearchResult[] {
-  if (!query.trim() || !miniSearch) return [];
+  const normalizedQuery = normalizeQuery(query);
+  if (!normalizedQuery || !miniSearch) return [];
 
   // Check for special blog/article queries
-  const isBlogQuery = /\b(blog|article|post|journal)\b/i.test(query);
-  const isPinterestQuery = /\b(pin|pinterest|board)\b/i.test(query);
+  const isBlogQuery = /\b(blog|article|post|journal)\b/i.test(normalizedQuery);
+  const isPinterestQuery = /\b(pin|pinterest|board)\b/i.test(normalizedQuery);
 
   // Perform MiniSearch
-  const results = miniSearch.search(query);
+  const results = miniSearch.search(normalizedQuery);
 
   // Map to SearchResult with additional metadata
   let searchResults: SearchResult[] = [];
@@ -517,13 +1012,13 @@ function search(query: string): SearchResult[] {
 
     if (!item) continue;
 
-    const matchField = determineMatchField(query, item);
+    const matchField = determineMatchField(normalizedQuery, item);
     let snippet: string | undefined;
 
     if (item.source === 'chrome' && matchField === 'extendedContent') {
-      snippet = generateSnippet(item.extendedContent || '', query);
+      snippet = generateSnippet(item.extendedContent || '', normalizedQuery);
     } else if (item.source === 'pinterest' && item.description) {
-      snippet = generateSnippet(item.description, query);
+      snippet = generateSnippet(item.description, normalizedQuery);
     }
 
     searchResults.push({
@@ -665,13 +1160,17 @@ function renderCard(result: SearchResult): string {
   const { item, snippet } = result;
 
   if (item.source === 'pinterest') {
-    return renderPinterestCard(item, snippet);
+    return renderPinterestCard(item, snippet, result.debugScores);
   }
 
-  return renderBookmarkCard(item, snippet);
+  return renderBookmarkCard(item, snippet, result.debugScores);
 }
 
-function renderBookmarkCard(item: IndexedBookmark & { source: 'chrome' }, snippet?: string): string {
+function renderBookmarkCard(
+  item: IndexedBookmark & { source: 'chrome' },
+  snippet?: string,
+  debugScores?: SearchResult['debugScores']
+): string {
   const faviconUrl = getFaviconUrl(item.url);
   const screenshotUrl = getScreenshotUrl(item.url);
 
@@ -683,6 +1182,10 @@ function renderBookmarkCard(item: IndexedBookmark & { source: 'chrome' }, snippe
   // Snippet HTML (only for extendedContent matches)
   const snippetHtml = snippet
     ? `<div class="card-snippet">${highlightQuery(escapeHtml(snippet), searchInput.value)}</div>`
+    : '';
+
+  const debugScoreHtml = DEBUG_SEARCH && debugScores
+    ? `<div class="card-score">Score: ${debugScores.final.toFixed(3)} (vec ${debugScores.semantic.toFixed(3)}, kw ${debugScores.keyword.toFixed(3)}, rec ${debugScores.recency.toFixed(3)})</div>`
     : '';
 
   return `
@@ -700,6 +1203,7 @@ function renderBookmarkCard(item: IndexedBookmark & { source: 'chrome' }, snippe
         </div>
         ${item.folder ? `<div class="card-path">${formatPath(item.folder)}</div>` : ''}
         ${snippetHtml}
+        ${debugScoreHtml}
         <div class="card-meta">
           <span class="source-badge">Chrome</span>
         </div>
@@ -708,7 +1212,11 @@ function renderBookmarkCard(item: IndexedBookmark & { source: 'chrome' }, snippe
   `;
 }
 
-function renderPinterestCard(item: PinterestPin & { source: 'pinterest' }, snippet?: string): string {
+function renderPinterestCard(
+  item: PinterestPin & { source: 'pinterest' },
+  snippet?: string,
+  debugScores?: SearchResult['debugScores']
+): string {
   // Use stored WebP blob or original URL
   let imageUrl = item.originalImageUrl;
 
@@ -726,6 +1234,10 @@ function renderPinterestCard(item: PinterestPin & { source: 'pinterest' }, snipp
 
   const snippetHtml = snippet
     ? `<div class="card-snippet">${highlightQuery(escapeHtml(snippet), searchInput.value)}</div>`
+    : '';
+
+  const debugScoreHtml = DEBUG_SEARCH && debugScores
+    ? `<div class="card-score">Score: ${debugScores.final.toFixed(3)} (vec ${debugScores.semantic.toFixed(3)}, kw ${debugScores.keyword.toFixed(3)}, rec ${debugScores.recency.toFixed(3)})</div>`
     : '';
 
   const titleText = item.title || 'Pinterest Pin';
@@ -749,6 +1261,7 @@ function renderPinterestCard(item: PinterestPin & { source: 'pinterest' }, snipp
         </div>
         <div class="card-path">Pinterest<span>/</span>${escapeHtml(item.boardName)}</div>
         ${snippetHtml}
+        ${debugScoreHtml}
         <div class="card-meta">
           <span class="source-badge pinterest">Pinterest</span>
         </div>
@@ -803,8 +1316,9 @@ function hideSuggestions(): void {
 
 function selectFolder(folder: string): void {
   currentFolder = folder;
-  filterTextEl.textContent = `📁 ${folder}`;
-  activeFilterEl.style.display = 'inline-flex';
+  selectedFolderFilter = folder;
+  selectedSourceFilter = 'bookmarks';
+  renderFilterChips();
 
   const value = searchInput.value;
   const atIndex = value.lastIndexOf('@');
@@ -822,7 +1336,8 @@ function selectFolder(folder: string): void {
 
 function clearFilter(): void {
   currentFolder = null;
-  activeFilterEl.style.display = 'none';
+  selectedFolderFilter = null;
+  renderFilterChips();
   if (searchInput.value.trim()) {
     performSearch();
   }
@@ -841,7 +1356,8 @@ function updateSearchModeUI(): void {
 let isSearching = false;
 
 async function performSearch(): Promise<void> {
-  const query = searchInput.value.trim();
+  applyFilterFromControls();
+  const query = normalizeQuery(searchInput.value);
   if (!query) {
     resultsEl.innerHTML = '';
     statusEl.textContent = '';
@@ -853,35 +1369,139 @@ async function performSearch(): Promise<void> {
   if (isSearching) return;
   isSearching = true;
 
-  const filterInfo = currentFolder ? ` in ${currentFolder}` : '';
+  const filterInfoParts: string[] = [];
+  if (selectedSourceFilter !== 'all') {
+    filterInfoParts.push(selectedSourceFilter === 'bookmarks' ? 'Bookmarks' : 'Pinterest');
+  }
+  if (selectedBoardFilter) {
+    filterInfoParts.push(`Board: ${selectedBoardFilter}`);
+  }
+  if (selectedTimeFilter !== 'all') {
+    filterInfoParts.push(selectedTimeFilter === 'recent' ? 'Recent' : 'Older');
+  }
+  if (selectedFolderFilter || currentFolder) {
+    filterInfoParts.push(`Folder: ${selectedFolderFilter || currentFolder}`);
+  }
+  const filterInfo = filterInfoParts.length > 0 ? ` (${filterInfoParts.join(', ')})` : '';
 
   try {
     if (isSupabaseAvailable) {
       // Smart Search: Keywords + AI combined (like Google)
       statusEl.textContent = `Searching...`;
 
-      const hybridResults = await hybridSearch(query, 50, currentFolder || undefined);
+      const hybridResults = await hybridSearch(query, getSearchPoolLimit(), {
+        source: selectedSourceFilter,
+        board: selectedBoardFilter,
+        time: selectedTimeFilter,
+        folder: selectedFolderFilter || currentFolder
+      });
 
       // Convert hybrid results to SearchResult format
-      currentResults = hybridResults.map(r => ({
-        item: r.item || {
-          id: undefined,
-          url: r.url,
-          title: r.title,
-          folder: r.folder,
-          indexStatus: 'indexed' as const,
-          source: r.source
-        } as SearchableItem,
-        score: r.combinedScore,
-        matchField: r.keywordScore > 0 ? 'title' as const : 'extendedContent' as const,
-        snippet: undefined
-      }));
+      currentResults = hybridResults.map(r => {
+        const baseItem = r.item || (r.source === 'pinterest'
+          ? ({
+              pinId: r.url,
+              boardName: r.folder || 'Pinterest',
+              boardUrl: '',
+              title: r.title,
+              description: undefined,
+              pinUrl: r.url,
+              sourceUrl: undefined,
+              imageBlob: undefined,
+              originalImageUrl: r.imageUrl || '',
+              syncedAt: r.createdAt || Date.now(),
+              source: 'pinterest' as const
+            } as PinterestPin & { source: 'pinterest' })
+          : ({
+              id: undefined,
+              url: r.url,
+              title: r.title,
+              folder: r.folder,
+              indexStatus: 'indexed' as const,
+              source: 'chrome' as const
+            } as IndexedBookmark & { source: 'chrome' }));
+        return {
+          item: baseItem,
+          score: r.combinedScore,
+          matchField: r.textScore > 0 ? 'title' as const : 'extendedContent' as const,
+          snippet: undefined,
+          debugScores: DEBUG_SEARCH ? {
+            semantic: r.semanticScore,
+            keyword: r.textScore,
+            recency: r.recencyScore,
+            final: r.combinedScore
+          } : undefined
+        };
+      });
 
       statusEl.textContent = `${currentResults.length} results found${filterInfo}`;
 
     } else {
       // Local MiniSearch only (Supabase not configured)
       currentResults = search(query);
+      const normalizedQuery = normalizeQuery(query);
+      const terms = tokenizeQuery(normalizedQuery);
+      const localHybrid = currentResults.map(r => ({
+        url: r.item.source === 'chrome' ? r.item.url : r.item.pinUrl,
+        title: r.item.title,
+        folder: r.item.source === 'chrome' ? r.item.folder || null : r.item.boardName || null,
+        textScore: computeTextMatchScore(
+          r.item.title,
+          r.item.source === 'chrome' ? r.item.folder : r.item.boardName,
+          terms,
+          r.item.source === 'chrome' ? r.item.extendedContent || null : r.item.description || null
+        ),
+        semanticScore: 0,
+        recencyScore: 0,
+        combinedScore: 0,
+        source: r.item.source,
+        item: r.item,
+        createdAt: getItemTimestamp(r.item),
+        searchableText: buildSearchableText([
+          r.item.title,
+          r.item.source === 'chrome' ? r.item.folder || null : r.item.boardName || null,
+          r.item.source === 'chrome' ? r.item.extendedContent || null : r.item.description || null,
+          r.item.source === 'pinterest' ? 'pinterest' : 'bookmark'
+        ])
+      }));
+
+      const filtered = applyFilters(localHybrid, {
+        source: selectedSourceFilter,
+        board: selectedBoardFilter,
+        time: selectedTimeFilter,
+        folder: selectedFolderFilter || currentFolder
+      });
+      applyRecencyScores(filtered);
+      filtered.forEach(result => {
+        // Source boost: bookmarks get priority
+        const sourceBoost = result.source === 'chrome' ? 1.0 : 0.0;
+        // Keyword-first scoring: keyword matches are the primary signal
+        result.combinedScore =
+          (0.55 * result.textScore) +      // Keyword is PRIMARY
+          (0.10 * result.semanticScore) +  // Vector is secondary
+          (0.15 * result.recencyScore) +
+          (0.20 * sourceBoost);
+      });
+      const reranked = filtered
+        .sort((a, b) => {
+          // First sort by keyword score, then by combined score
+          const keywordDiff = b.textScore - a.textScore;
+          if (Math.abs(keywordDiff) > 0.1) return keywordDiff;
+          return b.combinedScore - a.combinedScore;
+        });
+
+      currentResults = mixSourcesByScore(filterRelevantResults(reranked, terms, normalizedQuery)).map(r => ({
+        item: r.item!,
+        score: r.combinedScore,
+        matchField: r.textScore > 0 ? 'title' as const : 'extendedContent' as const,
+        snippet: undefined,
+        debugScores: DEBUG_SEARCH ? {
+          semantic: r.semanticScore,
+          keyword: r.textScore,
+          recency: r.recencyScore,
+          final: r.combinedScore
+        } : undefined
+      }));
       statusEl.textContent = `${currentResults.length} results found${filterInfo}`;
     }
   } catch (error) {
@@ -910,7 +1530,6 @@ function showMore(): void {
 }
 
 // ============== EVENT LISTENERS ==============
-removeFilterBtn.addEventListener('click', clearFilter);
 
 suggestionsEl.addEventListener('click', (e) => {
   const target = e.target as HTMLElement;
@@ -919,6 +1538,60 @@ suggestionsEl.addEventListener('click', (e) => {
 });
 
 loadMoreBtn.addEventListener('click', showMore);
+
+const sourceFilterEl = document.getElementById('filter-source') as HTMLSelectElement | null;
+const boardFilterEl = document.getElementById('filter-board') as HTMLSelectElement | null;
+const folderFilterEl = document.getElementById('filter-folder') as HTMLSelectElement | null;
+const timeFilterEl = document.getElementById('filter-time') as HTMLSelectElement | null;
+
+[sourceFilterEl, boardFilterEl, folderFilterEl, timeFilterEl].forEach((el) => {
+  el?.addEventListener('change', () => {
+    applyFilterFromControls();
+    if (searchInput.value.trim()) {
+      performSearch();
+    }
+  });
+});
+
+filterAddBtn?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  filterMenuEl.classList.toggle('active');
+  updateFilterOptions();
+});
+
+document.addEventListener('click', (event) => {
+  const target = event.target as HTMLElement;
+  if (!target.closest('.filter-dropdown')) {
+    filterMenuEl.classList.remove('active');
+  }
+});
+
+filterChipsEl?.addEventListener('click', (event) => {
+  const target = event.target as HTMLElement;
+  const removeKey = target.getAttribute('data-remove');
+  if (!removeKey) return;
+
+  if (removeKey === 'source') {
+    selectedSourceFilter = 'all';
+  }
+  if (removeKey === 'board') {
+    selectedBoardFilter = null;
+  }
+  if (removeKey === 'folder') {
+    selectedFolderFilter = null;
+    if (currentFolder) {
+      currentFolder = null;
+    }
+  }
+  if (removeKey === 'time') {
+    selectedTimeFilter = 'all';
+  }
+
+  updateFilterOptions();
+  if (searchInput.value.trim()) {
+    performSearch();
+  }
+});
 
 searchInput.addEventListener('keydown', (e) => {
   if (!suggestionsEl.classList.contains('active')) return;
@@ -1399,6 +2072,312 @@ async function updatePinterestUI(): Promise<void> {
   } catch (err) {
     console.error('[OpenMemory] Failed to get Pinterest status:', err);
   }
+}
+
+function normalizeQuery(query: string): string {
+  return query.toLowerCase().trim();
+}
+
+// Query expansion with common design synonyms
+function expandQuery(query: string): { original: string; expanded: string; terms: string[] } {
+  const original = query.toLowerCase().trim();
+  const synonymMap: Record<string, string[]> = {
+    'dashboard': ['admin', 'panel', 'analytics', 'metrics'],
+    'ui': ['interface', 'design', 'ux', 'user interface'],
+    'ux': ['user experience', 'interface', 'ui'],
+    'button': ['cta', 'action', 'click'],
+    'landing': ['homepage', 'hero', 'marketing'],
+    'mobile': ['app', 'ios', 'android', 'responsive'],
+    'dark': ['night', 'mode', 'theme'],
+    'light': ['bright', 'white', 'mode'],
+    'card': ['tile', 'component', 'widget'],
+    'form': ['input', 'field', 'submit'],
+    'nav': ['navigation', 'menu', 'sidebar', 'header'],
+    'menu': ['navigation', 'nav', 'dropdown'],
+    'fintech': ['finance', 'banking', 'payment', 'crypto'],
+    'finance': ['fintech', 'banking', 'money'],
+    'ecommerce': ['shop', 'store', 'cart', 'product'],
+    'saas': ['software', 'app', 'platform', 'tool'],
+    'minimal': ['clean', 'simple', 'minimalist'],
+    'modern': ['contemporary', 'sleek', 'fresh'],
+    'gradient': ['colorful', 'vibrant'],
+    'icon': ['symbol', 'glyph'],
+    'table': ['grid', 'data', 'list'],
+    'chart': ['graph', 'visualization', 'data'],
+    'profile': ['user', 'account', 'avatar'],
+    'settings': ['preferences', 'config', 'options'],
+    'login': ['signin', 'auth', 'authentication'],
+    'signup': ['register', 'onboarding', 'create account'],
+  };
+
+  const words = original.split(/\s+/).filter(w => w.length > 0);
+  const expandedTerms = new Set<string>(words);
+
+  // Add synonyms for each word
+  for (const word of words) {
+    if (synonymMap[word]) {
+      synonymMap[word].forEach(syn => expandedTerms.add(syn));
+    }
+  }
+
+  return {
+    original,
+    expanded: Array.from(expandedTerms).join(' '),
+    terms: Array.from(expandedTerms)
+  };
+}
+
+function tokenizeQuery(query: string): string[] {
+  return query
+    .split(/\s+/)
+    .map(word => word.trim())
+    .filter(word => word.length > 0);
+}
+
+function computeTextMatchScore(
+  title: string | null | undefined,
+  board: string | null | undefined,
+  terms: string[],
+  extraText?: string | null
+): number {
+  if (!terms.length) return 0;
+  const titleText = (title || '').toLowerCase();
+  const boardText = (board || '').toLowerCase();
+  const extra = (extraText || '').toLowerCase();
+  const query = terms.join(' ').trim();
+
+  if (query.length === 0) return 0;
+
+  // Exact title match (highest priority)
+  if (titleText === query) return 1.0;
+
+  // Title contains full query
+  if (titleText.includes(query)) return 0.8;
+
+  // Expand query for better matching
+  const { terms: expandedTerms } = expandQuery(query);
+  const allTerms = [...new Set([...terms, ...expandedTerms])];
+
+  // Check how many terms match in title
+  const titleWords = titleText.split(/\s+/);
+  const titleTermHits = allTerms.filter(term =>
+    term.length > 1 && (titleText.includes(term) || titleWords.some(w => w.startsWith(term)))
+  ).length;
+  const originalTermHits = terms.filter(term =>
+    term.length > 1 && (titleText.includes(term) || titleWords.some(w => w.startsWith(term)))
+  ).length;
+
+  // All original terms found in title
+  if (originalTermHits === terms.length && terms.length > 0) return 0.7;
+
+  // Most original terms found (>50%)
+  if (terms.length > 1 && originalTermHits / terms.length > 0.5) return 0.55;
+
+  // Board/folder contains query
+  if (boardText.includes(query)) return 0.4;
+
+  // Board contains any original term
+  if (terms.some(term => term.length > 2 && boardText.includes(term))) return 0.35;
+
+  // Extra text (description) contains query
+  if (extra && extra.includes(query)) return 0.3;
+
+  // Check expanded terms match in all text
+  const haystack = `${titleText} ${boardText} ${extra}`.trim();
+  if (titleTermHits > 0) {
+    // Score based on how many expanded terms match
+    const matchRatio = titleTermHits / Math.max(allTerms.length, 1);
+    return Math.min(0.25, 0.1 + (matchRatio * 0.15));
+  }
+
+  // Any term found anywhere
+  const anyHit = allTerms.some(term => term.length > 2 && haystack.includes(term));
+  if (anyHit) return 0.1;
+
+  return 0;
+}
+
+function getItemTimestamp(item: SearchableItem): number | null {
+  if (item.source === 'chrome') {
+    if (item.indexedAt) return item.indexedAt;
+    return null;
+  }
+  if (item.syncedAt) return item.syncedAt;
+  return null;
+}
+
+function applyFilters(results: HybridResult[], filters: SearchFilters): HybridResult[] {
+  let filtered = results;
+
+  if (filters.source === 'bookmarks') {
+    filtered = filtered.filter(r => r.source === 'chrome');
+  } else if (filters.source === 'pinterest') {
+    filtered = filtered.filter(r => r.source === 'pinterest');
+  }
+
+  if (filters.board) {
+    const boardLower = filters.board.toLowerCase();
+    filtered = filtered.filter(r => (r.folder || '').toLowerCase() === boardLower);
+  }
+
+  if (filters.folder) {
+    const folderLower = filters.folder.toLowerCase();
+    filtered = filtered.filter(r => (r.folder || '').toLowerCase().startsWith(folderLower));
+  }
+
+  if (filters.time !== 'all') {
+    const cutoff = Date.now() - RECENT_WINDOW_MS;
+    filtered = filtered.filter(r => {
+      if (!r.createdAt) return filters.time === 'older';
+      return filters.time === 'recent' ? r.createdAt >= cutoff : r.createdAt < cutoff;
+    });
+  }
+
+  return filtered;
+}
+
+function applyRecencyScores(results: HybridResult[]): void {
+  const now = Date.now();
+  for (const result of results) {
+    if (!result.createdAt) {
+      result.recencyScore = 0;
+      continue;
+    }
+    const ageMs = now - result.createdAt;
+    const normalized = 1 - Math.min(ageMs / RECENT_WINDOW_MS, 1);
+    result.recencyScore = Math.max(0, normalized);
+  }
+}
+
+function updateFilterOptions(): void {
+  const sourceFilter = document.getElementById('filter-source') as HTMLSelectElement | null;
+  const boardFilter = document.getElementById('filter-board') as HTMLSelectElement | null;
+  const folderFilter = document.getElementById('filter-folder') as HTMLSelectElement | null;
+  const timeFilter = document.getElementById('filter-time') as HTMLSelectElement | null;
+
+  if (sourceFilter) {
+    sourceFilter.value = selectedSourceFilter;
+  }
+
+  if (timeFilter) {
+    timeFilter.value = selectedTimeFilter;
+  }
+
+  if (boardFilter) {
+    const boardNames = new Set<string>();
+    for (const item of allItems) {
+      if (item.source === 'pinterest' && item.boardName) {
+        boardNames.add(item.boardName);
+      }
+    }
+    const sorted = Array.from(boardNames).sort((a, b) => a.localeCompare(b));
+    const disabled = selectedSourceFilter === 'bookmarks' ? ' disabled' : '';
+    boardFilter.innerHTML = ['<option value="">All boards</option>', ...sorted.map(name => {
+      const selected = selectedBoardFilter && selectedBoardFilter === name ? ' selected' : '';
+      return `<option value="${escapeHtml(name)}"${selected}>${escapeHtml(name)}</option>`;
+    })].join('');
+    boardFilter.disabled = selectedSourceFilter === 'bookmarks';
+    if (disabled && selectedBoardFilter) {
+      selectedBoardFilter = null;
+    }
+  }
+
+  if (folderFilter) {
+    const folders = new Set<string>();
+    for (const item of allItems) {
+      if (item.source === 'chrome' && item.folder) {
+        folders.add(item.folder);
+      }
+    }
+    const sortedFolders = Array.from(folders).sort((a, b) => a.localeCompare(b));
+    folderFilter.innerHTML = ['<option value="">All folders</option>', ...sortedFolders.map(name => {
+      const selected = selectedFolderFilter && selectedFolderFilter === name ? ' selected' : '';
+      return `<option value="${escapeHtml(name)}"${selected}>${escapeHtml(name)}</option>`;
+    })].join('');
+    folderFilter.disabled = selectedSourceFilter === 'pinterest';
+    if (folderFilter.disabled && selectedFolderFilter) {
+      selectedFolderFilter = null;
+    }
+  }
+
+  if (filterBoardSection && filterFolderSection) {
+    filterBoardSection.style.display = selectedSourceFilter === 'bookmarks' ? 'none' : 'flex';
+    filterFolderSection.style.display = selectedSourceFilter === 'pinterest' ? 'none' : 'flex';
+  }
+
+  renderFilterChips();
+}
+
+function renderFilterChips(): void {
+  if (!filterChipsEl) return;
+  const chips: Array<{ label: string; key: string }> = [];
+
+  if (selectedSourceFilter !== 'all') {
+    chips.push({
+      label: selectedSourceFilter === 'bookmarks' ? 'Bookmarks' : 'Pinterest',
+      key: 'source'
+    });
+  }
+
+  if (selectedBoardFilter && selectedSourceFilter !== 'bookmarks') {
+    chips.push({ label: `Board: ${selectedBoardFilter}`, key: 'board' });
+  }
+
+  if (selectedFolderFilter && selectedSourceFilter !== 'pinterest') {
+    chips.push({ label: `Folder: ${selectedFolderFilter}`, key: 'folder' });
+  }
+
+  if (selectedTimeFilter !== 'all') {
+    chips.push({
+      label: selectedTimeFilter === 'recent' ? 'Recent' : 'Older',
+      key: 'time'
+    });
+  }
+
+  if (chips.length === 0) {
+    filterChipsEl.innerHTML = '';
+    return;
+  }
+
+  filterChipsEl.innerHTML = chips.map(chip => `
+    <div class="filter-chip" data-chip="${chip.key}">
+      <span>${escapeHtml(chip.label)}</span>
+      <button type="button" aria-label="Remove ${escapeHtml(chip.label)}" data-remove="${chip.key}">×</button>
+    </div>
+  `).join('');
+}
+
+function applyFilterFromControls(): void {
+  const sourceFilter = document.getElementById('filter-source') as HTMLSelectElement | null;
+  const boardFilter = document.getElementById('filter-board') as HTMLSelectElement | null;
+  const folderFilter = document.getElementById('filter-folder') as HTMLSelectElement | null;
+  const timeFilter = document.getElementById('filter-time') as HTMLSelectElement | null;
+
+  if (sourceFilter) {
+    selectedSourceFilter = sourceFilter.value as SourceFilter;
+  }
+
+  if (selectedSourceFilter === 'bookmarks') {
+    selectedBoardFilter = null;
+  }
+  if (selectedSourceFilter === 'pinterest') {
+    selectedFolderFilter = null;
+    currentFolder = null;
+  }
+
+  if (boardFilter) {
+    selectedBoardFilter = boardFilter.value || null;
+  }
+
+  if (folderFilter) {
+    selectedFolderFilter = folderFilter.value || null;
+  }
+
+  if (timeFilter) {
+    selectedTimeFilter = timeFilter.value as TimeFilter;
+  }
+
+  updateFilterOptions();
 }
 
 async function updatePinterestBoardsUI(): Promise<void> {

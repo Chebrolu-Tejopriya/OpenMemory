@@ -27,7 +27,8 @@ import {
   getPinterestBoards,
   resyncPinterestBoard,
   bulkInsertPinterestPins,
-  PinterestPinInsert
+  PinterestPinInsert,
+  backfillAllMissingEmbeddings
 } from './supabase';
 
 // ============== CONSTANTS ==============
@@ -964,6 +965,12 @@ async function autoSyncToSupabase(): Promise<void> {
 
     // Sync Pinterest pins too
     await syncPinterestPinsToSupabase();
+
+    // Backfill any missing embeddings (runs in background)
+    console.log('[Supabase] Checking for missing embeddings...');
+    backfillAllMissingEmbeddings().catch(err => {
+      console.error('[Supabase] Embedding backfill failed:', err);
+    });
 
     updateSyncStatus({
       syncInProgress: false,

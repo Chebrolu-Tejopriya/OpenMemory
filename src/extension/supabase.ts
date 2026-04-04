@@ -4,6 +4,7 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { pipeline } from '@xenova/transformers';
 
 // Supabase configuration - set these in chrome.storage.local
 interface SupabaseConfig {
@@ -127,41 +128,66 @@ async function supabaseRequest<T>(
   }
 }
 
-// Call Supabase Edge Function for embedding generation
-async function generateEmbedding(text: string): Promise<number[] | null> {
-  const config = await getSupabaseConfig();
+let embedderPromise: Promise<any> | null = null;
 
-  if (!config) {
-    console.warn('[Supabase] Not configured, skipping embedding generation');
-    return null;
+// Use BGE-small model for consistency with FastEmbed backend
+// Falls back to MiniLM if BGE fails to load
+async function getEmbedder(): Promise<any> {
+  if (!embedderPromise) {
+    embedderPromise = (async () => {
+      try {
+        // Try BGE-small first (same model as FastEmbed backend)
+        return await pipeline('feature-extraction', 'Xenova/bge-small-en-v1.5');
+      } catch (err) {
+        console.warn('[Supabase] BGE model failed, falling back to MiniLM:', err);
+        // Fallback to MiniLM (same dimension: 384)
+        return await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+      }
+    })();
   }
+  return embedderPromise;
+}
 
-  const embeddingUrl = `${config.url}/functions/v1/generate-embedding`;
-  console.log('[Supabase] Calling embedding function:', embeddingUrl);
-
+// Local embedding generation using BGE-small model (compatible with FastEmbed backend)
+async function generateEmbedding(text: string): Promise<number[] | null> {
   try {
-    const response = await fetch(embeddingUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.anonKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ text })
-    });
-
-    console.log('[Supabase] Embedding response status:', response.status);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[Supabase] Embedding generation failed:', response.status, errorText);
+    const embedder = await getEmbedder();
+    // Add passage prefix for BGE model (improves retrieval quality)
+    const prefixedText = `passage: ${text}`;
+    const output = await (embedder as any)(prefixedText, {
+      pooling: 'mean',
+      normalize: true
+    } as unknown as any);
+    const embedding = Array.from((output as any).data as any) as number[];
+    if (!Array.isArray(embedding) || embedding.length !== 384) {
+      console.error('[Supabase] Invalid embedding length:', Array.isArray(embedding) ? embedding.length : 'not-array');
       return null;
     }
-
-    const result = await response.json();
-    console.log('[Supabase] Embedding result:', result.embedding ? `array of ${result.embedding.length}` : 'null', result.fallback ? '(fallback)' : '');
-    return result.embedding || null;
+    console.log('[Supabase] Embedding result:', `array of ${embedding.length}`);
+    return embedding;
   } catch (err) {
     console.error('[Supabase] Embedding generation error:', err);
+    return null;
+  }
+}
+
+// Generate query embedding with query prefix (for search)
+async function generateQueryEmbedding(text: string): Promise<number[] | null> {
+  try {
+    const embedder = await getEmbedder();
+    // Add query prefix for BGE model (optimized for search queries)
+    const prefixedText = `query: ${text}`;
+    const output = await (embedder as any)(prefixedText, {
+      pooling: 'mean',
+      normalize: true
+    } as unknown as any);
+    const embedding = Array.from((output as any).data as any) as number[];
+    if (!Array.isArray(embedding) || embedding.length !== 384) {
+      return null;
+    }
+    return embedding;
+  } catch (err) {
+    console.error('[Supabase] Query embedding generation error:', err);
     return null;
   }
 }
@@ -389,7 +415,81 @@ export async function bulkUpsertBookmarks(
     }
   }
 
+  // Check for any bookmarks missing embeddings and generate them
+  console.log('[Supabase] Checking for bookmarks missing embeddings...');
+  generateMissingBookmarkEmbeddings().catch(err => {
+    console.error('[Supabase] Background bookmark embedding generation failed:', err);
+  });
+
   return { success, failed };
+}
+
+/**
+ * Get count of bookmarks without embeddings
+ */
+export async function getBookmarksNullEmbeddingCount(): Promise<number> {
+  const client = await getSupabaseClient();
+  if (!client) return 0;
+
+  const { count, error } = await client
+    .from('bookmarks')
+    .select('id', { count: 'exact', head: true })
+    .is('embedding', null);
+
+  if (error) return 0;
+  return count ?? 0;
+}
+
+/**
+ * Generate embeddings for bookmarks that don't have them (background task)
+ */
+export async function generateMissingBookmarkEmbeddings(): Promise<number> {
+  const client = await getSupabaseClient();
+  if (!client) return 0;
+
+  // Fetch bookmarks without embeddings
+  const { data: bookmarks, error } = await client
+    .from('bookmarks')
+    .select('id, title, folder, url')
+    .is('embedding', null)
+    .limit(50);
+
+  if (error || !bookmarks || bookmarks.length === 0) {
+    console.log('[Supabase] No bookmarks missing embeddings');
+    return 0;
+  }
+
+  console.log(`[Supabase] Generating embeddings for ${bookmarks.length} bookmarks...`);
+  let generated = 0;
+
+  for (const bookmark of bookmarks) {
+    try {
+      const textForEmbedding = `${bookmark.title || ''} ${bookmark.folder || ''}`.trim();
+
+      if (textForEmbedding.length === 0) continue;
+
+      const embedding = await generateEmbedding(textForEmbedding);
+      if (embedding) {
+        const { error: updateError } = await client
+          .from('bookmarks')
+          .update({ embedding })
+          .eq('id', bookmark.id);
+
+        if (!updateError) {
+          generated++;
+          console.log(`[Supabase] Generated embedding for bookmark: ${bookmark.title?.substring(0, 50)}`);
+        }
+      }
+    } catch (err) {
+      console.error(`[Supabase] Failed to generate embedding for bookmark ${bookmark.id}:`, err);
+    }
+
+    // Small delay to avoid overwhelming
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+
+  console.log(`[Supabase] Generated ${generated} bookmark embeddings`);
+  return generated;
 }
 
 /**
@@ -417,8 +517,8 @@ export async function searchBookmarks(
   }
 
   try {
-    // Generate embedding for the query
-    const queryEmbedding = await generateEmbedding(query);
+    // Generate embedding for the query (using query prefix for better retrieval)
+    const queryEmbedding = await generateQueryEmbedding(query);
 
     if (!queryEmbedding) {
       console.warn('[Supabase] Could not generate query embedding');
@@ -583,7 +683,23 @@ export async function upsertPinterestPin(
     // Generate embedding if needed (non-blocking)
     let embedding: number[] | null = null;
     if (needsEmbedding) {
-      const textForEmbedding = `${pin.title || ''} ${pin.description || ''} ${pin.board_name}`.trim();
+      const titleText = pin.title || '';
+      const boardText = pin.board_name || '';
+      const descriptionText = pin.description || '';
+      const tagsText = '';
+      let textForEmbedding = `Title: ${titleText}
+Board: ${boardText}
+Description: ${descriptionText}
+Tags: ${tagsText}
+Category: UI design inspiration
+Use case: web design, app design`.trim();
+
+      const combinedText = `${titleText} ${boardText} ${descriptionText}`.toLowerCase();
+      if (combinedText.includes('fintech') || combinedText.includes('finance') || combinedText.includes('bank')) {
+        textForEmbedding = `${textForEmbedding}
+Keywords: fintech, finance, dashboard, banking UI, mobile app`;
+      }
+
       if (textForEmbedding.length > 0) {
         try {
           embedding = await generateEmbedding(textForEmbedding);
@@ -729,6 +845,7 @@ export async function bulkInsertPinterestPins(
   const BATCH_SIZE = 50;
   let success = 0;
   let failed = 0;
+  const insertedIds: string[] = [];
 
   for (let i = 0; i < pins.length; i += BATCH_SIZE) {
     const batch = pins.slice(i, i + BATCH_SIZE);
@@ -742,10 +859,70 @@ export async function bulkInsertPinterestPins(
       batch.forEach(pin => console.log({ pin_url: pin.pin_url, error: error.message }));
     } else {
       success += data ? data.length : batch.length;
+      if (data) {
+        insertedIds.push(...data.map((d: { id: string }) => d.id));
+      }
     }
   }
 
+  // Generate embeddings for inserted pins in the background
+  if (insertedIds.length > 0) {
+    console.log(`[Supabase] Generating embeddings for ${insertedIds.length} new pins...`);
+    generateEmbeddingsForPins(insertedIds).catch(err => {
+      console.error('[Supabase] Background embedding generation failed:', err);
+    });
+  }
+
   return { success, failed };
+}
+
+/**
+ * Generate embeddings for pins that don't have them (background task)
+ */
+async function generateEmbeddingsForPins(pinIds: string[]): Promise<void> {
+  const client = await getSupabaseClient();
+  if (!client) return;
+
+  const BATCH_SIZE = 10;
+
+  for (let i = 0; i < pinIds.length; i += BATCH_SIZE) {
+    const batchIds = pinIds.slice(i, i + BATCH_SIZE);
+
+    // Fetch pins without embeddings
+    const { data: pins, error } = await client
+      .from('pinterest_pins')
+      .select('id, title, description, board_name')
+      .in('id', batchIds)
+      .is('embedding', null);
+
+    if (error || !pins) continue;
+
+    for (const pin of pins) {
+      try {
+        const textForEmbedding = [
+          pin.title || '',
+          pin.description || '',
+          pin.board_name || ''
+        ].filter(Boolean).join(' ').trim();
+
+        if (textForEmbedding.length === 0) continue;
+
+        const embedding = await generateEmbedding(textForEmbedding);
+        if (embedding) {
+          await client
+            .from('pinterest_pins')
+            .update({ embedding })
+            .eq('id', pin.id);
+          console.log(`[Supabase] Generated embedding for pin ${pin.id}`);
+        }
+      } catch (err) {
+        console.error(`[Supabase] Failed to generate embedding for pin ${pin.id}:`, err);
+      }
+    }
+
+    // Small delay between batches to avoid overwhelming the API
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
 }
 
 export async function resyncPinterestBoard(
@@ -841,8 +1018,8 @@ export async function searchPinterestPins(
   }
 
   try {
-    // Generate embedding for the query
-    const queryEmbedding = await generateEmbedding(query);
+    // Generate embedding for the query (using query prefix for better retrieval)
+    const queryEmbedding = await generateQueryEmbedding(query);
 
     if (!queryEmbedding) {
       console.warn('[Supabase] Could not generate query embedding for Pinterest search');
@@ -927,6 +1104,9 @@ export async function searchAllItems(
   folder_or_board: string | null;
   image_url: string | null;
   similarity: number;
+  keyword_score?: number;
+  recency_score?: number;
+  final_score?: number;
 }>> {
   const config = await getSupabaseConfig();
 
@@ -935,7 +1115,8 @@ export async function searchAllItems(
   }
 
   try {
-    const queryEmbedding = await generateEmbedding(query);
+    // Generate embedding for the query (using query prefix for better retrieval)
+    const queryEmbedding = await generateQueryEmbedding(query);
 
     if (!queryEmbedding) {
       console.warn('[Supabase] Could not generate query embedding');
@@ -951,6 +1132,7 @@ export async function searchAllItems(
       },
       body: JSON.stringify({
         query_embedding: queryEmbedding,
+        search_query: query,
         match_count: limit,
         filter_folder: folder || null
       })
@@ -995,4 +1177,90 @@ export async function getPinterestPinCount(): Promise<number> {
   } catch {
     return 0;
   }
+}
+
+/**
+ * Generate embeddings for Pinterest pins that don't have them
+ */
+export async function generateMissingPinEmbeddings(): Promise<number> {
+  const client = await getSupabaseClient();
+  if (!client) return 0;
+
+  const { data: pins, error } = await client
+    .from('pinterest_pins')
+    .select('id, title, description, board_name')
+    .is('embedding', null)
+    .limit(50);
+
+  if (error || !pins || pins.length === 0) {
+    console.log('[Supabase] No Pinterest pins missing embeddings');
+    return 0;
+  }
+
+  console.log(`[Supabase] Generating embeddings for ${pins.length} Pinterest pins...`);
+  let generated = 0;
+
+  for (const pin of pins) {
+    try {
+      const textForEmbedding = [
+        pin.title || '',
+        pin.description || '',
+        pin.board_name || ''
+      ].filter(Boolean).join(' ').trim();
+
+      if (textForEmbedding.length === 0) continue;
+
+      const embedding = await generateEmbedding(textForEmbedding);
+      if (embedding) {
+        const { error: updateError } = await client
+          .from('pinterest_pins')
+          .update({ embedding })
+          .eq('id', pin.id);
+
+        if (!updateError) {
+          generated++;
+          console.log(`[Supabase] Generated embedding for pin: ${pin.title?.substring(0, 50)}`);
+        }
+      }
+    } catch (err) {
+      console.error(`[Supabase] Failed to generate embedding for pin ${pin.id}:`, err);
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+
+  console.log(`[Supabase] Generated ${generated} Pinterest pin embeddings`);
+  return generated;
+}
+
+/**
+ * Backfill all missing embeddings for both bookmarks and Pinterest pins
+ * Call this periodically or after bulk imports
+ */
+export async function backfillAllMissingEmbeddings(): Promise<{ bookmarks: number; pins: number }> {
+  console.log('[Supabase] Starting embedding backfill for all items...');
+
+  const [bookmarksCount, pinsCount] = await Promise.all([
+    getBookmarksNullEmbeddingCount(),
+    getPinterestNullEmbeddingCount()
+  ]);
+
+  console.log(`[Supabase] Missing embeddings - Bookmarks: ${bookmarksCount}, Pins: ${pinsCount}`);
+
+  let bookmarksGenerated = 0;
+  let pinsGenerated = 0;
+
+  // Generate bookmark embeddings
+  if (bookmarksCount > 0) {
+    bookmarksGenerated = await generateMissingBookmarkEmbeddings();
+  }
+
+  // Generate Pinterest pin embeddings
+  if (pinsCount > 0) {
+    pinsGenerated = await generateMissingPinEmbeddings();
+  }
+
+  console.log(`[Supabase] Embedding backfill complete - Bookmarks: ${bookmarksGenerated}, Pins: ${pinsGenerated}`);
+
+  return { bookmarks: bookmarksGenerated, pins: pinsGenerated };
 }
