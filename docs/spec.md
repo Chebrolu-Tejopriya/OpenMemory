@@ -309,18 +309,24 @@ CASE
 END
 ```
 
-**Client-side scoring tiers:**
+**Client-side keyword scoring (computed locally for accuracy):**
 | Score | Condition |
 |-------|-----------|
-| 1.0 | Exact title match |
+| 1.0 | Exact title match (case-insensitive) |
 | 0.8 | Title contains full query |
+| 0.75 | URL contains full query |
 | 0.7 | All original terms in title |
+| 0.6 | Folder/board contains full query |
 | 0.55 | >50% terms in title |
-| 0.4 | Board/folder contains query |
+| 0.5 | URL contains any term (length > 2) |
+| 0.4 | Folder contains query |
 | 0.35 | Board contains any term |
 | 0.3 | Description contains query |
 | 0.1-0.25 | Expanded synonym matches |
-| 0.1 | Any term found anywhere |
+| 0.15 | Any term found anywhere |
+| 0 | No match (filtered out from text results) |
+
+**Note:** Requires minimum 2-character query for keyword scoring.
 
 ### Recency (0-1)
 ```sql
@@ -593,11 +599,13 @@ chrome.bookmarks.onMoved    → updateBookmark()
 
 ## 12.3 Search UX
 
-* Instant search on typing (debounced 300ms)
+* Instant search on typing (debounced 350ms)
+* Minimum 2-character query requirement
 * Folder autocomplete with `@` prefix
 * Filter chips (removable)
 * "Load more" pagination
 * Empty state messaging
+* Keyword-first ranking: exact matches appear before semantic matches
 
 ---
 

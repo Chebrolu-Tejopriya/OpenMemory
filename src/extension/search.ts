@@ -86,6 +86,7 @@ async function searchSupabaseVector(
   source?: 'chrome' | 'pinterest' | 'all',
   board?: string | null
 ): Promise<SupabaseSearchResult[]> {
+  console.log('!!! searchSupabaseVector CALLED !!!', query, Date.now());
   const config = await getSupabaseConfig();
   if (!config) return [];
 
@@ -95,6 +96,7 @@ async function searchSupabaseVector(
     'Content-Type': 'application/json'
   };
 
+  console.log('[Search] === searchSupabaseVector START ===', { query, queryLength: query.length, limit });
   try {
     // ALWAYS do BOTH text search AND vector search in parallel
     // Text search finds exact keyword matches, vector search finds semantic matches
@@ -109,7 +111,34 @@ async function searchSupabaseVector(
       textSearchPromise
     ]);
 
-    // Convert text search results - these are KEYWORD matches (high priority)
+    console.log('[Search] Promise.all completed:', {
+      hasEmbedding: !!embedding,
+      bookmarkTextCount: bookmarkTextResults?.length ?? 'undefined',
+      pinTextCount: pinTextResults?.length ?? 'undefined'
+    });
+
+    // Convert text search results - ALWAYS compute keyword score locally
+    // Don't trust SQL filtering - compute based on actual text matching
+    const queryLower = query.toLowerCase().trim();
+    console.log('[Search] Query for keyword matching:', JSON.stringify(queryLower), 'length:', queryLower.length);
+
+    // Helper to compute keyword score based on actual text matching
+    const computeLocalKeywordScore = (title: string | null, folder: string | null, url: string | null): number => {
+      // Require minimum 2 characters for meaningful keyword matching
+      if (queryLower.length < 2) return 0;
+
+      const titleLower = (title || '').toLowerCase();
+      const folderLower = (folder || '').toLowerCase();
+      const urlLower = (url || '').toLowerCase();
+
+      // Only give keyword score if the query actually appears in the text
+      if (titleLower === queryLower) return 1.0;
+      if (titleLower.includes(queryLower)) return 0.8;
+      if (folderLower.includes(queryLower)) return 0.6;
+      if (urlLower.includes(queryLower)) return 0.4;
+      return 0; // No match = no keyword score
+    };
+
     const textResults: SupabaseSearchResult[] = [
       ...bookmarkTextResults.map(b => ({
         source: 'chrome' as const,
@@ -118,8 +147,8 @@ async function searchSupabaseVector(
         title: b.title,
         folder_or_board: b.folder,
         image_url: null,
-        similarity: 0.5, // Base similarity for text matches
-        keyword_score: 1.0, // HIGH keyword score - these are exact matches!
+        similarity: 0.5, // Base vector similarity for text matches
+        keyword_score: computeLocalKeywordScore(b.title, b.folder, b.url), // Compute locally!
         created_at: b.created_at ?? null
       })),
       ...pinTextResults.map(p => ({
@@ -130,14 +159,26 @@ async function searchSupabaseVector(
         folder_or_board: p.board_name || null,
         image_url: p.image_url || null,
         similarity: 0.5,
-        keyword_score: 1.0, // HIGH keyword score
+        keyword_score: computeLocalKeywordScore(p.title, p.board_name, p.pin_url), // Compute locally!
         description: p.description || null,
         created_at: p.synced_at ?? null
       }))
-    ];
+    ].filter(r => r.keyword_score > 0); // Only keep actual matches!
 
     if (DEBUG_SEARCH) {
-      console.log('[Search] Text search results:', textResults.length);
+      console.log('[Search] === TEXT SEARCH RESULTS ===');
+      console.log('[Search] Raw bookmark results from SQL:', bookmarkTextResults.length);
+      console.log('[Search] First 5 raw results:', bookmarkTextResults.slice(0, 5).map((b: any) => ({
+        title: b.title,
+        url: b.url?.substring(0, 40),
+        similarity_from_sql: b.similarity
+      })));
+      console.log('[Search] Text search results (mapped):', textResults.length);
+      console.log('[Search] Text matches:', textResults.slice(0, 10).map(r => ({
+        url: r.url?.substring(0, 50),
+        title: r.title,
+        keyword_score: r.keyword_score
+      })));
     }
 
     // If no embedding, return text results only
@@ -147,12 +188,15 @@ async function searchSupabaseVector(
     }
 
     // Do vector search
+    // Format embedding as array string for PostgreSQL vector type
+    const embeddingStr = `[${embedding.join(',')}]`;
+
     const [bookmarkResponse, pinResponse] = await Promise.all([
       fetch(`${config.url}/rest/v1/rpc/search_bookmarks`, {
         method: 'POST',
         headers: requestHeaders,
         body: JSON.stringify({
-          query_embedding: embedding,
+          query_embedding: embeddingStr,
           match_count: limit,
           filter_folder: folder || null
         })
@@ -161,12 +205,21 @@ async function searchSupabaseVector(
         method: 'POST',
         headers: requestHeaders,
         body: JSON.stringify({
-          query_embedding: embedding,
+          query_embedding: embeddingStr,
           match_count: limit,
           filter_board: board || null
         })
       })
     ]);
+
+    if (!bookmarkResponse.ok) {
+      const errorText = await bookmarkResponse.text();
+      console.error('[Search] Vector search_bookmarks failed:', bookmarkResponse.status, errorText);
+    }
+    if (!pinResponse.ok) {
+      const errorText = await pinResponse.text();
+      console.error('[Search] Vector search_pinterest_pins failed:', pinResponse.status, errorText);
+    }
 
     const bookmarkResults = bookmarkResponse.ok ? await bookmarkResponse.json() : [];
     const pinResults = pinResponse.ok ? await pinResponse.json() : [];
@@ -283,10 +336,27 @@ async function searchSupabaseVector(
 
 // Fallback text search
 async function searchSupabaseText(query: string, limit = 50, folder?: string): Promise<SupabaseBookmark[]> {
+  console.log('[Search] searchSupabaseText called with query:', JSON.stringify(query), 'length:', query?.length);
   const config = await getSupabaseConfig();
-  if (!config) return [];
+  if (!config) {
+    console.log('[Search] No config, returning empty');
+    return [];
+  }
+
+  // Don't search with empty query
+  if (!query || query.trim().length === 0) {
+    console.log('[Search] Empty query, skipping text search');
+    return [];
+  }
 
   try {
+    const requestBody = {
+      p_search_query: query.trim(),
+      p_match_count: limit,
+      p_filter_folder: folder || null
+    };
+    console.log('[Search] Calling search_bookmarks_text with:', JSON.stringify(requestBody));
+
     const response = await fetch(`${config.url}/rest/v1/rpc/search_bookmarks_text`, {
       method: 'POST',
       headers: {
@@ -294,16 +364,61 @@ async function searchSupabaseText(query: string, limit = 50, folder?: string): P
         'Authorization': `Bearer ${config.anonKey}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        search_query: query,
-        match_count: limit,
-        filter_folder: folder || null
-      })
+      body: JSON.stringify(requestBody)
     });
 
-    if (!response.ok) return [];
-    return await response.json();
-  } catch {
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Search] Text search failed:', response.status, errorText);
+      return [];
+    }
+    const rawResults = await response.json();
+    console.log('[Search] Bookmark text search raw results:', rawResults.length);
+
+    // CLIENT-SIDE FILTER: Only keep results that actually contain the query
+    // This is a safety net in case the SQL function isn't filtering correctly
+    const queryLower = query.trim().toLowerCase();
+    const filteredResults = rawResults.filter((r: any) => {
+      const titleMatch = (r.title || '').toLowerCase().includes(queryLower);
+      const urlMatch = (r.url || '').toLowerCase().includes(queryLower);
+      const folderMatch = (r.folder || '').toLowerCase().includes(queryLower);
+      return titleMatch || urlMatch || folderMatch;
+    });
+
+    // Assign proper similarity scores based on match type
+    const scoredResults = filteredResults.map((r: any) => {
+      const titleLower = (r.title || '').toLowerCase();
+      const urlLower = (r.url || '').toLowerCase();
+      const folderLower = (r.folder || '').toLowerCase();
+
+      let similarity = 0.3;
+      if (titleLower === queryLower) {
+        similarity = 1.0;
+      } else if (titleLower.includes(queryLower)) {
+        similarity = 0.8;
+      } else if (folderLower.includes(queryLower)) {
+        similarity = 0.6;
+      } else if (urlLower.includes(queryLower)) {
+        similarity = 0.4;
+      }
+
+      return { ...r, similarity };
+    });
+
+    // Sort by similarity
+    scoredResults.sort((a: any, b: any) => b.similarity - a.similarity);
+
+    console.log('[Search] Bookmark text search filtered results:', scoredResults.length);
+    if (scoredResults.length > 0) {
+      console.log('[Search] First 3 filtered results:', scoredResults.slice(0, 3).map((r: any) => ({
+        title: r.title,
+        url: r.url?.substring(0, 40),
+        similarity: r.similarity
+      })));
+    }
+    return scoredResults;
+  } catch (err) {
+    console.error('[Search] Text search exception:', err);
     return [];
   }
 }
@@ -612,14 +727,43 @@ async function hybridSearch(query: string, limit = getSearchPoolLimit(), filters
   }
 
   // Add/merge Supabase results (now includes both bookmarks AND Pinterest pins)
+  if (DEBUG_SEARCH) {
+    console.log('[Search] === SUPABASE RESULTS TO MERGE ===');
+    console.log('[Search] Total supabase results:', supabaseResults.length);
+    const withKeywordScore = supabaseResults.filter(r => r.keyword_score !== undefined && r.keyword_score > 0);
+    const withoutKeywordScore = supabaseResults.filter(r => !r.keyword_score || r.keyword_score === 0);
+    console.log('[Search] Results with keyword_score > 0:', withKeywordScore.length);
+    console.log('[Search] Results needing computeTextMatchScore:', withoutKeywordScore.length);
+    console.log('[Search] First 5 with keyword_score:', withKeywordScore.slice(0, 5).map(r => ({
+      title: r.title,
+      keyword_score: r.keyword_score,
+      similarity: r.similarity
+    })));
+  }
+  // Log the query terms being used for keyword matching
+  if (DEBUG_SEARCH) {
+    console.log('[Search] Hybrid search terms for keyword matching:', terms);
+  }
+
   for (const result of supabaseResults) {
     const existing = resultMap.get(result.url);
     const semanticScore = result.similarity || 0;
     const createdAt = result.created_at ? Date.parse(result.created_at) : null;
     // USE keyword_score from Supabase if it exists (from text search), otherwise compute it
-    const textScore = result.keyword_score !== undefined && result.keyword_score > 0
-      ? result.keyword_score
-      : computeTextMatchScore(result.title, result.folder_or_board, terms, result.description || null, result.url);
+    const hasKeywordScore = result.keyword_score !== undefined && result.keyword_score > 0;
+    const computedScore = hasKeywordScore ? result.keyword_score : computeTextMatchScore(result.title, result.folder_or_board, terms, result.description || null, result.url);
+    const textScore = computedScore;
+
+    // Debug log for items that should have keyword matches
+    if (DEBUG_SEARCH && result.title && result.title.toLowerCase().includes(terms.join(' ').toLowerCase())) {
+      console.log('[Search] Keyword match candidate:', {
+        title: result.title,
+        hasKeywordScore,
+        supabaseKeywordScore: result.keyword_score,
+        computedTextScore: computedScore,
+        terms: terms.join(' ')
+      });
+    }
     const recencyScore = result.recency_score ?? 0;
     const finalScore = result.final_score ?? 0;
     const similarityRaw = result.similarity_raw ?? null;
@@ -1365,6 +1509,14 @@ async function performSearch(): Promise<void> {
     return;
   }
 
+  // Require minimum 2 characters for meaningful search
+  if (query.length < 2) {
+    resultsEl.innerHTML = '';
+    statusEl.textContent = 'Type at least 2 characters to search';
+    loadMoreBtn.style.display = 'none';
+    return;
+  }
+
   // Prevent concurrent searches
   if (isSearching) return;
   isSearching = true;
@@ -1633,7 +1785,7 @@ searchInput.addEventListener('input', () => {
     hideSuggestions();
   }
 
-  debounceTimer = window.setTimeout(performSearch, 150);
+  debounceTimer = window.setTimeout(performSearch, 350); // Increased debounce for better typing experience
 });
 
 document.addEventListener('click', (e) => {
@@ -2153,7 +2305,8 @@ function computeTextMatchScore(
   const urlText = (url || '').toLowerCase();
   const query = terms.join(' ').trim();
 
-  if (query.length === 0) return 0;
+  // Require minimum 2 characters for meaningful keyword matching
+  if (query.length < 2) return 0;
 
   // Exact title match (highest priority)
   if (titleText === query) return 1.0;

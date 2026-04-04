@@ -4,11 +4,13 @@ A Chrome extension for semantic search of your design inspirations. Search your 
 
 ## Features
 
-- **Semantic Search**: Find bookmarks by meaning, not just keywords
-- **Intent-Aware Retrieval**: Prioritizes design inspiration over developer content
+- **Hybrid Search**: Combines keyword matching with AI semantic search
+- **Keyword-First Ranking**: Exact matches appear at the top before semantic results
+- **Pinterest Integration**: Sync and search your Pinterest pins alongside bookmarks
+- **Bookmarks Priority**: Chrome bookmarks always appear before Pinterest pins
 - **Folder Filtering**: Use `@` to filter by bookmark folders
+- **Board Filtering**: Filter Pinterest results by board
 - **Website Thumbnails**: Preview sites with automatic screenshots
-- **Offline Support**: Works without a server after initial setup
 - **Dark UI**: Clean Vercel-inspired dark theme
 
 ## Architecture
