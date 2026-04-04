@@ -588,7 +588,7 @@ async function hybridSearch(query: string, limit = getSearchPoolLimit(), filters
     const extraText = result.item.source === 'chrome'
       ? result.item.extendedContent || null
       : result.item.description || null;
-    const textScore = computeTextMatchScore(result.item.title, folderOrBoard, terms, extraText);
+    const textScore = computeTextMatchScore(result.item.title, folderOrBoard, terms, extraText, url);
 
     resultMap.set(url, {
       url,
@@ -605,6 +605,7 @@ async function hybridSearch(query: string, limit = getSearchPoolLimit(), filters
         result.item.title,
         folderOrBoard,
         extraText,
+        url,
         result.item.source === 'pinterest' ? 'pinterest' : 'bookmark'
       ])
     });
@@ -618,7 +619,7 @@ async function hybridSearch(query: string, limit = getSearchPoolLimit(), filters
     // USE keyword_score from Supabase if it exists (from text search), otherwise compute it
     const textScore = result.keyword_score !== undefined && result.keyword_score > 0
       ? result.keyword_score
-      : computeTextMatchScore(result.title, result.folder_or_board, terms, result.description || null);
+      : computeTextMatchScore(result.title, result.folder_or_board, terms, result.description || null, result.url);
     const recencyScore = result.recency_score ?? 0;
     const finalScore = result.final_score ?? 0;
     const similarityRaw = result.similarity_raw ?? null;
@@ -653,6 +654,7 @@ async function hybridSearch(query: string, limit = getSearchPoolLimit(), filters
           result.title,
           result.folder_or_board,
           result.description || null,
+          result.url,
           result.source
         ])
       });
@@ -1439,15 +1441,18 @@ async function performSearch(): Promise<void> {
       currentResults = search(query);
       const normalizedQuery = normalizeQuery(query);
       const terms = tokenizeQuery(normalizedQuery);
-      const localHybrid = currentResults.map(r => ({
-        url: r.item.source === 'chrome' ? r.item.url : r.item.pinUrl,
+      const localHybrid = currentResults.map(r => {
+        const itemUrl = r.item.source === 'chrome' ? r.item.url : r.item.pinUrl;
+        return {
+        url: itemUrl,
         title: r.item.title,
         folder: r.item.source === 'chrome' ? r.item.folder || null : r.item.boardName || null,
         textScore: computeTextMatchScore(
           r.item.title,
           r.item.source === 'chrome' ? r.item.folder : r.item.boardName,
           terms,
-          r.item.source === 'chrome' ? r.item.extendedContent || null : r.item.description || null
+          r.item.source === 'chrome' ? r.item.extendedContent || null : r.item.description || null,
+          itemUrl
         ),
         semanticScore: 0,
         recencyScore: 0,
@@ -1459,9 +1464,11 @@ async function performSearch(): Promise<void> {
           r.item.title,
           r.item.source === 'chrome' ? r.item.folder || null : r.item.boardName || null,
           r.item.source === 'chrome' ? r.item.extendedContent || null : r.item.description || null,
+          itemUrl,
           r.item.source === 'pinterest' ? 'pinterest' : 'bookmark'
         ])
-      }));
+      };
+      });
 
       const filtered = applyFilters(localHybrid, {
         source: selectedSourceFilter,
@@ -2136,12 +2143,14 @@ function computeTextMatchScore(
   title: string | null | undefined,
   board: string | null | undefined,
   terms: string[],
-  extraText?: string | null
+  extraText?: string | null,
+  url?: string | null
 ): number {
   if (!terms.length) return 0;
   const titleText = (title || '').toLowerCase();
   const boardText = (board || '').toLowerCase();
   const extra = (extraText || '').toLowerCase();
+  const urlText = (url || '').toLowerCase();
   const query = terms.join(' ').trim();
 
   if (query.length === 0) return 0;
@@ -2151,6 +2160,9 @@ function computeTextMatchScore(
 
   // Title contains full query
   if (titleText.includes(query)) return 0.8;
+
+  // URL contains full query (e.g., searching "omma" finds "omma.build")
+  if (urlText.includes(query)) return 0.75;
 
   // Expand query for better matching
   const { terms: expandedTerms } = expandQuery(query);
@@ -2171,6 +2183,9 @@ function computeTextMatchScore(
   // Most original terms found (>50%)
   if (terms.length > 1 && originalTermHits / terms.length > 0.5) return 0.55;
 
+  // URL contains any original term (e.g., "omma" in "omma.build")
+  if (terms.some(term => term.length > 2 && urlText.includes(term))) return 0.5;
+
   // Board/folder contains query
   if (boardText.includes(query)) return 0.4;
 
@@ -2180,17 +2195,17 @@ function computeTextMatchScore(
   // Extra text (description) contains query
   if (extra && extra.includes(query)) return 0.3;
 
-  // Check expanded terms match in all text
-  const haystack = `${titleText} ${boardText} ${extra}`.trim();
+  // Check expanded terms match in all text (including URL)
+  const haystack = `${titleText} ${boardText} ${extra} ${urlText}`.trim();
   if (titleTermHits > 0) {
     // Score based on how many expanded terms match
     const matchRatio = titleTermHits / Math.max(allTerms.length, 1);
     return Math.min(0.25, 0.1 + (matchRatio * 0.15));
   }
 
-  // Any term found anywhere
+  // Any term found anywhere (including URL)
   const anyHit = allTerms.some(term => term.length > 2 && haystack.includes(term));
-  if (anyHit) return 0.1;
+  if (anyHit) return 0.15;
 
   return 0;
 }
