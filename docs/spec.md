@@ -45,9 +45,11 @@ Users can:
 │  ├── pinterest.ts + pinterest_active.ts (Pinterest sync)    │
 │  └── db.ts (IndexedDB via Dexie.js)                         │
 ├─────────────────────────────────────────────────────────────┤
-│  Local Backend (localhost:3000)                             │
-│  ├── Express server with SQLite (better-sqlite3)            │
-│  ├── FastEmbed / Python for embedding generation            │
+│  Local Backend (localhost:3000) - AUTO-STARTS ON LOGIN      │
+│  ├── Express server (Node.js + TypeScript)                  │
+│  ├── Python FastEmbed for embedding generation              │
+│  │   └── Models: bge-small-en-v1.5, clip-ViT-B-32           │
+│  ├── SQLite via better-sqlite3 (local cache)                │
 │  └── Endpoints: /embed, /search, /pinterest/ingest          │
 ├─────────────────────────────────────────────────────────────┤
 │  Supabase (Cloud)                                           │
@@ -168,31 +170,65 @@ CREATE TABLE pinterest_boards (
 | Type | Model | Dimensions |
 |------|-------|------------|
 | Text | BAAI/bge-small-en-v1.5 | 384 |
-| Image | openai/clip-vit-base-patch32 | 512 |
+| Image | Qdrant/clip-ViT-B-32-vision | 512 |
 
 ## 5.2 Generation Pipeline
 
-**Local Backend (localhost:3000/embed):**
+**Primary: Local Backend (localhost:3000/embed)**
 ```
-Text → FastEmbed (Python) → 384-dim array → Return
-```
-
-**Supabase Edge Function (generate-embedding):**
-```
-Text/Image → HuggingFace Inference API → 384/512-dim → Return
+Extension → HTTP POST localhost:3000/embed
+         → Node.js server calls Python FastEmbed
+         → 384-dim array returned
 ```
 
-## 5.3 Embedding Rules (STRICT)
+**Fallback: Supabase Edge Function**
+```
+Extension → HTTP POST {supabase_url}/functions/v1/generate-embedding
+         → HuggingFace Inference API
+         → 384/512-dim array returned
+```
+
+## 5.3 Why Local Backend?
+
+❌ `@xenova/transformers` does NOT work in Chrome service workers
+❌ HuggingFace API has rate limits
+✅ Local FastEmbed runs without rate limits
+✅ Faster response times (~100ms after model loads)
+✅ Works offline once model is cached
+
+## 5.4 Auto-Start Backend (Windows)
+
+The backend auto-starts on Windows login via startup script:
+```
+Location: %APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\start-openmemory-backend.bat
+```
+
+Script contents:
+```batch
+@echo off
+cd /d "C:\Users\{user}\OneDrive\Desktop\extension\backend"
+start /min cmd /c "npm run dev"
+```
+
+## 5.5 Embedding Rules (STRICT)
 
 ✅ MUST be `Array<number>`
 ✅ MUST be exactly 384 dimensions (text)
-✅ MUST use `Array.from(output.data)` conversion
+✅ MUST use HTTP API calls from extension (NOT in-browser ML)
 
 ❌ NEVER use Float32Array directly
 ❌ NEVER nest arrays `[...][...]`
 ❌ NEVER change dimensions
+❌ NEVER use @xenova/transformers in extension code
 
-## 5.4 Backfill Script
+## 5.6 Auto-Generation
+
+Embeddings are generated automatically:
+1. **On sync**: `backfillAllMissingEmbeddings()` runs every 5 minutes
+2. **On insert**: `bulkUpsertBookmarks()` and `bulkInsertPinterestPins()` trigger backfill
+3. **Background**: Service worker calls backfill after each sync cycle
+
+## 5.7 Manual Backfill Script
 
 ```bash
 npx tsx scripts/generateEmbeddings.ts
@@ -362,6 +398,21 @@ Applied as: `WHERE source = 'chrome'` or `WHERE source = 'pinterest'`
 
 ## 8.1 Local Backend (localhost:3000)
 
+### Setup Requirements
+
+```bash
+# Install Python dependencies (one-time)
+cd backend/python
+pip install -r requirements.txt
+
+# Start the server
+cd backend
+npm run dev
+```
+
+**Auto-start:** Backend auto-starts on Windows login via startup script in:
+`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\`
+
 ### POST /embed
 ```json
 Request:  { "text": "dark fintech dashboard" }
@@ -414,13 +465,28 @@ Response: { "embedding": [...] }  // 384 or 512 floats
 |------|-------|---------|
 | `background.ts` | ~2000 | Service worker, alarms, bookmark monitoring |
 | `search.ts` | ~2600 | Hybrid search logic, result formatting |
-| `supabase.ts` | ~1000 | Supabase client, CRUD operations |
+| `supabase.ts` | ~1300 | Supabase client, CRUD, embedding generation |
 | `pinterest.ts` | ~950 | Pinterest content script |
 | `pinterest_active.ts` | ~1400 | Deep scroll, API interception |
 | `sidepanel.html` | ~1250 | UI with dark theme |
 | `db.ts` | ~200 | IndexedDB (Dexie.js) layer |
 
-## 9.2 IndexedDB Schema (Dexie.js)
+## 9.2 Dependencies (package.json)
+
+```json
+{
+  "dependencies": {
+    "@supabase/supabase-js": "^2.100.1",
+    "dexie": "^4.3.0",
+    "minisearch": "^7.2.0"
+  }
+}
+```
+
+**Note:** `@xenova/transformers` is NOT used - it doesn't work in Chrome service workers.
+Embeddings are generated via HTTP API calls to localhost:3000/embed.
+
+## 9.3 IndexedDB Schema (Dexie.js)
 
 ```typescript
 // bookmarks - local cache
@@ -436,13 +502,13 @@ Response: { "embedding": [...] }  // 384 or 512 floats
 ++id, url, priority, createdAt
 ```
 
-## 9.3 Chrome Alarms
+## 9.4 Chrome Alarms
 
 | Alarm | Interval | Purpose |
 |-------|----------|---------|
 | `checkIndexing` | 2 min | Process metadata fetching queue |
 | `pinterestSync` | 1 hour | Sync Pinterest boards |
-| `supabaseAutoSync` | 5 min | Auto-sync to Supabase |
+| `supabaseAutoSync` | 5 min | Auto-sync to Supabase + backfill embeddings |
 
 ---
 
