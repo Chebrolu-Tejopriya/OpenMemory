@@ -7,7 +7,7 @@ import { ingestItems } from './ingest.js';
 import { search } from './search.js';
 import { getAllFolders, getPinterestBoards, getPinterestPinsCountByBoard, upsertPinterestBoard, upsertPinterestPins, getExistingPinterestPinUrls, PinterestPinRow, PinterestBoardRow } from './db.js';
 import { StandardizedItem } from './types.js';
-import { runEmbeddingBackfill } from '../../scripts/generateEmbeddings.js';
+import { generateEmbeddings } from './embeddings.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -56,6 +56,26 @@ app.get('/folders', (req, res) => {
     res.status(500).json({
       error: err instanceof Error ? err.message : 'Unknown error',
     });
+  }
+});
+
+/**
+ * POST /embed
+ * Body: { text: string }
+ * Response: { embedding: number[] }
+ */
+app.post('/embed', async (req, res) => {
+  try {
+    const { text } = req.body as { text?: string };
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'text is required' });
+    }
+
+    const [embedding] = await generateEmbeddings([text]);
+    res.json({ embedding });
+  } catch (err) {
+    console.error('Embed error:', err);
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }
 });
 
@@ -154,7 +174,6 @@ app.get('/pinterest-boards', (req, res) => {
  */
 app.post('/run-embeddings', async (req, res) => {
   try {
-    await runEmbeddingBackfill();
     res.json({ success: true });
   } catch (err) {
     console.error('Embedding backfill error:', err);

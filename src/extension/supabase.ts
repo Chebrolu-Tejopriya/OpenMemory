@@ -4,7 +4,6 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { pipeline } from '@xenova/transformers';
 
 // Supabase configuration - set these in chrome.storage.local
 interface SupabaseConfig {
@@ -128,68 +127,71 @@ async function supabaseRequest<T>(
   }
 }
 
-let embedderPromise: Promise<any> | null = null;
-
-// Use BGE-small model for consistency with FastEmbed backend
-// Falls back to MiniLM if BGE fails to load
-async function getEmbedder(): Promise<any> {
-  if (!embedderPromise) {
-    embedderPromise = (async () => {
-      try {
-        // Try BGE-small first (same model as FastEmbed backend)
-        return await pipeline('feature-extraction', 'Xenova/bge-small-en-v1.5');
-      } catch (err) {
-        console.warn('[Supabase] BGE model failed, falling back to MiniLM:', err);
-        // Fallback to MiniLM (same dimension: 384)
-        return await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-      }
-    })();
-  }
-  return embedderPromise;
-}
-
-// Local embedding generation using BGE-small model (compatible with FastEmbed backend)
+// Generate embedding via local backend (localhost:3000/embed)
+// Falls back to Supabase Edge Function if local backend is not available
 async function generateEmbedding(text: string): Promise<number[] | null> {
-  try {
-    const embedder = await getEmbedder();
-    // Add passage prefix for BGE model (improves retrieval quality)
-    const prefixedText = `passage: ${text}`;
-    const output = await (embedder as any)(prefixedText, {
-      pooling: 'mean',
-      normalize: true
-    } as unknown as any);
-    const embedding = Array.from((output as any).data as any) as number[];
-    if (!Array.isArray(embedding) || embedding.length !== 384) {
-      console.error('[Supabase] Invalid embedding length:', Array.isArray(embedding) ? embedding.length : 'not-array');
-      return null;
-    }
-    console.log('[Supabase] Embedding result:', `array of ${embedding.length}`);
-    return embedding;
-  } catch (err) {
-    console.error('[Supabase] Embedding generation error:', err);
+  if (!text || text.trim().length === 0) {
+    console.log('[Supabase] Empty text, skipping embedding');
     return null;
   }
+
+  // Try local backend first (faster, more reliable)
+  try {
+    console.log('[Supabase] Generating embedding via local backend...');
+    const response = await fetch('http://localhost:3000/embed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text.substring(0, 512) })
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      if (Array.isArray(result.embedding) && result.embedding.length === 384) {
+        console.log('[Supabase] Embedding generated via local backend:', result.embedding.length);
+        return result.embedding;
+      }
+    }
+    console.warn('[Supabase] Local backend failed, trying Edge Function...');
+  } catch (err) {
+    console.warn('[Supabase] Local backend not available:', err);
+  }
+
+  // Fallback to Supabase Edge Function
+  try {
+    const config = await getSupabaseConfig();
+    if (!config) {
+      console.error('[Supabase] No config for Edge Function');
+      return null;
+    }
+
+    console.log('[Supabase] Generating embedding via Edge Function...');
+    const response = await fetch(`${config.url}/functions/v1/generate-embedding`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.anonKey}`
+      },
+      body: JSON.stringify({ text: text.substring(0, 512) })
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      if (Array.isArray(result.embedding) && result.embedding.length === 384) {
+        console.log('[Supabase] Embedding generated via Edge Function:', result.embedding.length);
+        return result.embedding;
+      }
+    }
+    console.error('[Supabase] Edge Function failed:', response.status);
+  } catch (err) {
+    console.error('[Supabase] Edge Function error:', err);
+  }
+
+  return null;
 }
 
-// Generate query embedding with query prefix (for search)
+// Generate query embedding (same as regular embedding for now)
 async function generateQueryEmbedding(text: string): Promise<number[] | null> {
-  try {
-    const embedder = await getEmbedder();
-    // Add query prefix for BGE model (optimized for search queries)
-    const prefixedText = `query: ${text}`;
-    const output = await (embedder as any)(prefixedText, {
-      pooling: 'mean',
-      normalize: true
-    } as unknown as any);
-    const embedding = Array.from((output as any).data as any) as number[];
-    if (!Array.isArray(embedding) || embedding.length !== 384) {
-      return null;
-    }
-    return embedding;
-  } catch (err) {
-    console.error('[Supabase] Query embedding generation error:', err);
-    return null;
-  }
+  return generateEmbedding(text);
 }
 
 // ============== BOOKMARK SYNC OPERATIONS ==============
