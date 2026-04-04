@@ -281,13 +281,12 @@ FINAL_SCORE = 0.55 × keyword_match    (PRIMARY - exact word matches)
             + 0.20 × source_boost
 ```
 
-**Keyword-First Search**: Exact keyword matches always appear first.
-**Source Boost**: Bookmarks = 1.0, Pinterest = 0.0
+**Bookmarks-First Search**: Bookmarks ALWAYS appear before Pinterest pins.
+**Within each source**: Sorted by keyword match score, then combined score.
 
 **Search Priority Order:**
-1. Exact keyword matches in title
-2. Partial keyword matches
-3. Semantically similar items (vector search)
+1. ALL matching bookmarks (sorted by relevance)
+2. ALL matching Pinterest pins (sorted by relevance)
 
 ### Vector Similarity (0-1)
 ```sql
@@ -502,13 +501,13 @@ Embeddings are generated via HTTP API calls to localhost:3000/embed.
 ++id, url, priority, createdAt
 ```
 
-## 9.4 Chrome Alarms
+## 9.3 Chrome Alarms
 
 | Alarm | Interval | Purpose |
 |-------|----------|---------|
 | `checkIndexing` | 2 min | Process metadata fetching queue |
 | `pinterestSync` | 1 hour | Sync Pinterest boards |
-| `supabaseAutoSync` | 5 min | Auto-sync to Supabase + backfill embeddings |
+| `supabaseAutoSync` | 5 min | Auto-sync to Supabase |
 
 ---
 

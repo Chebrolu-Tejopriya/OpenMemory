@@ -538,21 +538,19 @@ function filterRelevantResults(results: HybridResult[], terms: string[], normali
 function mixSourcesByScore(results: HybridResult[]): HybridResult[] {
   if (results.length < 2) return results;
 
-  // Sort by keyword score first (primary), then combined score, then prefer bookmarks
+  // ALWAYS show bookmarks first, then Pinterest
+  // Within each group, sort by keyword score then combined score
   return results.sort((a, b) => {
-    // Primary: keyword matches come first
-    const keywordDiff = b.textScore - a.textScore;
-    if (Math.abs(keywordDiff) > 0.1) return keywordDiff;
-
-    // Secondary: combined score
-    const scoreDiff = b.combinedScore - a.combinedScore;
-    if (Math.abs(scoreDiff) > 0.05) return scoreDiff;
-
-    // Tertiary: prefer bookmarks when scores are close
+    // Primary: bookmarks ALWAYS come first
     if (a.source === 'chrome' && b.source !== 'chrome') return -1;
     if (b.source === 'chrome' && a.source !== 'chrome') return 1;
 
-    return 0;
+    // Within same source: sort by keyword score
+    const keywordDiff = b.textScore - a.textScore;
+    if (Math.abs(keywordDiff) > 0.05) return keywordDiff;
+
+    // Then by combined score
+    return b.combinedScore - a.combinedScore;
   });
 }
 

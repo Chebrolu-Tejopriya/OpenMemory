@@ -220,10 +220,11 @@ BEGIN
     scored.created_at
   FROM scored
   ORDER BY
+    -- PRIMARY: bookmarks ALWAYS come first
+    CASE WHEN scored.source = 'chrome' THEN 0 ELSE 1 END ASC,
+    -- SECONDARY: sort by score within each source group
     CASE WHEN use_vector_only THEN scored.similarity_raw ELSE NULL END ASC,
-    final_score DESC,
-    -- Secondary sort: bookmarks first when scores are equal
-    scored.source ASC
+    final_score DESC
   LIMIT match_count;
 END;
 $$;
