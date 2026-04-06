@@ -48,62 +48,28 @@ export default function Home() {
     setHasSearched(true);
 
     try {
-      const embedResponse = await fetch(`${BACKEND_URL}/embed`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: query }),
-      });
+      const searchResponse = await fetch(
+        `${BACKEND_URL}/search?q=${encodeURIComponent(query)}&limit=20&offset=0`
+      );
 
-      if (!embedResponse.ok) {
-        throw new Error("Failed to generate embedding");
+      if (!searchResponse.ok) {
+        throw new Error("Search request failed");
       }
 
-      const mockResults: SearchResult[] = [
-        {
-          id: "1",
-          title: "AI for Visual Design | Designlab",
-          folder: "Bookmarks bar/framer",
-          url: "https://designlab.com",
-          source: "chrome",
-        },
-        {
-          id: "2",
-          title: "Dark Fintech Dashboard",
-          folder: "Bookmarks bar/Inspirations",
-          url: "https://dribbble.com",
-          source: "chrome",
-        },
-        {
-          id: "3",
-          title: "Modern Banking UI Kit",
-          folder: "Bookmarks bar/UI",
-          url: "https://figma.com",
-          source: "chrome",
-        },
-        {
-          id: "4",
-          title: "Crypto Wallet Interface",
-          folder: "Bookmarks bar/crypto",
-          url: "https://behance.net",
-          source: "chrome",
-        },
-        {
-          id: "5",
-          title: "Finance App Concept",
-          folder: "Bookmarks bar/fintech",
-          url: "https://pinterest.com",
-          source: "pinterest",
-        },
-        {
-          id: "6",
-          title: "Trading Platform Design",
-          folder: "Bookmarks bar/Inspirations",
-          url: "https://awwwards.com",
-          source: "chrome",
-        },
-      ];
+      const data = await searchResponse.json();
 
-      setResults(mockResults);
+      // Map backend results to our SearchResult interface
+      const mappedResults: SearchResult[] = data.results.map(
+        (item: { title: string; url: string; folder: string | null; source: string }, index: number) => ({
+          id: `${index}-${item.url}`,
+          title: item.title,
+          folder: item.folder || "Bookmarks",
+          url: item.url,
+          source: item.source === "chrome" ? "chrome" : "pinterest",
+        })
+      );
+
+      setResults(mappedResults);
     } catch (error) {
       console.error("Search error:", error);
       setResults([]);
