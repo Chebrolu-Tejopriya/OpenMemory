@@ -210,6 +210,33 @@ Automatic synonym matching for common design terms:
 ### Recency Boost
 Items saved within the last 30 days get a recency boost (0-1 scale based on age)
 
+## Performance Optimizations
+
+The backend includes several optimizations for fast search response:
+
+### Embedding Cache
+- LRU cache stores up to 100 query embeddings
+- Repeated searches return instantly without regenerating embeddings
+
+### Smart Vector Skip
+- If keyword matches are strong (score ≥ 0.5 with 5+ results), vector search is skipped
+- This provides instant results for common queries like "figma", "dashboard", "landing page"
+
+### Search Response Times
+| Query Type | Response Time |
+|------------|---------------|
+| Strong keyword match | ~150-500ms |
+| Cached query | ~100-200ms |
+| Semantic search needed | ~5-8s |
+
+## Website Screenshots
+
+Bookmark cards display website screenshots for visual preview:
+- Screenshots fetched from `screenshot.11ty.dev` service
+- Favicon shown as placeholder while screenshot loads
+- Smooth fade-in transition when screenshot is ready
+- Falls back to favicon if screenshot unavailable
+
 ## Intent Classification
 
 The search prioritizes design inspiration by:

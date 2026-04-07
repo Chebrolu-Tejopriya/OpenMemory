@@ -7,10 +7,12 @@ A Next.js web application for searching your bookmarks and Pinterest pins. Uses 
 - **Unified Search**: Identical search logic to the Chrome extension
 - **Hybrid Search**: Combines keyword matching with AI semantic search
 - **Real-time Results**: 350ms debounced search as you type
+- **Website Screenshots**: Bookmark cards show actual website previews
 - **Source Filters**: Filter by All, Bookmarks, or Pinterest
 - **Folder/Board Filters**: Narrow results by specific folders or boards
 - **Responsive Design**: Works on mobile, tablet, and desktop
 - **Animated UI**: Smooth transitions with video background
+- **Smart Caching**: Embedding cache for instant repeated searches
 
 ## Getting Started
 
@@ -50,6 +52,28 @@ The webapp search works exactly like the extension:
 ```
 score = (0.55 × keyword) + (0.10 × semantic) + (0.15 × recency) + (0.20 × sourceBoost)
 ```
+
+## Performance
+
+### Response Times
+| Query Type | Response Time |
+|------------|---------------|
+| Strong keyword match (e.g., "figma") | ~150-500ms |
+| Cached query | ~100-200ms |
+| Semantic search (e.g., "fintech") | ~5-8s |
+
+### Optimizations
+- **Embedding Cache**: LRU cache (100 entries) for instant repeated searches
+- **Smart Vector Skip**: Skips slow semantic search when keyword matches are strong
+- **Timeout Protection**: 8-second max wait for embedding generation
+
+## Website Screenshots
+
+Bookmark cards display website screenshots:
+- Fetched from `screenshot.11ty.dev` service
+- Favicon placeholder shown while loading
+- Smooth fade-in transition on load
+- Graceful fallback to favicon on error
 
 ## Tech Stack
 
