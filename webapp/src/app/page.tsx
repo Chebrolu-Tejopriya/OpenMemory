@@ -203,47 +203,33 @@ export default function Home() {
         }`}
       >
         <form onSubmit={handleSearch} className="w-full">
-          {/* Search bar with gradient border */}
           <div
-            className={`search-gradient-border rounded-xl sm:rounded-[13px] p-[2px] sm:p-[3px] transition-all duration-500 ease-out ${
+            className={`w-full flex items-center bg-white/[0.38] border-4 border-solid border-[#5b9888] rounded-[13px] transition-all duration-500 ease-out ${
               hasSearched
-                ? "shadow-[0_4px_20px_rgba(91,152,136,0.15)]"
-                : ""
+                ? "px-3 sm:px-[10px] py-1.5 sm:py-[5px]"
+                : "px-3 sm:px-[14px] py-2 sm:py-[8px]"
             }`}
           >
-            <div
-              className={`w-full flex items-center rounded-[10px] sm:rounded-[10px] transition-all duration-500 ease-out ${
-                hasSearched
-                  ? "px-3 sm:px-[12px] py-2 sm:py-[6px]"
-                  : "px-3 sm:px-[14px] py-2.5 sm:py-[8px]"
-              }`}
-              style={{
-                backgroundColor: "rgba(255, 255, 255, 0.5)",
-              }}
-            >
-              <div className="flex items-center gap-2 sm:gap-[10px] flex-1">
-                <div className="flex items-center">
-                  <Search
-                    className={`transition-all duration-300 ${
-                      hasSearched
-                        ? "w-4 h-4 text-[#5b9888]"
-                        : "w-4 h-4 sm:w-5 sm:h-5 text-[#646464]"
-                    }`}
-                  />
-                </div>
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search your inspirations..."
-                  className={`flex-1 bg-transparent outline-none placeholder:text-[#3a3a3a]/60 text-[#3a3a3a] transition-all duration-300 ${
-                    hasSearched
-                      ? "text-sm sm:text-[14px] leading-5 sm:leading-[20px]"
-                      : "text-base sm:text-[16px] leading-6 sm:leading-[24px]"
-                  }`}
-                  style={{ fontFamily: "var(--font-geist), sans-serif" }}
-                />
-              </div>
+            <div className="flex items-center gap-2 sm:gap-[10px] flex-1">
+              <Search
+                className={`transition-all duration-300 flex-shrink-0 ${
+                  hasSearched
+                    ? "w-4 h-4 text-[#646464]"
+                    : "w-4 h-4 sm:w-[16px] sm:h-[16px] text-[#646464]"
+                }`}
+              />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search your inspirations..."
+                className={`flex-1 bg-transparent outline-none placeholder:text-[#3a3a3a]/60 text-[#3a3a3a] transition-all duration-300 ${
+                  hasSearched
+                    ? "text-sm sm:text-[14px] leading-5 sm:leading-[20px]"
+                    : "text-base sm:text-[16px] leading-6 sm:leading-[24px]"
+                }`}
+                style={{ fontFamily: "var(--font-geist), sans-serif" }}
+              />
             </div>
           </div>
         </form>
