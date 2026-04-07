@@ -1,36 +1,92 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# OpenMemory Web App
+
+A Next.js web application for searching your bookmarks and Pinterest pins. Uses the same search algorithm as the Chrome extension for consistent results.
+
+## Features
+
+- **Unified Search**: Identical search logic to the Chrome extension
+- **Hybrid Search**: Combines keyword matching with AI semantic search
+- **Real-time Results**: 350ms debounced search as you type
+- **Source Filters**: Filter by All, Bookmarks, or Pinterest
+- **Folder/Board Filters**: Narrow results by specific folders or boards
+- **Responsive Design**: Works on mobile, tablet, and desktop
+- **Animated UI**: Smooth transitions with video background
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 18+
+- Backend server running on port 3001
+
+### Start the Backend
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd ../backend
+PORT=3001 npm start
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Start the Web App
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Learn More
+## Search Behavior
 
-To learn more about Next.js, take a look at the following resources:
+The webapp search works exactly like the extension:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. **Minimum 2 characters** required to trigger search
+2. **350ms debounce** to wait for typing to finish
+3. **Bookmarks appear first**, then Pinterest pins
+4. **Keyword matches prioritized** over semantic similarity
+5. **Recent items boosted** (30-day window)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Scoring Formula
 
-## Deploy on Vercel
+```
+score = (0.55 × keyword) + (0.10 × semantic) + (0.15 × recency) + (0.20 × sourceBoost)
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Tech Stack
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Framework**: Next.js 14 (App Router)
+- **Styling**: Tailwind CSS
+- **Icons**: Lucide React
+- **Fonts**: Geist, Baloo Bhai 2, Baloo 2
+
+## Project Structure
+
+```
+webapp/
+├── src/
+│   ├── app/
+│   │   ├── page.tsx        # Main search page
+│   │   ├── layout.tsx      # Root layout with fonts
+│   │   └── globals.css     # Global styles
+│   └── components/
+│       ├── SearchResults.tsx      # Results grid
+│       ├── SearchResultCard.tsx   # Individual result card
+│       └── SearchFilters.tsx      # Filter buttons
+├── public/
+│   ├── videos/             # Background video
+│   └── images/             # UI assets
+└── package.json
+```
+
+## API Endpoints
+
+The webapp communicates with the backend on `http://localhost:3001`:
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /search?q=query` | Search bookmarks and pins |
+| `GET /folders` | Get list of bookmark folders |
+| `GET /boards` | Get list of Pinterest boards |
+
+## License
+
+MIT

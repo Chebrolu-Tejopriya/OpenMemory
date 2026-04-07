@@ -1,16 +1,19 @@
 # OpenMemory
 
-A Chrome extension for semantic search of your design inspirations. Search your bookmarks using natural language and find relevant design resources instantly.
+A Chrome extension and web app for semantic search of your design inspirations. Search your bookmarks and Pinterest pins using natural language and find relevant design resources instantly.
 
 ## Features
 
-- **Hybrid Search**: Combines keyword matching with AI semantic search
+- **Hybrid Search**: Combines keyword matching with AI semantic search (vector embeddings)
 - **Keyword-First Ranking**: Exact matches appear at the top before semantic results
 - **Pinterest Integration**: Sync and search your Pinterest pins alongside bookmarks
 - **Bookmarks Priority**: Chrome bookmarks always appear before Pinterest pins
+- **Recency Boost**: Recently saved items get higher ranking
+- **Query Expansion**: Automatic synonym matching for design terms
 - **Folder Filtering**: Use `@` to filter by bookmark folders
 - **Board Filtering**: Filter Pinterest results by board
 - **Website Thumbnails**: Preview sites with automatic screenshots
+- **Web App**: Standalone Next.js web app with identical search functionality
 - **Dark UI**: Clean Vercel-inspired dark theme
 
 ## Architecture
@@ -22,13 +25,17 @@ extension/
 │   ├── sidepanel.html      # Main UI
 │   ├── search.ts           # Client-side search logic
 │   └── background.ts       # Service worker
-├── backend/                # Data processing backend
+├── backend/                # Express API server
 │   └── src/
-│       ├── import-chrome-bookmarks.ts  # Import Chrome bookmarks
-│       ├── embeddings.ts   # OpenAI embeddings generation
-│       ├── scraper.ts      # Website metadata scraping
-│       ├── intent.ts       # Intent classification
-│       └── export.ts       # Export data for extension
+│       ├── server.ts       # API endpoints
+│       ├── supabase-search.ts  # Unified search logic (matches extension)
+│       ├── embeddings.ts   # FastEmbed BGE embeddings generation
+│       └── db.ts           # Database layer
+├── webapp/                 # Next.js web application
+│   └── src/
+│       ├── app/page.tsx    # Main search UI
+│       └── components/     # React components
+├── supabase/               # Supabase migrations and setup
 ├── dist/                   # Built extension (generated)
 └── scripts/                # Build utilities
 ```
@@ -162,10 +169,46 @@ npm run typecheck   # Type check
 
 1. **Import**: Reads bookmarks from Chrome's local storage
 2. **Scrape**: Fetches metadata from each URL (title, description, Open Graph tags)
-3. **Embed**: Generates vector embeddings using OpenAI's text-embedding-3-small
-4. **Classify**: Assigns intent labels (inspiration, learning, reference, tooling)
-5. **Export**: Bundles everything into a JSON file for the extension
-6. **Search**: Client-side text search with intent-based scoring and filtering
+3. **Embed**: Generates vector embeddings using FastEmbed BGE-small model
+4. **Store**: Saves to Supabase with pgvector for similarity search
+5. **Search**: Hybrid text + vector search with unified scoring
+
+## Search Algorithm
+
+Both the extension and webapp use identical search logic:
+
+### Scoring Formula
+```
+combinedScore = (0.55 × keywordScore) + (0.10 × semanticScore) + (0.15 × recencyScore) + (0.20 × sourceBoost)
+```
+
+### Keyword Scoring (Hierarchical)
+| Score | Match Type |
+|-------|------------|
+| 1.0 | Exact title match |
+| 0.8 | Title contains query |
+| 0.75 | URL contains query |
+| 0.7 | All terms found in title |
+| 0.55 | >50% of terms in title |
+| 0.5 | URL contains any term |
+| 0.4 | Folder/board contains query |
+| 0.35 | Folder contains any term |
+| 0.3 | Description contains query |
+| 0.15 | Any term found anywhere |
+
+### Query Expansion
+Automatic synonym matching for common design terms:
+- `dashboard` → admin, panel, analytics, metrics
+- `fintech` → finance, banking, payment, crypto
+- `mobile` → app, ios, android, responsive
+- `landing` → homepage, hero, marketing
+
+### Source Priority
+- Chrome bookmarks always appear before Pinterest pins
+- Within each source, results are sorted by keyword score, then combined score
+
+### Recency Boost
+Items saved within the last 30 days get a recency boost (0-1 scale based on age)
 
 ## Intent Classification
 

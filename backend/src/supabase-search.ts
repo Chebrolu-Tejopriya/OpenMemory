@@ -8,6 +8,71 @@ import { generateQueryEmbedding } from './embeddings.js';
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ghfybenvdenuupiqgouf.supabase.co';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdoZnliZW52ZGVudXVwaXFnb3VmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NTgwNDIsImV4cCI6MjA5MDIzNDA0Mn0._ADsqO0uFMEwNJ1lTKc3_0sBuuN3Jvxa3-naDmdYK1k';
 
+// Constants matching extension
+const RECENT_DAYS = 30;
+const RECENT_WINDOW_MS = RECENT_DAYS * 24 * 60 * 60 * 1000;
+
+// Synonym map for query expansion (same as extension)
+const synonymMap: Record<string, string[]> = {
+  'dashboard': ['admin', 'panel', 'analytics', 'metrics'],
+  'ui': ['interface', 'design', 'ux', 'user interface'],
+  'ux': ['user experience', 'interface', 'ui'],
+  'button': ['cta', 'action', 'click'],
+  'landing': ['homepage', 'hero', 'marketing'],
+  'mobile': ['app', 'ios', 'android', 'responsive'],
+  'dark': ['night', 'mode', 'theme'],
+  'light': ['bright', 'white', 'mode'],
+  'card': ['tile', 'component', 'widget'],
+  'form': ['input', 'field', 'submit'],
+  'nav': ['navigation', 'menu', 'sidebar', 'header'],
+  'menu': ['navigation', 'nav', 'dropdown'],
+  'fintech': ['finance', 'banking', 'payment', 'crypto'],
+  'finance': ['fintech', 'banking', 'money'],
+  'ecommerce': ['shop', 'store', 'cart', 'product'],
+  'saas': ['software', 'app', 'platform', 'tool'],
+  'minimal': ['clean', 'simple', 'minimalist'],
+  'modern': ['contemporary', 'sleek', 'fresh'],
+  'gradient': ['colorful', 'vibrant'],
+  'icon': ['symbol', 'glyph'],
+  'table': ['grid', 'data', 'list'],
+  'chart': ['graph', 'visualization', 'data'],
+  'profile': ['user', 'account', 'avatar'],
+  'settings': ['preferences', 'config', 'options'],
+  'login': ['signin', 'auth', 'authentication'],
+  'signup': ['register', 'onboarding', 'create account'],
+};
+
+/**
+ * Expand query with synonyms (same as extension)
+ */
+function expandQuery(query: string): { original: string; expanded: string; terms: string[] } {
+  const original = query.toLowerCase().trim();
+  const words = original.split(/\s+/).filter(w => w.length > 0);
+  const expandedTerms = new Set<string>(words);
+
+  for (const word of words) {
+    if (synonymMap[word]) {
+      synonymMap[word].forEach(syn => expandedTerms.add(syn));
+    }
+  }
+
+  return {
+    original,
+    expanded: Array.from(expandedTerms).join(' '),
+    terms: Array.from(expandedTerms)
+  };
+}
+
+/**
+ * Tokenize query into terms
+ */
+function tokenizeQuery(query: string): string[] {
+  return query
+    .split(/\s+/)
+    .map(word => word.trim())
+    .filter(word => word.length > 0);
+}
+
 const requestHeaders = {
   'apikey': SUPABASE_ANON_KEY,
   'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
@@ -45,9 +110,46 @@ interface SupabaseSearchResult {
   image_url: string | null;
   similarity: number;
   keyword_score: number;
+  recency_score: number;
+  combined_score: number;
   similarity_raw?: number;
   description?: string | null;
   created_at?: string | null;
+}
+
+/**
+ * Compute recency score (same as extension)
+ * Items within RECENT_DAYS get higher scores
+ */
+function computeRecencyScore(createdAt: string | null | undefined): number {
+  if (!createdAt) return 0;
+
+  const timestamp = Date.parse(createdAt);
+  if (isNaN(timestamp)) return 0;
+
+  const now = Date.now();
+  const ageMs = now - timestamp;
+  const normalized = 1 - Math.min(ageMs / RECENT_WINDOW_MS, 1);
+  return Math.max(0, normalized);
+}
+
+/**
+ * Compute combined score (same formula as extension)
+ * 0.55 * textScore + 0.10 * semanticScore + 0.15 * recencyScore + 0.20 * sourceBoost
+ */
+function computeCombinedScore(
+  textScore: number,
+  semanticScore: number,
+  recencyScore: number,
+  source: 'chrome' | 'pinterest'
+): number {
+  const sourceBoost = source === 'chrome' ? 1.0 : 0.0;
+  return (
+    (0.55 * textScore) +
+    (0.10 * semanticScore) +
+    (0.15 * recencyScore) +
+    (0.20 * sourceBoost)
+  );
 }
 
 interface SearchResult {
@@ -61,29 +163,80 @@ interface SearchResult {
 
 /**
  * Compute keyword score based on actual text matching
- * Exact same logic as extension
+ * Exact same logic as extension's computeTextMatchScore
  */
 function computeLocalKeywordScore(
   query: string,
   title: string | null,
   folder: string | null,
-  url: string | null
+  url: string | null,
+  extraText?: string | null
 ): number {
-  const queryLower = query.toLowerCase().trim();
+  const terms = tokenizeQuery(query.toLowerCase().trim());
+  if (!terms.length) return 0;
+
+  const titleText = (title || '').toLowerCase();
+  const boardText = (folder || '').toLowerCase();
+  const extra = (extraText || '').toLowerCase();
+  const urlText = (url || '').toLowerCase();
+  const queryStr = terms.join(' ').trim();
 
   // Require minimum 2 characters for meaningful keyword matching
-  if (queryLower.length < 2) return 0;
+  if (queryStr.length < 2) return 0;
 
-  const titleLower = (title || '').toLowerCase();
-  const folderLower = (folder || '').toLowerCase();
-  const urlLower = (url || '').toLowerCase();
+  // Exact title match (highest priority)
+  if (titleText === queryStr) return 1.0;
 
-  // Only give keyword score if the query actually appears in the text
-  if (titleLower === queryLower) return 1.0;
-  if (titleLower.includes(queryLower)) return 0.8;
-  if (folderLower.includes(queryLower)) return 0.6;
-  if (urlLower.includes(queryLower)) return 0.4;
-  return 0; // No match = no keyword score
+  // Title contains full query
+  if (titleText.includes(queryStr)) return 0.8;
+
+  // URL contains full query (e.g., searching "omma" finds "omma.build")
+  if (urlText.includes(queryStr)) return 0.75;
+
+  // Expand query for better matching
+  const { terms: expandedTerms } = expandQuery(queryStr);
+  const allTerms = [...new Set([...terms, ...expandedTerms])];
+
+  // Check how many terms match in title
+  const titleWords = titleText.split(/\s+/);
+  const titleTermHits = allTerms.filter(term =>
+    term.length > 1 && (titleText.includes(term) || titleWords.some(w => w.startsWith(term)))
+  ).length;
+  const originalTermHits = terms.filter(term =>
+    term.length > 1 && (titleText.includes(term) || titleWords.some(w => w.startsWith(term)))
+  ).length;
+
+  // All original terms found in title
+  if (originalTermHits === terms.length && terms.length > 0) return 0.7;
+
+  // Most original terms found (>50%)
+  if (terms.length > 1 && originalTermHits / terms.length > 0.5) return 0.55;
+
+  // URL contains any original term (e.g., "omma" in "omma.build")
+  if (terms.some(term => term.length > 2 && urlText.includes(term))) return 0.5;
+
+  // Board/folder contains query
+  if (boardText.includes(queryStr)) return 0.4;
+
+  // Board contains any original term
+  if (terms.some(term => term.length > 2 && boardText.includes(term))) return 0.35;
+
+  // Extra text (description) contains query
+  if (extra && extra.includes(queryStr)) return 0.3;
+
+  // Check expanded terms match in all text (including URL)
+  const haystack = `${titleText} ${boardText} ${extra} ${urlText}`.trim();
+  if (titleTermHits > 0) {
+    // Score based on how many expanded terms match
+    const matchRatio = titleTermHits / Math.max(allTerms.length, 1);
+    return Math.min(0.25, 0.1 + (matchRatio * 0.15));
+  }
+
+  // Any term found anywhere (including URL)
+  const anyHit = allTerms.some(term => term.length > 2 && haystack.includes(term));
+  if (anyHit) return 0.15;
+
+  return 0;
 }
 
 /**
@@ -254,7 +407,7 @@ async function searchPinsVector(
  */
 export async function searchSupabase(
   query: string,
-  limit = 50,
+  limit = 50,  // Same default as extension
   sourceFilter?: string,
   folder?: string,
   board?: string | null
@@ -280,29 +433,41 @@ export async function searchSupabase(
 
   // Convert text search results with local keyword scoring (same as extension)
   const textResults: SupabaseSearchResult[] = [
-    ...bookmarkTextResults.map(b => ({
-      source: 'chrome' as const,
-      item_id: b.id,
-      url: b.url,
-      title: b.title,
-      folder_or_board: b.folder,
-      image_url: null,
-      similarity: 0.5,
-      keyword_score: computeLocalKeywordScore(query, b.title, b.folder, b.url),
-      created_at: b.created_at ?? null
-    })),
-    ...pinTextResults.map(p => ({
-      source: 'pinterest' as const,
-      item_id: p.pin_id ?? p.id ?? '',
-      url: p.pin_url,
-      title: p.title || 'Untitled',
-      folder_or_board: p.board_name || null,
-      image_url: p.image_url || null,
-      similarity: 0.5,
-      keyword_score: computeLocalKeywordScore(query, p.title, p.board_name, p.pin_url),
-      description: p.description || null,
-      created_at: p.synced_at ?? null
-    }))
+    ...bookmarkTextResults.map(b => {
+      const keywordScore = computeLocalKeywordScore(query, b.title, b.folder, b.url);
+      const recencyScore = computeRecencyScore(b.created_at);
+      return {
+        source: 'chrome' as const,
+        item_id: b.id,
+        url: b.url,
+        title: b.title,
+        folder_or_board: b.folder,
+        image_url: null,
+        similarity: 0.5,
+        keyword_score: keywordScore,
+        recency_score: recencyScore,
+        combined_score: computeCombinedScore(keywordScore, 0.5, recencyScore, 'chrome'),
+        created_at: b.created_at ?? null
+      };
+    }),
+    ...pinTextResults.map(p => {
+      const keywordScore = computeLocalKeywordScore(query, p.title, p.board_name, p.pin_url, p.description);
+      const recencyScore = computeRecencyScore(p.synced_at);
+      return {
+        source: 'pinterest' as const,
+        item_id: p.pin_id ?? p.id ?? '',
+        url: p.pin_url,
+        title: p.title || 'Untitled',
+        folder_or_board: p.board_name || null,
+        image_url: p.image_url || null,
+        similarity: 0.5,
+        keyword_score: keywordScore,
+        recency_score: recencyScore,
+        combined_score: computeCombinedScore(keywordScore, 0.5, recencyScore, 'pinterest'),
+        description: p.description || null,
+        created_at: p.synced_at ?? null
+      };
+    })
   ].filter(r => r.keyword_score > 0); // Only keep actual matches!
 
   // If no embedding, return text results only
@@ -322,30 +487,42 @@ export async function searchSupabase(
 
   // Convert vector search results (same as extension)
   const vectorResults: SupabaseSearchResult[] = [
-    ...bookmarkVectorResults.map(b => ({
-      source: 'chrome' as const,
-      item_id: b.id,
-      url: b.url,
-      title: b.title,
-      folder_or_board: b.folder,
-      image_url: null,
-      similarity: b.similarity || 0,
-      keyword_score: 0,
-      created_at: b.created_at ?? null
-    })),
-    ...pinVectorResults.map(p => ({
-      source: 'pinterest' as const,
-      item_id: p.pin_id ?? p.id ?? '',
-      url: p.pin_url,
-      title: p.title || 'Untitled',
-      folder_or_board: p.board_name || null,
-      image_url: p.image_url || null,
-      similarity: typeof p.similarity_raw === 'number' ? 1 - p.similarity_raw : (p.similarity || 0),
-      similarity_raw: p.similarity_raw,
-      keyword_score: 0,
-      description: p.description || null,
-      created_at: p.synced_at ?? null
-    }))
+    ...bookmarkVectorResults.map(b => {
+      const similarity = b.similarity || 0;
+      const recencyScore = computeRecencyScore(b.created_at);
+      return {
+        source: 'chrome' as const,
+        item_id: b.id,
+        url: b.url,
+        title: b.title,
+        folder_or_board: b.folder,
+        image_url: null,
+        similarity,
+        keyword_score: 0,
+        recency_score: recencyScore,
+        combined_score: computeCombinedScore(0, similarity, recencyScore, 'chrome'),
+        created_at: b.created_at ?? null
+      };
+    }),
+    ...pinVectorResults.map(p => {
+      const similarity = typeof p.similarity_raw === 'number' ? 1 - p.similarity_raw : (p.similarity || 0);
+      const recencyScore = computeRecencyScore(p.synced_at);
+      return {
+        source: 'pinterest' as const,
+        item_id: p.pin_id ?? p.id ?? '',
+        url: p.pin_url,
+        title: p.title || 'Untitled',
+        folder_or_board: p.board_name || null,
+        image_url: p.image_url || null,
+        similarity,
+        similarity_raw: p.similarity_raw,
+        keyword_score: 0,
+        recency_score: recencyScore,
+        combined_score: computeCombinedScore(0, similarity, recencyScore, 'pinterest'),
+        description: p.description || null,
+        created_at: p.synced_at ?? null
+      };
+    })
   ];
 
   // Merge results: text matches first, then vector matches (dedupe by URL)
@@ -372,15 +549,29 @@ export async function searchSupabase(
       if (existing && result.similarity > (existing.similarity || 0)) {
         existing.similarity = result.similarity;
         existing.similarity_raw = result.similarity_raw;
+        // Recalculate combined score with the better semantic score
+        existing.combined_score = computeCombinedScore(
+          existing.keyword_score,
+          result.similarity,
+          existing.recency_score,
+          existing.source
+        );
       }
     }
   }
 
-  // Sort: keyword matches first, then by similarity (same as extension)
+  // Sort: bookmarks FIRST, then by keyword score, then combined score (same as extension)
   mergedResults.sort((a, b) => {
+    // Primary: bookmarks ALWAYS come first
+    if (a.source === 'chrome' && b.source !== 'chrome') return -1;
+    if (b.source === 'chrome' && a.source !== 'chrome') return 1;
+
+    // Within same source: sort by keyword score
     const keywordDiff = (b.keyword_score || 0) - (a.keyword_score || 0);
-    if (keywordDiff !== 0) return keywordDiff;
-    return (b.similarity || 0) - (a.similarity || 0);
+    if (Math.abs(keywordDiff) > 0.05) return keywordDiff;
+
+    // Then by combined score
+    return (b.combined_score || 0) - (a.combined_score || 0);
   });
 
   const finalResults = mergedResults.slice(0, limit).map(r => toSearchResult(r));
@@ -395,13 +586,73 @@ export async function searchSupabase(
 }
 
 /**
+ * Get unique folders from Supabase bookmarks
+ */
+export async function getSupabaseFolders(): Promise<string[]> {
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/bookmarks?select=folder&order=folder.asc`,
+      {
+        method: 'GET',
+        headers: requestHeaders,
+      }
+    );
+
+    if (!response.ok) {
+      console.error('[Supabase] Failed to fetch folders:', response.status);
+      return [];
+    }
+
+    const data = await response.json();
+    const folders = new Set<string>();
+    data.forEach((item: { folder: string | null }) => {
+      if (item.folder) folders.add(item.folder);
+    });
+
+    return Array.from(folders).sort();
+  } catch (error) {
+    console.error('[Supabase] Error fetching folders:', error);
+    return [];
+  }
+}
+
+/**
+ * Get unique boards from Supabase Pinterest pins
+ */
+export async function getSupabaseBoards(): Promise<string[]> {
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/pinterest_pins?select=board_name&order=board_name.asc`,
+      {
+        method: 'GET',
+        headers: requestHeaders,
+      }
+    );
+
+    if (!response.ok) {
+      console.error('[Supabase] Failed to fetch boards:', response.status);
+      return [];
+    }
+
+    const data = await response.json();
+    const boards = new Set<string>();
+    data.forEach((item: { board_name: string | null }) => {
+      if (item.board_name) boards.add(item.board_name);
+    });
+
+    return Array.from(boards).sort();
+  } catch (error) {
+    console.error('[Supabase] Error fetching boards:', error);
+    return [];
+  }
+}
+
+/**
  * Convert internal result to API response format
  */
 function toSearchResult(r: SupabaseSearchResult): SearchResult {
-  // Calculate combined score for sorting
-  const score = r.keyword_score > 0
-    ? 0.3 + (0.7 * r.keyword_score)
-    : 0.1 + (0.4 * (r.similarity || 0));
+  // Use pre-computed combined score (matches extension formula)
+  const score = r.combined_score;
 
   // Generate image URL
   let imageUrl: string | null = r.image_url;
