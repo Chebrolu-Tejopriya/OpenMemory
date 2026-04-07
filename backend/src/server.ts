@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { ingestItems } from './ingest.js';
 import { search } from './search.js';
+import { searchSupabase } from './supabase-search.js';
 import { getAllFolders, getPinterestBoards, getPinterestPinsCountByBoard, upsertPinterestBoard, upsertPinterestPins, getExistingPinterestPinUrls, PinterestPinRow, PinterestBoardRow } from './db.js';
 import { StandardizedItem } from './types.js';
 import { generateEmbeddings } from './embeddings.js';
@@ -184,22 +185,49 @@ app.post('/run-embeddings', async (req, res) => {
 });
 
 /**
- * GET /search?q=QUERY&limit=20&offset=0&folder=PATH
- * Semantic search across all stored items with pagination.
+ * GET /search?q=QUERY&limit=20&offset=0&folder=PATH&source=chrome|pinterest
+ * Semantic search using Supabase (cloud database with embeddings).
  * Response: { results: [...], total: number, hasMore: boolean }
  */
 app.get('/search', async (req, res) => {
   try {
     const query = req.query.q as string;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const offset = parseInt(req.query.offset as string) || 0;
-    const folder = req.query.folder as string | undefined;
+    const limit = parseInt(req.query.limit as string) || 30;
+    const source = req.query.source as string | undefined;
 
     if (!query || typeof query !== 'string') {
       return res.status(400).json({ error: 'q parameter is required' });
     }
 
-    const result = await search(query, limit, offset, folder);
+    // Use Supabase search (has all embeddings already generated)
+    const result = await searchSupabase(query, limit, source);
+    res.json(result);
+  } catch (err) {
+    console.error('Search error:', err);
+    res.status(500).json({
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+});
+
+/**
+ * GET /search-local?q=QUERY&limit=20&offset=0&folder=PATH&source=chrome|pinterest
+ * Local search using SQLite database (fallback).
+ * Response: { results: [...], total: number, hasMore: boolean }
+ */
+app.get('/search-local', async (req, res) => {
+  try {
+    const query = req.query.q as string;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const offset = parseInt(req.query.offset as string) || 0;
+    const folder = req.query.folder as string | undefined;
+    const source = req.query.source as string | undefined;
+
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({ error: 'q parameter is required' });
+    }
+
+    const result = await search(query, limit, offset, folder, source);
     res.json(result);
   } catch (err) {
     console.error('Search error:', err);

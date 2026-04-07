@@ -4,10 +4,11 @@ import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Search, Volume2, VolumeX, Play, Pause } from "lucide-react";
 import SearchResults from "@/components/SearchResults";
+import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
 import LeafIcon from "@/components/icons/LeafIcon";
 
-const BACKEND_URL = "http://localhost:3000";
+const BACKEND_URL = "http://localhost:3001";
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -16,6 +17,7 @@ export default function Home() {
   const [hasSearched, setHasSearched] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [isPlaying, setIsPlaying] = useState(true);
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const videoRef = useRef<HTMLVideoElement>(null);
   const userName = "TEJA";
 
@@ -37,51 +39,76 @@ export default function Home() {
     }
   };
 
-  const performSearch = useCallback(async (query: string) => {
-    if (query.length < 2) {
-      setResults([]);
-      setHasSearched(false);
-      return;
-    }
-
-    setIsLoading(true);
-    setHasSearched(true);
-
-    try {
-      const searchResponse = await fetch(
-        `${BACKEND_URL}/search?q=${encodeURIComponent(query)}&limit=20&offset=0`
-      );
-
-      if (!searchResponse.ok) {
-        throw new Error("Search request failed");
+  const performSearch = useCallback(
+    async (query: string, source: SourceFilter) => {
+      if (query.length < 2) {
+        setResults([]);
+        setHasSearched(false);
+        return;
       }
 
-      const data = await searchResponse.json();
+      setIsLoading(true);
+      setHasSearched(true);
 
-      // Map backend results to our SearchResult interface
-      const mappedResults: SearchResult[] = data.results.map(
-        (item: { title: string; url: string; folder: string | null; source: string }, index: number) => ({
-          id: `${index}-${item.url}`,
-          title: item.title,
-          folder: item.folder || "Bookmarks",
-          url: item.url,
-          source: item.source === "chrome" ? "chrome" : "pinterest",
-        })
-      );
+      try {
+        const params = new URLSearchParams({
+          q: query,
+          limit: "30",
+          offset: "0",
+        });
 
-      setResults(mappedResults);
-    } catch (error) {
-      console.error("Search error:", error);
-      setResults([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+        if (source !== "all") {
+          // Map filter values to actual database source values
+          const sourceValue = source === "chrome" ? "chrome_bookmarks" : source;
+          params.set("source", sourceValue);
+        }
+
+        const searchResponse = await fetch(
+          `${BACKEND_URL}/search?${params.toString()}`
+        );
+
+        if (!searchResponse.ok) {
+          throw new Error("Search request failed");
+        }
+
+        const data = await searchResponse.json();
+
+        // Map backend results to our SearchResult interface
+        const mappedResults: SearchResult[] = data.results.map(
+          (
+            item: {
+              title: string;
+              url: string;
+              folder: string | null;
+              source: string;
+              imageUrl: string | null;
+            },
+            index: number
+          ) => ({
+            id: `${index}-${item.url}`,
+            title: item.title,
+            folder: item.folder || "Bookmarks",
+            url: item.url,
+            source: item.source.includes("chrome") ? "chrome" : "pinterest",
+            imageUrl: item.imageUrl || undefined,
+          })
+        );
+
+        setResults(mappedResults);
+      } catch (error) {
+        console.error("Search error:", error);
+        setResults([]);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     const timer = setTimeout(() => {
       if (searchQuery) {
-        performSearch(searchQuery);
+        performSearch(searchQuery, sourceFilter);
       } else {
         setResults([]);
         setHasSearched(false);
@@ -89,11 +116,15 @@ export default function Home() {
     }, 350);
 
     return () => clearTimeout(timer);
-  }, [searchQuery, performSearch]);
+  }, [searchQuery, sourceFilter, performSearch]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    performSearch(searchQuery);
+    performSearch(searchQuery, sourceFilter);
+  };
+
+  const handleSourceChange = (source: SourceFilter) => {
+    setSourceFilter(source);
   };
 
   return (
@@ -160,8 +191,8 @@ export default function Home() {
 
       {/* Main content */}
       <div
-        className={`absolute left-1/2 -translate-x-1/2 w-[836px] flex flex-col items-center gap-[17px] transition-all duration-300 z-10 ${
-          hasSearched ? "top-[100px]" : "top-[140px]"
+        className={`absolute left-1/2 -translate-x-1/2 w-[95%] max-w-[1200px] flex flex-col items-center gap-4 transition-all duration-300 z-10 ${
+          hasSearched ? "top-[80px]" : "top-[140px]"
         }`}
       >
         {/* Headline */}
@@ -178,7 +209,7 @@ export default function Home() {
         </div>
 
         {/* Search input */}
-        <form onSubmit={handleSearch} className="w-full">
+        <form onSubmit={handleSearch} className="w-full max-w-[700px]">
           <div
             className="w-full flex items-center px-[14px] py-[8px] rounded-[13px] border-4 border-solid"
             style={{
@@ -202,10 +233,23 @@ export default function Home() {
           </div>
         </form>
 
-        {/* Search Results */}
+        {/* Filters and Results */}
         {hasSearched && (
-          <div className="w-full mt-[24px]">
-            <SearchResults results={results} isLoading={isLoading} />
+          <div className="w-full flex flex-col gap-4">
+            {/* Filters */}
+            <SearchFilters
+              activeSource={sourceFilter}
+              onSourceChange={handleSourceChange}
+              resultCount={results.length}
+            />
+
+            {/* Scrollable Results Container */}
+            <div
+              className="w-full overflow-y-auto pr-2 custom-scrollbar"
+              style={{ maxHeight: "calc(100vh - 280px)" }}
+            >
+              <SearchResults results={results} isLoading={isLoading} />
+            </div>
           </div>
         )}
       </div>
