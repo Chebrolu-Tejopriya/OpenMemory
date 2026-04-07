@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: openmemory-backend
+    env: node
+    plan: free
+    buildCommand: |
+      npm install &&
+      npm run build &&
+      pip install -r python/requirements.txt
+    startCommand: node dist/server.js
+    envVars:
+      - key: PORT
+        value: 3001
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: NODE_ENV
+        value: production

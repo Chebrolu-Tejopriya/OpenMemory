@@ -5,7 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { ingestItems } from './ingest.js';
 import { search } from './search.js';
-import { searchSupabase } from './supabase-search.js';
+import { searchSupabase, getSupabaseFolders, getSupabaseBoards } from './supabase-search.js';
 import { getAllFolders, getPinterestBoards, getPinterestPinsCountByBoard, upsertPinterestBoard, upsertPinterestPins, getExistingPinterestPinUrls, PinterestPinRow, PinterestBoardRow } from './db.js';
 import { StandardizedItem } from './types.js';
 import { generateEmbeddings } from './embeddings.js';
@@ -18,6 +18,14 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+/**
+ * GET /health
+ * Health check endpoint for monitoring and keeping Render awake
+ */
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 /**
  * POST /ingest
@@ -45,15 +53,32 @@ app.post('/ingest', async (req, res) => {
 
 /**
  * GET /folders
- * Get all unique folder paths for autocomplete.
+ * Get all unique folder paths from Supabase.
  * Response: { folders: string[] }
  */
-app.get('/folders', (req, res) => {
+app.get('/folders', async (req, res) => {
   try {
-    const folders = getAllFolders();
+    const folders = await getSupabaseFolders();
     res.json({ folders });
   } catch (err) {
     console.error('Folders error:', err);
+    res.status(500).json({
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+});
+
+/**
+ * GET /boards
+ * Get all unique Pinterest board names from Supabase.
+ * Response: { boards: string[] }
+ */
+app.get('/boards', async (req, res) => {
+  try {
+    const boards = await getSupabaseBoards();
+    res.json({ boards });
+  } catch (err) {
+    console.error('Boards error:', err);
     res.status(500).json({
       error: err instanceof Error ? err.message : 'Unknown error',
     });
@@ -192,7 +217,7 @@ app.post('/run-embeddings', async (req, res) => {
 app.get('/search', async (req, res) => {
   try {
     const query = req.query.q as string;
-    const limit = parseInt(req.query.limit as string) || 30;
+    const limit = parseInt(req.query.limit as string) || 100;
     const source = req.query.source as string | undefined;
 
     if (!query || typeof query !== 'string') {

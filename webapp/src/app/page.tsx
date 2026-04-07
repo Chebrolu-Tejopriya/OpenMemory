@@ -8,7 +8,7 @@ import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
 import LeafIcon from "@/components/icons/LeafIcon";
 
-const BACKEND_URL = "http://localhost:3001";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -18,8 +18,37 @@ export default function Home() {
   const [isMuted, setIsMuted] = useState(true);
   const [isPlaying, setIsPlaying] = useState(true);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  const [folders, setFolders] = useState<string[]>([]);
+  const [boards, setBoards] = useState<string[]>([]);
+  const [selectedFolder, setSelectedFolder] = useState("");
+  const [selectedBoard, setSelectedBoard] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   const userName = "TEJA";
+
+  // Fetch folders and boards on mount
+  useEffect(() => {
+    const fetchFilters = async () => {
+      try {
+        // Fetch folders from Supabase
+        const foldersRes = await fetch(`${BACKEND_URL}/folders`);
+        if (foldersRes.ok) {
+          const data = await foldersRes.json();
+          setFolders(data.folders || []);
+        }
+
+        // Fetch Pinterest boards from Supabase
+        const boardsRes = await fetch(`${BACKEND_URL}/boards`);
+        if (boardsRes.ok) {
+          const data = await boardsRes.json();
+          setBoards(data.boards || []);
+        }
+      } catch (error) {
+        console.error("Error fetching filters:", error);
+      }
+    };
+
+    fetchFilters();
+  }, []);
 
   const toggleMute = () => {
     if (videoRef.current) {
@@ -40,7 +69,7 @@ export default function Home() {
   };
 
   const performSearch = useCallback(
-    async (query: string, source: SourceFilter) => {
+    async (query: string, source: SourceFilter, folder?: string, board?: string) => {
       if (query.length < 2) {
         setResults([]);
         setHasSearched(false);
@@ -53,13 +82,21 @@ export default function Home() {
       try {
         const params = new URLSearchParams({
           q: query,
-          limit: "30",
+          limit: "100",
           offset: "0",
         });
 
         if (source !== "all") {
           const sourceValue = source === "chrome" ? "chrome_bookmarks" : source;
           params.set("source", sourceValue);
+        }
+
+        if (folder) {
+          params.set("folder", folder);
+        }
+
+        if (board) {
+          params.set("board", board);
         }
 
         const searchResponse = await fetch(
@@ -106,7 +143,7 @@ export default function Home() {
   useEffect(() => {
     const timer = setTimeout(() => {
       if (searchQuery) {
-        performSearch(searchQuery, sourceFilter);
+        performSearch(searchQuery, sourceFilter, selectedFolder, selectedBoard);
       } else {
         setResults([]);
         setHasSearched(false);
@@ -114,15 +151,26 @@ export default function Home() {
     }, 350);
 
     return () => clearTimeout(timer);
-  }, [searchQuery, sourceFilter, performSearch]);
+  }, [searchQuery, sourceFilter, selectedFolder, selectedBoard, performSearch]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    performSearch(searchQuery, sourceFilter);
+    performSearch(searchQuery, sourceFilter, selectedFolder, selectedBoard);
   };
 
   const handleSourceChange = (source: SourceFilter) => {
     setSourceFilter(source);
+    // Reset folder/board when changing source
+    if (source !== "chrome") setSelectedFolder("");
+    if (source !== "pinterest") setSelectedBoard("");
+  };
+
+  const handleFolderChange = (folder: string) => {
+    setSelectedFolder(folder);
+  };
+
+  const handleBoardChange = (board: string) => {
+    setSelectedBoard(board);
   };
 
   return (
@@ -264,15 +312,23 @@ export default function Home() {
       >
         <div className="w-full flex flex-col gap-3 sm:gap-4">
           {/* Filters */}
-          <SearchFilters
-            activeSource={sourceFilter}
-            onSourceChange={handleSourceChange}
-            resultCount={results.length}
-          />
+          <div className="relative z-20">
+            <SearchFilters
+              activeSource={sourceFilter}
+              onSourceChange={handleSourceChange}
+              resultCount={results.length}
+              folders={folders}
+              boards={boards}
+              selectedFolder={selectedFolder}
+              selectedBoard={selectedBoard}
+              onFolderChange={handleFolderChange}
+              onBoardChange={handleBoardChange}
+            />
+          </div>
 
           {/* Scrollable Results Container */}
           <div
-            className="w-full overflow-y-auto custom-scrollbar pb-4"
+            className="relative z-10 w-full overflow-y-auto custom-scrollbar pb-4"
             style={{ maxHeight: "calc(100vh - 120px)" }}
           >
             <SearchResults results={results} isLoading={isLoading} />
