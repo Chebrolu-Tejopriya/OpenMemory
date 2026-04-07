@@ -20,27 +20,27 @@ export default function SearchFilters({
       {
         id: "all",
         label: "All",
-        icon: <LayoutGrid className="w-3.5 h-3.5" />,
+        icon: <LayoutGrid className="w-3 h-3 sm:w-3.5 sm:h-3.5" />,
       },
       {
         id: "chrome",
         label: "Bookmarks",
-        icon: <Bookmark className="w-3.5 h-3.5" />,
+        icon: <Bookmark className="w-3 h-3 sm:w-3.5 sm:h-3.5" />,
         color: "#5b9888",
       },
       {
         id: "pinterest",
         label: "Pinterest",
-        icon: <Pin className="w-3.5 h-3.5" />,
+        icon: <Pin className="w-3 h-3 sm:w-3.5 sm:h-3.5" />,
         color: "#E60023",
       },
     ];
 
   return (
-    <div className="flex items-center justify-between w-full">
+    <div className="flex items-center justify-between w-full gap-2">
       {/* Filter buttons */}
-      <div className="flex items-center gap-1.5 p-1 rounded-lg bg-white/60 backdrop-blur-sm border border-white/40 shadow-sm">
-        <div className="flex items-center gap-1 px-2 text-gray-400">
+      <div className="flex items-center gap-1 sm:gap-1.5 p-0.5 sm:p-1 rounded-lg bg-white/60 backdrop-blur-sm border border-white/40 shadow-sm">
+        <div className="hidden sm:flex items-center gap-1 px-2 text-gray-400">
           <SlidersHorizontal className="w-3.5 h-3.5" />
         </div>
         {filters.map((filter) => {
@@ -49,7 +49,7 @@ export default function SearchFilters({
             <button
               key={filter.id}
               onClick={() => onSourceChange(filter.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${
+              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-md text-[10px] sm:text-xs font-medium transition-all duration-200 ${
                 isActive
                   ? "bg-white shadow-sm border border-gray-100"
                   : "text-gray-500 hover:text-gray-700 hover:bg-white/50"
@@ -71,10 +71,10 @@ export default function SearchFilters({
 
       {/* Result count */}
       {typeof resultCount === "number" && (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/60 backdrop-blur-sm border border-white/40">
-          <span className="text-xs text-gray-500 font-medium">
+        <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-white/60 backdrop-blur-sm border border-white/40">
+          <span className="text-[10px] sm:text-xs text-gray-500 font-medium whitespace-nowrap">
             <span className="text-[#5b9888] font-semibold">{resultCount}</span>{" "}
-            {resultCount === 1 ? "result" : "results"}
+            <span className="hidden sm:inline">{resultCount === 1 ? "result" : "results"}</span>
           </span>
         </div>
       )}
