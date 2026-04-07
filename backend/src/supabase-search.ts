@@ -12,6 +12,44 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIs
 const RECENT_DAYS = 30;
 const RECENT_WINDOW_MS = RECENT_DAYS * 24 * 60 * 60 * 1000;
 
+// Performance optimization: Skip vector search if text results are strong enough
+const STRONG_KEYWORD_THRESHOLD = 0.5; // Skip vector search if best keyword score >= this (lowered for speed)
+const MIN_TEXT_RESULTS_TO_SKIP_VECTOR = 5; // Need at least this many text results to skip vector
+const EMBEDDING_TIMEOUT_MS = 8000; // Max time to wait for embedding generation (increased for better results)
+
+// LRU Cache for query embeddings (avoids regenerating for repeated queries)
+const EMBEDDING_CACHE_SIZE = 100;
+const embeddingCache = new Map<string, { embedding: number[]; timestamp: number }>();
+
+function getCachedEmbedding(query: string): number[] | null {
+  const cached = embeddingCache.get(query.toLowerCase().trim());
+  if (cached) {
+    // Update timestamp for LRU
+    cached.timestamp = Date.now();
+    return cached.embedding;
+  }
+  return null;
+}
+
+function setCachedEmbedding(query: string, embedding: number[]): void {
+  const key = query.toLowerCase().trim();
+
+  // Evict oldest entries if cache is full
+  if (embeddingCache.size >= EMBEDDING_CACHE_SIZE) {
+    let oldestKey = '';
+    let oldestTime = Infinity;
+    for (const [k, v] of embeddingCache) {
+      if (v.timestamp < oldestTime) {
+        oldestTime = v.timestamp;
+        oldestKey = k;
+      }
+    }
+    if (oldestKey) embeddingCache.delete(oldestKey);
+  }
+
+  embeddingCache.set(key, { embedding, timestamp: Date.now() });
+}
+
 // Synonym map for query expansion (same as extension)
 const synonymMap: Record<string, string[]> = {
   'dashboard': ['admin', 'panel', 'analytics', 'metrics'],
@@ -404,6 +442,7 @@ async function searchPinsVector(
 
 /**
  * Main search function - exact port of extension's searchSupabaseVector
+ * Optimized with embedding cache and smart vector search skipping
  */
 export async function searchSupabase(
   query: string,
@@ -412,24 +451,33 @@ export async function searchSupabase(
   folder?: string,
   board?: string | null
 ): Promise<{ results: SearchResult[]; total: number; hasMore: boolean }> {
+  const startTime = Date.now();
   console.log(`[Supabase Search] Query: "${query}", limit: ${limit}, source: ${sourceFilter || 'all'}`);
 
   const isChrome = sourceFilter === 'chrome' || sourceFilter === 'chrome_bookmarks';
   const isPinterest = sourceFilter === 'pinterest';
 
-  // Run text search and embedding generation in parallel (same as extension)
-  const embeddingPromise = generateQueryEmbedding(query);
+  // Step 1: Run text search first (fast, doesn't need embedding)
   const textSearchPromise = Promise.all([
     !isPinterest ? searchSupabaseText(query, limit, folder) : Promise.resolve([]),
     !isChrome ? searchSupabasePinsText(query, limit, board) : Promise.resolve([])
   ]);
 
-  const [embedding, [bookmarkTextResults, pinTextResults]] = await Promise.all([
-    embeddingPromise,
-    textSearchPromise
-  ]);
+  // Step 2: Check embedding cache while text search runs
+  let cachedEmbedding = getCachedEmbedding(query);
+  let embeddingPromise: Promise<number[] | null> | null = null;
 
-  console.log(`[Supabase Search] Text results - Bookmarks: ${bookmarkTextResults.length}, Pins: ${pinTextResults.length}`);
+  // Only start embedding generation if not cached
+  if (!cachedEmbedding) {
+    embeddingPromise = generateQueryEmbedding(query).catch(err => {
+      console.error('[Supabase Search] Embedding generation failed:', err);
+      return null;
+    });
+  }
+
+  // Wait for text search to complete
+  const [bookmarkTextResults, pinTextResults] = await textSearchPromise;
+  console.log(`[Supabase Search] Text results - Bookmarks: ${bookmarkTextResults.length}, Pins: ${pinTextResults.length} (${Date.now() - startTime}ms)`);
 
   // Convert text search results with local keyword scoring (same as extension)
   const textResults: SupabaseSearchResult[] = [
@@ -470,20 +518,57 @@ export async function searchSupabase(
     })
   ].filter(r => r.keyword_score > 0); // Only keep actual matches!
 
-  // If no embedding, return text results only
+  // Check if we have strong enough text results to skip vector search
+  const bestKeywordScore = textResults.length > 0
+    ? Math.max(...textResults.map(r => r.keyword_score))
+    : 0;
+  const hasStrongTextResults = bestKeywordScore >= STRONG_KEYWORD_THRESHOLD &&
+                                textResults.length >= MIN_TEXT_RESULTS_TO_SKIP_VECTOR;
+
+  // Get embedding (from cache or wait for generation)
+  let embedding: number[] | null = cachedEmbedding;
+
+  if (!embedding && embeddingPromise) {
+    // If text results are strong, don't wait for embedding - skip vector search
+    if (hasStrongTextResults) {
+      console.log(`[Supabase Search] Strong text results (score=${bestKeywordScore.toFixed(2)}, count=${textResults.length}), skipping vector search (${Date.now() - startTime}ms)`);
+      const results = textResults.slice(0, limit).map(r => toSearchResult(r));
+      return { results, total: results.length, hasMore: textResults.length > limit };
+    }
+
+    // Wait for embedding with timeout
+    const timeoutPromise = new Promise<null>((resolve) =>
+      setTimeout(() => resolve(null), EMBEDDING_TIMEOUT_MS)
+    );
+
+    embedding = await Promise.race([embeddingPromise, timeoutPromise]);
+
+    if (embedding) {
+      setCachedEmbedding(query, embedding);
+    } else {
+      console.log(`[Supabase Search] Embedding timeout or failed, using text results only (${Date.now() - startTime}ms)`);
+      // Return text results if we have any, otherwise continue without vector search
+      if (textResults.length > 0) {
+        const results = textResults.slice(0, limit).map(r => toSearchResult(r));
+        return { results, total: results.length, hasMore: textResults.length > limit };
+      }
+    }
+  }
+
+  // If no embedding available, return text results only
   if (!embedding) {
-    console.log('[Supabase Search] No embedding, using text search only');
+    console.log(`[Supabase Search] No embedding, using text search only (${Date.now() - startTime}ms)`);
     const results = textResults.slice(0, limit).map(r => toSearchResult(r));
     return { results, total: results.length, hasMore: textResults.length > limit };
   }
 
-  // Do vector search in parallel
+  // Do vector search
   const [bookmarkVectorResults, pinVectorResults] = await Promise.all([
     !isPinterest ? searchBookmarksVector(embedding, limit, folder) : Promise.resolve([]),
     !isChrome ? searchPinsVector(embedding, limit, board) : Promise.resolve([])
   ]);
 
-  console.log(`[Supabase Search] Vector results - Bookmarks: ${bookmarkVectorResults.length}, Pins: ${pinVectorResults.length}`);
+  console.log(`[Supabase Search] Vector results - Bookmarks: ${bookmarkVectorResults.length}, Pins: ${pinVectorResults.length} (${Date.now() - startTime}ms)`);
 
   // Convert vector search results (same as extension)
   const vectorResults: SupabaseSearchResult[] = [
@@ -576,7 +661,7 @@ export async function searchSupabase(
 
   const finalResults = mergedResults.slice(0, limit).map(r => toSearchResult(r));
 
-  console.log(`[Supabase Search] Final results: ${finalResults.length}`);
+  console.log(`[Supabase Search] Final results: ${finalResults.length} (total time: ${Date.now() - startTime}ms)`);
 
   return {
     results: finalResults,
