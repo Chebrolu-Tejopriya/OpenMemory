@@ -150,3 +150,29 @@ body {
 .animate-results {
   animation: resultsAppear 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
+
+/* Search bar gradient border */
+.search-gradient-border {
+  background: linear-gradient(135deg, #5b9888 0%, #7ab5a5 50%, #5b9888 100%);
+  background-size: 200% 200%;
+  transition: all 0.4s ease;
+}
+
+.search-gradient-border:focus-within {
+  background: linear-gradient(135deg, #4a8a7a 0%, #6ba596 25%, #5b9888 50%, #6ba596 75%, #4a8a7a 100%);
+  background-size: 300% 300%;
+  animation: gradientShift 3s ease infinite;
+  box-shadow: 0 8px 32px rgba(91, 152, 136, 0.35), 0 0 0 1px rgba(91, 152, 136, 0.1);
+}
+
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}

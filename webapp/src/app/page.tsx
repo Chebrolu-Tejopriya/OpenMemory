@@ -203,22 +203,26 @@ export default function Home() {
         }`}
       >
         <form onSubmit={handleSearch} className="w-full">
+          {/* Outer glow container with gradient border */}
           <div
-            className={`w-full flex items-center rounded-xl sm:rounded-[13px] border-2 sm:border-4 border-solid transition-all duration-500 ease-out ${
+            className={`search-gradient-border relative rounded-2xl sm:rounded-[18px] p-[1.5px] sm:p-[2px] transition-all duration-500 ease-out ${
               hasSearched
-                ? "px-3 sm:px-[12px] py-2 sm:py-[6px]"
-                : "px-3 sm:px-[14px] py-2.5 sm:py-[8px]"
+                ? "shadow-[0_4px_24px_rgba(91,152,136,0.25)]"
+                : "shadow-[0_8px_32px_rgba(91,152,136,0.12)]"
             }`}
-            style={{
-              backgroundColor: hasSearched
-                ? "rgba(255, 255, 255, 0.9)"
-                : "rgba(255, 255, 255, 0.5)",
-              borderColor: "#5b9888",
-              boxShadow: hasSearched
-                ? "0 4px 20px rgba(91, 152, 136, 0.15)"
-                : "none",
-            }}
           >
+            <div
+              className={`w-full flex items-center rounded-[17px] sm:rounded-[16px] backdrop-blur-xl transition-all duration-500 ease-out ${
+                hasSearched
+                  ? "px-3 sm:px-4 py-2.5 sm:py-2.5"
+                  : "px-4 sm:px-5 py-3 sm:py-3.5"
+              }`}
+              style={{
+                backgroundColor: hasSearched
+                  ? "rgba(255, 255, 255, 0.95)"
+                  : "rgba(255, 255, 255, 0.7)",
+              }}
+            >
             <div className="flex items-center gap-2 sm:gap-[10px] flex-1">
               <div className="flex items-center">
                 <Search
@@ -241,6 +245,7 @@ export default function Home() {
                 }`}
                 style={{ fontFamily: "var(--font-geist), sans-serif" }}
               />
+            </div>
             </div>
           </div>
         </form>
