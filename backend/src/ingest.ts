@@ -104,7 +104,7 @@ export async function ingestItems(
       folder: item.folder,
       intent: classifyItemIntent(item),
       metadata: metadataResults[idx] ? JSON.stringify(metadataResults[idx]) : null,
-      embedding: embeddings[idx],
+      embedding: embeddings[idx] ?? [],
       created_at: new Date(item.created_at).toISOString(),
     }));
 

@@ -144,7 +144,8 @@ export async function search(
   const normalizedQuery = query.toLowerCase().trim();
 
   // Generate embedding for query using FastEmbed query mode
-  const queryEmbedding = await generateQueryEmbedding(query);
+  const queryEmbeddingResult = await generateQueryEmbedding(query);
+  const queryEmbedding = queryEmbeddingResult ?? [];
 
   // Get all items from database
   const items = getAllItems();

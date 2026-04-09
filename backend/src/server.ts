@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { spawn } from 'child_process';
 import { ingestItems } from './ingest.js';
 import { search } from './search.js';
 import { searchSupabase, getSupabaseFolders, getSupabaseBoards } from './supabase-search.js';
@@ -11,6 +12,31 @@ import { StandardizedItem } from './types.js';
 import { generateEmbeddings } from './embeddings.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Start the persistent Python embed server
+function startEmbedServer() {
+  const scriptPath = path.join(__dirname, '..', 'python', 'embed_server.py');
+  const embedPort = process.env.EMBED_SERVER_PORT || '3002';
+
+  const proc = spawn('python', [scriptPath], {
+    env: { ...process.env, EMBED_SERVER_PORT: embedPort },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+
+  proc.stdout.on('data', (d) => process.stdout.write(`[EmbedServer] ${d}`));
+  proc.stderr.on('data', (d) => process.stderr.write(`[EmbedServer] ${d}`));
+
+  proc.on('close', (code) => {
+    console.warn(`[EmbedServer] Exited with code ${code}. Restarting in 3s...`);
+    setTimeout(startEmbedServer, 3000);
+  });
+
+  proc.on('error', (err) => {
+    console.error('[EmbedServer] Failed to start:', err.message);
+  });
+}
+
+startEmbedServer();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
