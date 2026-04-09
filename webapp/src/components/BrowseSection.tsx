@@ -71,9 +71,9 @@ export default function BrowseSection({ folders, boards }: BrowseSectionProps) {
   }
 
   return (
-    <div className="flex flex-col h-full gap-3">
+    <div className="flex flex-col gap-4">
       {/* Section header */}
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="flex items-center gap-2">
         <FolderOpen className="w-4 h-4 text-[#5b9888]/60" />
         <h2
           className="text-sm font-semibold tracking-wide text-[#3a3a3a]/50 uppercase"
@@ -84,9 +84,9 @@ export default function BrowseSection({ folders, boards }: BrowseSectionProps) {
       </div>
 
       {/* Main content row */}
-      <div className="flex gap-4 flex-1 min-h-0">
+      <div className="flex gap-6">
         {/* Left panel */}
-        <div className="w-48 flex-shrink-0 flex flex-col gap-2 min-h-0">
+        <div className="w-52 shrink-0 flex flex-col gap-2">
           {/* Tab switch */}
           <div className="flex bg-white/60 backdrop-blur-sm border border-[#5b9888]/20 rounded-xl p-1 gap-1 flex-shrink-0">
             <button
@@ -113,8 +113,8 @@ export default function BrowseSection({ folders, boards }: BrowseSectionProps) {
             </button>
           </div>
 
-          {/* Scrollable folder/board list */}
-          <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-0.5 pr-1">
+          {/* Folder/board list */}
+          <div className="flex flex-col gap-0.5 max-h-[70vh] overflow-y-auto custom-scrollbar pr-1">
             {list.length === 0 ? (
               <p className="text-xs text-[#3a3a3a]/30 px-2 py-3 text-center">
                 No {activeTab === "bookmarks" ? "folders" : "boards"} found
@@ -141,8 +141,8 @@ export default function BrowseSection({ folders, boards }: BrowseSectionProps) {
           </div>
         </div>
 
-        {/* Right panel — scrollable cards */}
-        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto custom-scrollbar pr-1">
+        {/* Right panel — cards */}
+        <div className="flex-1 min-w-0">
           {isLoading ? (
             <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3">
               {[...Array(8)].map((_, i) => (
