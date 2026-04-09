@@ -85,8 +85,8 @@ export default function BrowseSection({ folders, boards }: BrowseSectionProps) {
 
       {/* Main content row */}
       <div className="flex gap-6">
-        {/* Left panel */}
-        <div className="w-52 shrink-0 flex flex-col gap-2">
+        {/* Left panel — sticky */}
+        <div className="w-52 shrink-0 flex flex-col gap-2 sticky top-6 self-start">
           {/* Tab switch */}
           <div className="flex bg-white/60 backdrop-blur-sm border border-[#5b9888]/20 rounded-xl p-1 gap-1 flex-shrink-0">
             <button
