@@ -2,7 +2,23 @@
 
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, Volume2, VolumeX, Play, Pause } from "lucide-react";
+import { Search, Volume2, VolumeX, Play, Pause, RefreshCw } from "lucide-react";
+
+const ALL_SUGGESTIONS = [
+  "Dashboard UI", "Landing Page", "Login Form", "Contact Form",
+  "Pricing Table", "Hero Section", "Navigation Menu", "Card Design",
+  "Dark Mode", "Mobile App", "Onboarding Flow", "Settings Page",
+  "Finance App", "Fintech", "E-commerce", "Portfolio",
+  "SaaS Product", "Analytics", "Minimal Design", "Typography",
+  "Color Palette", "Icon Set", "Illustration", "Data Table",
+  "Search UI", "Profile Page", "Checkout Flow", "Empty State",
+  "Error Page", "Loading State", "Notification", "Modal",
+];
+
+function getRandomSuggestions(count = 4): string[] {
+  const shuffled = [...ALL_SUGGESTIONS].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
+}
 import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
@@ -22,6 +38,7 @@ export default function Home() {
   const [boards, setBoards] = useState<string[]>([]);
   const [selectedFolder, setSelectedFolder] = useState("");
   const [selectedBoard, setSelectedBoard] = useState("");
+  const [suggestions, setSuggestions] = useState<string[]>(() => getRandomSuggestions(4));
   const videoRef = useRef<HTMLVideoElement>(null);
   const userName = "TEJA";
 
@@ -281,6 +298,35 @@ export default function Home() {
             </div>
           </div>
         </form>
+
+        {/* Search Recommendations - shown below search bar when not searching */}
+        <div
+          className={`flex items-center gap-2 mt-3 transition-all duration-500 ease-out ${
+            hasSearched ? "opacity-0 pointer-events-none" : "opacity-100"
+          }`}
+        >
+          <div className="flex items-center gap-2 flex-wrap justify-center">
+            {suggestions.map((s) => (
+              <button
+                key={s}
+                onClick={() => {
+                  setSearchQuery(s);
+                  performSearch(s, sourceFilter, selectedFolder, selectedBoard);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/50 backdrop-blur-sm border border-[#5b9888]/20 text-[11px] sm:text-xs text-[#3a3a3a]/70 hover:bg-white/80 hover:text-[#5b9888] hover:border-[#5b9888]/50 transition-all duration-200 whitespace-nowrap shadow-sm"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setSuggestions(getRandomSuggestions(4))}
+            className="p-1.5 rounded-full bg-white/50 backdrop-blur-sm border border-[#5b9888]/20 text-[#3a3a3a]/50 hover:text-[#5b9888] hover:bg-white/80 hover:border-[#5b9888]/50 transition-all duration-200 shadow-sm flex-shrink-0"
+            title="Refresh suggestions"
+          >
+            <RefreshCw className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Headline - Fades out when searching */}
