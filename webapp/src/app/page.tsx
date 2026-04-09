@@ -307,7 +307,7 @@ export default function Home() {
             hasSearched ? "opacity-0 pointer-events-none" : "opacity-100"
           }`}
         >
-          {/* Chips row */}
+          {/* Chips + refresh in one row */}
           <div
             className={`flex items-center justify-center gap-2 flex-wrap transition-all duration-300 ease-in-out ${
               suggestionsVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
@@ -325,29 +325,29 @@ export default function Home() {
                 {s}
               </button>
             ))}
-          </div>
 
-          {/* Refresh button — centered below chips */}
-          <button
-            onClick={() => {
-              if (isRefreshing) return;
-              setIsRefreshing(true);
-              setSuggestionsVisible(false);
-              setTimeout(() => {
-                setSuggestions(getRandomSuggestions(4));
-                setSuggestionsVisible(true);
-                setIsRefreshing(false);
-              }, 300);
-            }}
-            className="p-1.5 rounded-full bg-white/50 backdrop-blur-sm border border-[#5b9888]/20 text-[#3a3a3a]/40 hover:text-[#5b9888] hover:bg-white/80 hover:border-[#5b9888]/50 transition-all duration-200 shadow-sm"
-            title="Refresh suggestions"
-          >
-            <RefreshCw
-              className={`w-3 h-3 sm:w-3.5 sm:h-3.5 transition-transform duration-300 ${
-                isRefreshing ? "rotate-180" : "rotate-0"
-              }`}
-            />
-          </button>
+            {/* Refresh button — same line as chips */}
+            <button
+              onClick={() => {
+                if (isRefreshing) return;
+                setIsRefreshing(true);
+                setSuggestionsVisible(false);
+                setTimeout(() => {
+                  setSuggestions(getRandomSuggestions(4));
+                  setSuggestionsVisible(true);
+                  setIsRefreshing(false);
+                }, 300);
+              }}
+              className="p-1.5 rounded-full bg-white/50 backdrop-blur-sm border border-[#5b9888]/20 text-[#3a3a3a]/40 hover:text-[#5b9888] hover:bg-white/80 hover:border-[#5b9888]/50 transition-all duration-200 shadow-sm"
+              title="Refresh suggestions"
+            >
+              <RefreshCw
+                className={`w-3 h-3 sm:w-3.5 sm:h-3.5 transition-transform duration-300 ${
+                  isRefreshing ? "rotate-180" : "rotate-0"
+                }`}
+              />
+            </button>
+          </div>
         </div>
       </div>
 
