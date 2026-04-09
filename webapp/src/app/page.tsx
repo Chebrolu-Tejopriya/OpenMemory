@@ -23,6 +23,7 @@ import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
 import LeafIcon from "@/components/icons/LeafIcon";
+import BrowseSection from "@/components/BrowseSection";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
@@ -402,6 +403,17 @@ export default function Home() {
             <SearchResults results={results} isLoading={isLoading} />
           </div>
         </div>
+      </div>
+
+      {/* Browse Section - visible only when not searching */}
+      <div
+        className={`absolute left-1/2 -translate-x-1/2 w-full px-3 sm:px-4 md:px-0 md:w-[95%] max-w-[1200px] z-10 transition-all duration-500 ease-out top-[320px] sm:top-[380px] pb-12 ${
+          hasSearched
+            ? "opacity-0 pointer-events-none"
+            : "opacity-100"
+        }`}
+      >
+        <BrowseSection folders={folders} boards={boards} />
       </div>
     </div>
   );

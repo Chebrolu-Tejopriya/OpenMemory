@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import { ingestItems } from './ingest.js';
 import { search } from './search.js';
-import { searchSupabase, getSupabaseFolders, getSupabaseBoards } from './supabase-search.js';
+import { searchSupabase, getSupabaseFolders, getSupabaseBoards, browseSupabase } from './supabase-search.js';
 import { getAllFolders, getPinterestBoards, getPinterestPinsCountByBoard, upsertPinterestBoard, upsertPinterestPins, getExistingPinterestPinUrls, PinterestPinRow, PinterestBoardRow } from './db.js';
 import { StandardizedItem } from './types.js';
 import { generateEmbeddings } from './embeddings.js';
@@ -108,6 +108,35 @@ app.get('/boards', async (req, res) => {
     res.status(500).json({
       error: err instanceof Error ? err.message : 'Unknown error',
     });
+  }
+});
+
+/**
+ * GET /browse?source=chrome&folder=NAME&limit=40
+ * GET /browse?source=pinterest&board=NAME&limit=40
+ * Browse items in a specific folder or board.
+ */
+app.get('/browse', async (req, res) => {
+  try {
+    const source = req.query.source as string;
+    const folder = req.query.folder as string | undefined;
+    const board = req.query.board as string | undefined;
+    const limit = parseInt(req.query.limit as string) || 40;
+
+    if (source !== 'chrome' && source !== 'pinterest') {
+      return res.status(400).json({ error: 'source must be chrome or pinterest' });
+    }
+
+    const folderOrBoard = source === 'chrome' ? folder : board;
+    if (!folderOrBoard) {
+      return res.status(400).json({ error: 'folder or board is required' });
+    }
+
+    const result = await browseSupabase(source, folderOrBoard, limit);
+    res.json(result);
+  } catch (err) {
+    console.error('Browse error:', err);
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }
 });
 

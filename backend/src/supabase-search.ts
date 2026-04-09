@@ -733,6 +733,56 @@ export async function getSupabaseBoards(): Promise<string[]> {
 }
 
 /**
+ * Browse items by folder (bookmarks) or board (pinterest) without search scoring
+ */
+export async function browseSupabase(
+  source: 'chrome' | 'pinterest',
+  folderOrBoard: string,
+  limit = 40
+): Promise<{ results: SearchResult[]; total: number }> {
+  try {
+    if (source === 'chrome') {
+      const encoded = encodeURIComponent(folderOrBoard);
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/bookmarks?folder=eq.${encoded}&limit=${limit}&order=created_at.desc`,
+        { method: 'GET', headers: requestHeaders }
+      );
+      if (!response.ok) return { results: [], total: 0 };
+      const data: Array<{ id: string; url: string; title: string; folder: string | null; created_at: string | null }> = await response.json();
+      const results: SearchResult[] = data.map(b => ({
+        title: b.title,
+        url: b.url,
+        folder: b.folder,
+        source: 'chrome',
+        score: 1,
+        imageUrl: null,
+      }));
+      return { results, total: results.length };
+    } else {
+      const encoded = encodeURIComponent(folderOrBoard);
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/pinterest_pins?board_name=eq.${encoded}&limit=${limit}&order=synced_at.desc`,
+        { method: 'GET', headers: requestHeaders }
+      );
+      if (!response.ok) return { results: [], total: 0 };
+      const data: Array<{ pin_id?: string; id?: string; pin_url: string; title: string | null; board_name: string | null; image_url: string | null; synced_at?: string | null }> = await response.json();
+      const results: SearchResult[] = data.map(p => ({
+        title: p.title || 'Untitled',
+        url: p.pin_url,
+        folder: p.board_name,
+        source: 'pinterest',
+        score: 1,
+        imageUrl: p.image_url || null,
+      }));
+      return { results, total: results.length };
+    }
+  } catch (err) {
+    console.error('[Browse] Error:', err);
+    return { results: [], total: 0 };
+  }
+}
+
+/**
  * Convert internal result to API response format
  */
 function toSearchResult(r: SupabaseSearchResult): SearchResult {
