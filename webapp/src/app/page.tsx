@@ -39,6 +39,8 @@ export default function Home() {
   const [selectedFolder, setSelectedFolder] = useState("");
   const [selectedBoard, setSelectedBoard] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>(() => getRandomSuggestions(4));
+  const [suggestionsVisible, setSuggestionsVisible] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const userName = "TEJA";
 
@@ -301,11 +303,16 @@ export default function Home() {
 
         {/* Search Recommendations - shown below search bar when not searching */}
         <div
-          className={`flex items-center gap-2 mt-3 transition-all duration-500 ease-out ${
+          className={`flex flex-col items-center gap-2 mt-3 transition-all duration-500 ease-out ${
             hasSearched ? "opacity-0 pointer-events-none" : "opacity-100"
           }`}
         >
-          <div className="flex items-center gap-2 flex-wrap justify-center">
+          {/* Chips row */}
+          <div
+            className={`flex items-center justify-center gap-2 flex-wrap transition-all duration-300 ease-in-out ${
+              suggestionsVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
+            }`}
+          >
             {suggestions.map((s) => (
               <button
                 key={s}
@@ -313,18 +320,33 @@ export default function Home() {
                   setSearchQuery(s);
                   performSearch(s, sourceFilter, selectedFolder, selectedBoard);
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/50 backdrop-blur-sm border border-[#5b9888]/20 text-[11px] sm:text-xs text-[#3a3a3a]/70 hover:bg-white/80 hover:text-[#5b9888] hover:border-[#5b9888]/50 transition-all duration-200 whitespace-nowrap shadow-sm"
+                className="flex items-center px-3 py-1.5 rounded-full bg-white/50 backdrop-blur-sm border border-[#5b9888]/20 text-[11px] sm:text-xs text-[#3a3a3a]/70 hover:bg-white/80 hover:text-[#5b9888] hover:border-[#5b9888]/50 transition-all duration-200 whitespace-nowrap shadow-sm"
               >
                 {s}
               </button>
             ))}
           </div>
+
+          {/* Refresh button — centered below chips */}
           <button
-            onClick={() => setSuggestions(getRandomSuggestions(4))}
-            className="p-1.5 rounded-full bg-white/50 backdrop-blur-sm border border-[#5b9888]/20 text-[#3a3a3a]/50 hover:text-[#5b9888] hover:bg-white/80 hover:border-[#5b9888]/50 transition-all duration-200 shadow-sm flex-shrink-0"
+            onClick={() => {
+              if (isRefreshing) return;
+              setIsRefreshing(true);
+              setSuggestionsVisible(false);
+              setTimeout(() => {
+                setSuggestions(getRandomSuggestions(4));
+                setSuggestionsVisible(true);
+                setIsRefreshing(false);
+              }, 300);
+            }}
+            className="p-1.5 rounded-full bg-white/50 backdrop-blur-sm border border-[#5b9888]/20 text-[#3a3a3a]/40 hover:text-[#5b9888] hover:bg-white/80 hover:border-[#5b9888]/50 transition-all duration-200 shadow-sm"
             title="Refresh suggestions"
           >
-            <RefreshCw className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+            <RefreshCw
+              className={`w-3 h-3 sm:w-3.5 sm:h-3.5 transition-transform duration-300 ${
+                isRefreshing ? "rotate-180" : "rotate-0"
+              }`}
+            />
           </button>
         </div>
       </div>
