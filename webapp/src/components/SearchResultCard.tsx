@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { useState } from "react";
+import { Pin } from "lucide-react";
 
 export interface SearchResult {
   id: string;
@@ -58,11 +59,14 @@ export default function SearchResultCard({ result }: SearchResultCardProps) {
       rel="noopener noreferrer"
       className="group flex flex-col bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300 hover:-translate-y-0.5 overflow-hidden"
     >
-      {/* Card header: category label */}
+      {/* Card header: category label + optional pin icon */}
       <div className="flex items-center justify-between px-3 pt-3 pb-1">
         <span className="text-[10px] sm:text-[11px] font-medium text-gray-400 uppercase tracking-wider truncate max-w-[80%]">
           {categoryLabel}
         </span>
+        {isPinterest && (
+          <Pin className="w-3 h-3 text-[#E60023]/60 flex-shrink-0" />
+        )}
       </div>
 
       {/* Contained image area with padding */}
