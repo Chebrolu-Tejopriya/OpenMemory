@@ -65,16 +65,15 @@ export default function BrowseSection({ folders, boards }: BrowseSectionProps) {
 
   const list = activeTab === "bookmarks" ? folders : boards;
 
-  // Shorten folder display names
   function displayName(path: string) {
     const parts = path.split("/");
     return parts[parts.length - 1] || path;
   }
 
   return (
-    <div className="w-full flex flex-col gap-4">
+    <div className="flex flex-col h-full gap-3">
       {/* Section header */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-shrink-0">
         <FolderOpen className="w-4 h-4 text-[#5b9888]/60" />
         <h2
           className="text-sm font-semibold tracking-wide text-[#3a3a3a]/50 uppercase"
@@ -84,11 +83,12 @@ export default function BrowseSection({ folders, boards }: BrowseSectionProps) {
         </h2>
       </div>
 
-      <div className="flex gap-4 min-h-[400px]">
+      {/* Main content row */}
+      <div className="flex gap-4 flex-1 min-h-0">
         {/* Left panel */}
-        <div className="w-52 flex-shrink-0 flex flex-col gap-2">
+        <div className="w-48 flex-shrink-0 flex flex-col gap-2 min-h-0">
           {/* Tab switch */}
-          <div className="flex bg-white/60 backdrop-blur-sm border border-[#5b9888]/20 rounded-xl p-1 gap-1">
+          <div className="flex bg-white/60 backdrop-blur-sm border border-[#5b9888]/20 rounded-xl p-1 gap-1 flex-shrink-0">
             <button
               onClick={() => setActiveTab("bookmarks")}
               className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
@@ -113,8 +113,8 @@ export default function BrowseSection({ folders, boards }: BrowseSectionProps) {
             </button>
           </div>
 
-          {/* Folder / board list */}
-          <div className="flex flex-col gap-0.5 overflow-y-auto max-h-[500px] pr-1 custom-scrollbar">
+          {/* Scrollable folder/board list */}
+          <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-0.5 pr-1">
             {list.length === 0 ? (
               <p className="text-xs text-[#3a3a3a]/30 px-2 py-3 text-center">
                 No {activeTab === "bookmarks" ? "folders" : "boards"} found
@@ -125,7 +125,7 @@ export default function BrowseSection({ folders, boards }: BrowseSectionProps) {
                   key={item}
                   onClick={() => setSelectedItem(item)}
                   title={item}
-                  className={`flex items-center justify-between gap-2 w-full text-left px-3 py-2 rounded-lg text-xs transition-all duration-150 ${
+                  className={`flex items-center justify-between gap-2 w-full text-left px-3 py-2 rounded-lg text-xs transition-all duration-150 flex-shrink-0 ${
                     selectedItem === item
                       ? "bg-white shadow-sm text-[#3d7a64] font-medium"
                       : "text-[#3a3a3a]/60 hover:bg-white/60 hover:text-[#3a3a3a]/80"
@@ -133,7 +133,7 @@ export default function BrowseSection({ folders, boards }: BrowseSectionProps) {
                 >
                   <span className="truncate">{displayName(item)}</span>
                   {selectedItem === item && (
-                    <ChevronRight className="w-3 h-3 flex-shrink-0 text-[#5b9888]/60" />
+                    <ChevronRight className="w-3 h-3 shrink-0 text-[#5b9888]/60" />
                   )}
                 </button>
               ))
@@ -141,15 +141,12 @@ export default function BrowseSection({ folders, boards }: BrowseSectionProps) {
           </div>
         </div>
 
-        {/* Right panel — cards */}
-        <div className="flex-1 min-w-0">
+        {/* Right panel — scrollable cards */}
+        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto custom-scrollbar pr-1">
           {isLoading ? (
             <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3">
               {[...Array(8)].map((_, i) => (
-                <div
-                  key={i}
-                  className="rounded-2xl bg-white border border-gray-100 overflow-hidden animate-pulse"
-                >
+                <div key={i} className="rounded-2xl bg-white border border-gray-100 overflow-hidden animate-pulse">
                   <div className="px-3 pt-3 pb-1 h-6 bg-gray-50" />
                   <div className="px-3 pb-3">
                     <div className="aspect-4/3 rounded-xl bg-gray-100" />
@@ -162,11 +159,11 @@ export default function BrowseSection({ folders, boards }: BrowseSectionProps) {
               ))}
             </div>
           ) : cards.length === 0 ? (
-            <div className="flex items-center justify-center h-48 text-sm text-[#3a3a3a]/30">
+            <div className="flex items-center justify-center h-32 text-sm text-[#3a3a3a]/30">
               No items found
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3 pb-2">
               {cards.map((card) => (
                 <SearchResultCard key={card.id} result={card} />
               ))}
