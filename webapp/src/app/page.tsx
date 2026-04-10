@@ -254,11 +254,15 @@ export default function Home() {
       {/* ═══════════════════════════════════════════
           SECOND FOLD — Browse section (scrolls over sticky hero)
           ═══════════════════════════════════════════ */}
-      <section className="relative w-full min-h-screen" style={{ zIndex: 10 }}>
-
-        {/* Bridge — exact Figma spec: #EBFDFF bg, filter blur(2px), 111px tall, bleeds 63px each side.
-            Top of browse section is transparent so the sticky hero video (leaves) shows through.
-            backdrop-filter blurs those leaves at the seam. */}
+      <section
+        className="relative w-full min-h-screen"
+        style={{
+          zIndex: 10,
+          /* Gradient bg: transparent at top (shows hero leaves through bridge), soft fade to solid */
+          background: 'linear-gradient(180deg, transparent 0px, transparent 80px, #EBFDFF 130px)',
+        }}
+      >
+        {/* Bridge — bleeds 63px each side, blurs hero leaves at the seam */}
         <div
           className="absolute pointer-events-none"
           style={{
@@ -268,14 +272,11 @@ export default function Home() {
             height: '111px',
             backdropFilter: 'blur(8px)',
             WebkitBackdropFilter: 'blur(8px)',
-            background: 'linear-gradient(180deg, rgba(235,253,255,0.2) 0%, rgba(235,253,255,0.75) 50%, #EBFDFF 100%)',
+            background: 'linear-gradient(180deg, rgba(235,253,255,0.1) 0%, rgba(235,253,255,0.6) 55%, #EBFDFF 100%)',
             filter: 'blur(2px)',
             zIndex: 10,
           }}
         />
-
-        {/* Solid background starts after the bridge */}
-        <div className="absolute inset-0 top-[100px] bg-[#ebfdff]" style={{ zIndex: 0 }} />
 
         <div className="relative w-full px-4 sm:px-6 md:px-8 max-w-[1200px] mx-auto pb-12" style={{ zIndex: 20, paddingTop: '120px' }}>
           <BrowseSection folders={folders} boards={boards} />
