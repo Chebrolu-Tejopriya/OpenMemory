@@ -256,7 +256,7 @@ export default function Home() {
           ═══════════════════════════════════════════ */}
       <section className="relative w-full min-h-screen bg-[#ebfdff]">
         {/* Frosted blur bridge — blends hero into browse seamlessly */}
-        <div className="absolute -top-10 left-0 right-0 h-20 bg-linear-to-b from-transparent via-[#ebfdff]/70 to-[#ebfdff] backdrop-blur-md pointer-events-none z-10" />
+        <div className="absolute -top-16 left-0 right-0 h-32 bg-linear-to-b from-transparent via-[#ebfdff]/50 to-[#ebfdff] backdrop-blur-2xl pointer-events-none z-10" />
 
         <div className="relative z-20 w-full px-4 sm:px-6 md:px-8 max-w-[1200px] mx-auto pt-10 pb-12">
           <BrowseSection folders={folders} boards={boards} />
