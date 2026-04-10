@@ -121,12 +121,12 @@ export default function Home() {
   }, [searchQuery, sourceFilter, selectedFolder, selectedBoard, performSearch]);
 
   return (
-    <div className="relative w-full">
+    <div className="relative w-full overflow-x-hidden">
 
       {/* ═══════════════════════════════════════════
-          FIRST FOLD — Hero (full viewport height)
+          FIRST FOLD — Hero (sticky, stays behind as browse scrolls over)
           ═══════════════════════════════════════════ */}
-      <section className="relative h-screen w-full overflow-hidden bg-[#ebfdff]">
+      <section className="sticky top-0 h-screen w-full overflow-hidden bg-[#ebfdff]" style={{ zIndex: 0 }}>
 
         {/* Video Background */}
         <video
@@ -252,25 +252,32 @@ export default function Home() {
       </section>
 
       {/* ═══════════════════════════════════════════
-          SECOND FOLD — Browse section (scroll down)
+          SECOND FOLD — Browse section (scrolls over sticky hero)
           ═══════════════════════════════════════════ */}
-      <section className="relative w-full min-h-screen bg-[#ebfdff]">
-        {/* Bridge — matches Figma: 111px tall, bleeds ~63px past each edge, blur(2px) + backdrop blur */}
+      <section className="relative w-full min-h-screen" style={{ zIndex: 10 }}>
+
+        {/* Bridge — exact Figma spec: #EBFDFF bg, filter blur(2px), 111px tall, bleeds 63px each side.
+            Top of browse section is transparent so the sticky hero video (leaves) shows through.
+            backdrop-filter blurs those leaves at the seam. */}
         <div
-          className="absolute pointer-events-none z-10"
+          className="absolute pointer-events-none"
           style={{
-            top: '-55px',
+            top: 0,
             left: '-63px',
-            right: '-63px',
+            width: 'calc(100% + 126px)',
             height: '111px',
-            backdropFilter: 'blur(10px)',
-            WebkitBackdropFilter: 'blur(10px)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            background: 'linear-gradient(180deg, rgba(235,253,255,0.2) 0%, rgba(235,253,255,0.75) 50%, #EBFDFF 100%)',
             filter: 'blur(2px)',
-            background: 'linear-gradient(to bottom, rgba(235,253,255,0) 0%, rgba(235,253,255,0.55) 45%, rgba(235,253,255,1) 100%)',
+            zIndex: 10,
           }}
         />
 
-        <div className="relative z-20 w-full px-4 sm:px-6 md:px-8 max-w-[1200px] mx-auto pt-10 pb-12">
+        {/* Solid background starts after the bridge */}
+        <div className="absolute inset-0 top-[100px] bg-[#ebfdff]" style={{ zIndex: 0 }} />
+
+        <div className="relative w-full px-4 sm:px-6 md:px-8 max-w-[1200px] mx-auto pb-12" style={{ zIndex: 20, paddingTop: '120px' }}>
           <BrowseSection folders={folders} boards={boards} />
         </div>
       </section>
