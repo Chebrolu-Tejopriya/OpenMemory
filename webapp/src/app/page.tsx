@@ -255,8 +255,20 @@ export default function Home() {
           SECOND FOLD — Browse section (scroll down)
           ═══════════════════════════════════════════ */}
       <section className="relative w-full min-h-screen bg-[#ebfdff]">
-        {/* Frosted blur bridge — blends hero into browse seamlessly */}
-        <div className="absolute -top-16 left-0 right-0 h-32 bg-linear-to-b from-transparent via-[#ebfdff]/50 to-[#ebfdff] backdrop-blur-2xl pointer-events-none z-10" />
+        {/* Bridge — matches Figma: 111px tall, bleeds ~63px past each edge, blur(2px) + backdrop blur */}
+        <div
+          className="absolute pointer-events-none z-10"
+          style={{
+            top: '-55px',
+            left: '-63px',
+            right: '-63px',
+            height: '111px',
+            backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)',
+            filter: 'blur(2px)',
+            background: 'linear-gradient(to bottom, rgba(235,253,255,0) 0%, rgba(235,253,255,0.55) 45%, rgba(235,253,255,1) 100%)',
+          }}
+        />
 
         <div className="relative z-20 w-full px-4 sm:px-6 md:px-8 max-w-[1200px] mx-auto pt-10 pb-12">
           <BrowseSection folders={folders} boards={boards} />
