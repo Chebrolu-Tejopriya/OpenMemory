@@ -65,6 +65,14 @@ body {
   background-color: rgba(91, 152, 136, 0.6);
 }
 
+/* Hide scrollbar but keep scrollability */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Legacy scrollbar classes for backwards compatibility */
 .scrollbar-thin {
   scrollbar-width: thin;
