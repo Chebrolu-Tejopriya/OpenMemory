@@ -254,9 +254,9 @@ export default function Home() {
       {/* ═══════════════════════════════════════════
           SECOND FOLD — Browse section (scroll down)
           ═══════════════════════════════════════════ */}
-      <section className="relative w-full min-h-screen bg-[#f0fdf9]">
-        {/* Subtle top fade from hero */}
-        <div className="absolute top-0 left-0 right-0 h-16 bg-gradient-to-b from-[#ebfdff] to-transparent pointer-events-none z-10" />
+      <section className="relative w-full min-h-screen bg-[#ebfdff]">
+        {/* Frosted blur bridge — blends hero into browse seamlessly */}
+        <div className="absolute -top-10 left-0 right-0 h-20 bg-linear-to-b from-transparent via-[#ebfdff]/70 to-[#ebfdff] backdrop-blur-md pointer-events-none z-10" />
 
         <div className="relative z-20 w-full px-4 sm:px-6 md:px-8 max-w-[1200px] mx-auto pt-10 pb-12">
           <BrowseSection folders={folders} boards={boards} />
