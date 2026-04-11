@@ -290,7 +290,7 @@ async function searchSupabaseText(
   }
 
   try {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/search_bookmarks_text`, {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/search_bookmarks_text?select=id,url,title,folder,similarity,created_at`, {
       method: 'POST',
       headers: requestHeaders,
       body: JSON.stringify({
@@ -359,7 +359,7 @@ async function searchSupabasePinsText(
   }
 
   try {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/search_pinterest_pins_text`, {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/search_pinterest_pins_text?select=id,pin_id,pin_url,title,board_name,image_url,similarity,description,synced_at`, {
       method: 'POST',
       headers: requestHeaders,
       body: JSON.stringify({
@@ -386,7 +386,7 @@ async function searchBookmarksVector(
 ): Promise<SupabaseBookmark[]> {
   try {
     const embeddingStr = `[${embedding.join(',')}]`;
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/search_bookmarks`, {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/search_bookmarks?select=id,url,title,folder,similarity,created_at`, {
       method: 'POST',
       headers: requestHeaders,
       body: JSON.stringify({
@@ -418,7 +418,7 @@ async function searchPinsVector(
 ): Promise<SupabasePin[]> {
   try {
     const embeddingStr = `[${embedding.join(',')}]`;
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/search_pinterest_pins`, {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/search_pinterest_pins?select=id,pin_id,pin_url,title,board_name,image_url,similarity,similarity_raw,description,synced_at`, {
       method: 'POST',
       headers: requestHeaders,
       body: JSON.stringify({
@@ -747,7 +747,7 @@ export async function browseSupabase(
       let offset = 0;
       while (true) {
         const response = await fetch(
-          `${SUPABASE_URL}/rest/v1/bookmarks?folder=eq.${encoded}&limit=${PAGE_SIZE}&offset=${offset}&order=created_at.desc`,
+          `${SUPABASE_URL}/rest/v1/bookmarks?select=id,url,title,folder,created_at&folder=eq.${encoded}&limit=${PAGE_SIZE}&offset=${offset}&order=created_at.desc`,
           { method: 'GET', headers: requestHeaders }
         );
         if (!response.ok) break;
@@ -771,7 +771,7 @@ export async function browseSupabase(
       let offset = 0;
       while (true) {
         const response = await fetch(
-          `${SUPABASE_URL}/rest/v1/pinterest_pins?board_name=eq.${encoded}&limit=${PAGE_SIZE}&offset=${offset}&order=synced_at.desc`,
+          `${SUPABASE_URL}/rest/v1/pinterest_pins?select=id,pin_id,pin_url,title,board_name,image_url,synced_at&board_name=eq.${encoded}&limit=${PAGE_SIZE}&offset=${offset}&order=synced_at.desc`,
           { method: 'GET', headers: requestHeaders }
         );
         if (!response.ok) break;
