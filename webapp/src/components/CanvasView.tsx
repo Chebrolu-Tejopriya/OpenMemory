@@ -41,7 +41,8 @@ function Card({ result, style }: { result: SearchResult; style: React.CSSPropert
   const [err, setErr] = useState(false);
   const isPin = result.source === "pinterest";
   const pinImg = isPin && result.imageUrl && !result.imageUrl.includes("favicon");
-  const shot = !isPin ? screenshotUrl(result.url) : null;
+  // Use screenshot service for bookmarks, and as fallback for Pinterest pins with no imageUrl
+  const shot = !pinImg ? screenshotUrl(result.url) : null;
   const fav = faviconUrl(result.url);
   const dom = domain(result.url);
   const label = result.folder && result.folder !== "Bookmarks"
