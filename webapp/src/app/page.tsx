@@ -2,12 +2,13 @@
 
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash } from "lucide-react";
+import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints } from "lucide-react";
 import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
 import LeafIcon from "@/components/icons/LeafIcon";
 import BrowseSection from "@/components/BrowseSection";
+import CanvasView from "@/components/CanvasView";
 
 const ALL_SUGGESTIONS = [
   "Dashboard UI", "Landing Page", "Login Form", "Contact Form",
@@ -38,7 +39,7 @@ const THEMES: ThemeMedia[] = [
   { type: "video", src: "/videos/leaf-animation.mp4" },
 ];
 
-type ActiveView = "search" | "browse";
+type ActiveView = "search" | "browse" | "canvas";
 type MentionType = "folder" | "board" | null;
 interface ActiveScope { type: "folder" | "board"; value: string }
 
@@ -451,7 +452,18 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ── Bottom dock — Search / Collections tab switch ── */}
+      {/* ══════════════════════════════════════════
+          CANVAS VIEW
+          ══════════════════════════════════════════ */}
+      <div
+        className={`absolute inset-0 z-10 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+          activeView === "canvas" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        }`}
+      >
+        <CanvasView folders={folders} boards={boards} active={activeView === "canvas"} />
+      </div>
+
+      {/* ── Bottom dock — Search / Collections / Canvas tab switch ── */}
       <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 pointer-events-auto">
         <div className="flex items-center gap-2 p-1.5 bg-white/30 backdrop-blur-md border border-white/40 rounded-2xl shadow-lg shadow-black/10">
           <button
@@ -475,6 +487,17 @@ export default function Home() {
             }`}
           >
             <LayoutGrid className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => handleViewSwitch("canvas")}
+            aria-label="Canvas"
+            className={`p-3 rounded-xl transition-all duration-200 ${
+              activeView === "canvas"
+                ? "bg-[#3d7a64] text-white shadow-md shadow-[#3d7a64]/30"
+                : "text-[#3a3a3a]/40 hover:text-[#3d7a64] hover:bg-white/60"
+            }`}
+          >
+            <Waypoints className="w-5 h-5" />
           </button>
         </div>
       </div>
