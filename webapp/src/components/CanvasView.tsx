@@ -8,17 +8,18 @@ type CanvasSource = "chrome" | "pinterest";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
-const CARD_W = 220;
-const CARD_H = 260;
-const GAP_X = 24;
-const GAP_Y = 24;
-const COLS = 6;
+const CARD_W = 300;
+const CARD_H = 340;
+const GAP_X = 28;
+const GAP_Y = 28;
+const COLS = 4;
 
 // Tile 3×3 so the canvas feels infinite — wrap seamlessly when hitting edges
 const TILES_X = 3;
 const TILES_Y = 3;
 
-const FRICTION = 0.95;       // higher = longer glide
+const FRICTION = 0.97;       // higher = longer glide
+const VEL_SMOOTH = 0.55;     // EMA alpha — lower = smoother velocity
 const MIN_VEL = 0.05;
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 2.5;
@@ -250,7 +251,9 @@ export default function CanvasView({ folders, boards, active }: Props) {
     lastPtr.current = { x: e.clientX, y: e.clientY };
     pan.current.x += dx;
     pan.current.y += dy;
-    vel.current = { x: dx, y: dy };
+    // EMA smoothing: blend new delta into running velocity to reduce jitter
+    vel.current.x = vel.current.x * VEL_SMOOTH + dx * (1 - VEL_SMOOTH);
+    vel.current.y = vel.current.y * VEL_SMOOTH + dy * (1 - VEL_SMOOTH);
     wrapPan();
     applyTransform();
   }, [applyTransform, wrapPan]);
