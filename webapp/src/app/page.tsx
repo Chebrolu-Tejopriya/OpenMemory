@@ -277,7 +277,7 @@ export default function Home() {
             >
               <span
                 className={`block rounded-full transition-all duration-200 ${
-                  videoIndex === idx ? "w-2 h-2 bg-white" : "w-1.5 h-1.5 bg-[#3a3a3a]/30"
+                  themeIndex === idx ? "w-2 h-2 bg-white" : "w-1.5 h-1.5 bg-[#3a3a3a]/30"
                 }`}
               />
             </button>
