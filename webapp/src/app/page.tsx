@@ -176,7 +176,7 @@ export default function Home() {
             }`}
           >
             <LayoutGrid className="w-3 h-3" />
-            <span className="hidden sm:inline">Browse</span>
+            <span className="hidden sm:inline">Collections</span>
           </button>
         </div>
 

@@ -112,16 +112,15 @@ app.get('/boards', async (req, res) => {
 });
 
 /**
- * GET /browse?source=chrome&folder=NAME&limit=40
- * GET /browse?source=pinterest&board=NAME&limit=40
- * Browse items in a specific folder or board.
+ * GET /browse?source=chrome&folder=NAME
+ * GET /browse?source=pinterest&board=NAME
+ * Browse all items in a specific folder or board (no limit — paginates internally).
  */
 app.get('/browse', async (req, res) => {
   try {
     const source = req.query.source as string;
     const folder = req.query.folder as string | undefined;
     const board = req.query.board as string | undefined;
-    const limit = parseInt(req.query.limit as string) || 40;
 
     if (source !== 'chrome' && source !== 'pinterest') {
       return res.status(400).json({ error: 'source must be chrome or pinterest' });
@@ -132,7 +131,7 @@ app.get('/browse', async (req, res) => {
       return res.status(400).json({ error: 'folder or board is required' });
     }
 
-    const result = await browseSupabase(source, folderOrBoard, limit);
+    const result = await browseSupabase(source, folderOrBoard);
     res.json(result);
   } catch (err) {
     console.error('Browse error:', err);

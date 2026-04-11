@@ -738,18 +738,25 @@ export async function getSupabaseBoards(): Promise<string[]> {
 export async function browseSupabase(
   source: 'chrome' | 'pinterest',
   folderOrBoard: string,
-  limit = 40
 ): Promise<{ results: SearchResult[]; total: number }> {
+  const PAGE_SIZE = 1000;
   try {
     if (source === 'chrome') {
       const encoded = encodeURIComponent(folderOrBoard);
-      const response = await fetch(
-        `${SUPABASE_URL}/rest/v1/bookmarks?folder=eq.${encoded}&limit=${limit}&order=created_at.desc`,
-        { method: 'GET', headers: requestHeaders }
-      );
-      if (!response.ok) return { results: [], total: 0 };
-      const data: Array<{ id: string; url: string; title: string; folder: string | null; created_at: string | null }> = await response.json();
-      const results: SearchResult[] = data.map(b => ({
+      const all: Array<{ id: string; url: string; title: string; folder: string | null; created_at: string | null }> = [];
+      let offset = 0;
+      while (true) {
+        const response = await fetch(
+          `${SUPABASE_URL}/rest/v1/bookmarks?folder=eq.${encoded}&limit=${PAGE_SIZE}&offset=${offset}&order=created_at.desc`,
+          { method: 'GET', headers: requestHeaders }
+        );
+        if (!response.ok) break;
+        const page = await response.json();
+        all.push(...page);
+        if (page.length < PAGE_SIZE) break;
+        offset += PAGE_SIZE;
+      }
+      const results: SearchResult[] = all.map(b => ({
         title: b.title,
         url: b.url,
         folder: b.folder,
@@ -760,13 +767,20 @@ export async function browseSupabase(
       return { results, total: results.length };
     } else {
       const encoded = encodeURIComponent(folderOrBoard);
-      const response = await fetch(
-        `${SUPABASE_URL}/rest/v1/pinterest_pins?board_name=eq.${encoded}&limit=${limit}&order=synced_at.desc`,
-        { method: 'GET', headers: requestHeaders }
-      );
-      if (!response.ok) return { results: [], total: 0 };
-      const data: Array<{ pin_id?: string; id?: string; pin_url: string; title: string | null; board_name: string | null; image_url: string | null; synced_at?: string | null }> = await response.json();
-      const results: SearchResult[] = data.map(p => ({
+      const all: Array<{ pin_id?: string; id?: string; pin_url: string; title: string | null; board_name: string | null; image_url: string | null; synced_at?: string | null }> = [];
+      let offset = 0;
+      while (true) {
+        const response = await fetch(
+          `${SUPABASE_URL}/rest/v1/pinterest_pins?board_name=eq.${encoded}&limit=${PAGE_SIZE}&offset=${offset}&order=synced_at.desc`,
+          { method: 'GET', headers: requestHeaders }
+        );
+        if (!response.ok) break;
+        const page = await response.json();
+        all.push(...page);
+        if (page.length < PAGE_SIZE) break;
+        offset += PAGE_SIZE;
+      }
+      const results: SearchResult[] = all.map(p => ({
         title: p.title || 'Untitled',
         url: p.pin_url,
         folder: p.board_name,

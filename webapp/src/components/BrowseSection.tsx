@@ -40,7 +40,7 @@ export default function BrowseSection({ folders, boards, constrained = false }: 
     try {
       const source = activeTab === "bookmarks" ? "chrome" : "pinterest";
       const paramKey = activeTab === "bookmarks" ? "folder" : "board";
-      const res = await fetch(`${BACKEND_URL}/browse?source=${source}&${paramKey}=${encodeURIComponent(item)}&limit=40`);
+      const res = await fetch(`${BACKEND_URL}/browse?source=${source}&${paramKey}=${encodeURIComponent(item)}`);
       if (!res.ok) throw new Error("Browse failed");
       const data = await res.json();
       setCards(
@@ -109,7 +109,7 @@ export default function BrowseSection({ folders, boards, constrained = false }: 
       <div className="flex items-center gap-2">
         <FolderOpen className="w-4 h-4 text-[#5b9888]/60" />
         <h2 className="text-sm font-semibold tracking-wide text-[#3a3a3a]/50 uppercase" style={{ fontFamily: "var(--font-geist), sans-serif" }}>
-          Browse
+          Collections
         </h2>
       </div>
 
