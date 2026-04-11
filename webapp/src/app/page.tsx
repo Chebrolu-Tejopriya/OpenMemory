@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, Volume2, VolumeX, Play, Pause, RefreshCw } from "lucide-react";
+import { Search, Volume2, VolumeX, Play, Pause, RefreshCw, LayoutGrid } from "lucide-react";
 import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
@@ -27,7 +27,10 @@ function getRandomSuggestions(count = 4): string[] {
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
+type ActiveView = "search" | "browse";
+
 export default function Home() {
+  const [activeView, setActiveView] = useState<ActiveView>("search");
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -120,25 +123,65 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [searchQuery, sourceFilter, selectedFolder, selectedBoard, performSearch]);
 
+  // When switching to browse, clear search state
+  const handleViewSwitch = (view: ActiveView) => {
+    setActiveView(view);
+    if (view === "browse") {
+      setSearchQuery("");
+      setResults([]);
+      setHasSearched(false);
+    }
+  };
+
   return (
-    <div className="relative w-full overflow-x-hidden">
+    <div className="relative w-full h-screen overflow-hidden bg-[#ebfdff]">
 
-      {/* ═══════════════════════════════════════════
-          FIRST FOLD — Hero (sticky, stays behind as browse scrolls over)
-          ═══════════════════════════════════════════ */}
-      <section className="relative h-screen w-full overflow-hidden bg-[#ebfdff]">
+      {/* Video Background */}
+      <video
+        ref={videoRef}
+        className="absolute inset-0 w-full h-full object-cover md:object-fill"
+        autoPlay loop muted playsInline
+      >
+        <source src="/videos/leaf-animation.mp4" type="video/mp4" />
+      </video>
 
-        {/* Video Background */}
-        <video
-          ref={videoRef}
-          className="absolute inset-0 w-full h-full object-cover md:object-fill"
-          autoPlay loop muted playsInline
-        >
-          <source src="/videos/leaf-animation.mp4" type="video/mp4" />
-        </video>
+      {/* Top Gradient */}
+      <div className="hidden sm:block absolute top-[-36px] left-[-35px] w-[1518px] h-[142px] z-10 pointer-events-none">
+        <Image src="/images/top-gradient.png" alt="" fill className="object-cover" priority />
+      </div>
+      <div className="sm:hidden absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-[#ebfdff]/80 to-transparent z-10 pointer-events-none" />
+
+      {/* ── Top bar: View toggle (left) + Video controls (right) ── */}
+      <div className="absolute top-2 sm:top-4 left-2 sm:left-4 right-2 sm:right-4 flex items-center justify-between z-30">
+
+        {/* Search / Browse toggle */}
+        <div className={`flex items-center bg-white/40 backdrop-blur-sm border border-[#5b9888]/20 rounded-full p-0.5 gap-0.5 transition-all duration-300 ${hasSearched ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
+          <button
+            onClick={() => handleViewSwitch("search")}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
+              activeView === "search"
+                ? "bg-white shadow-sm text-[#3d7a64]"
+                : "text-[#3a3a3a]/50 hover:text-[#3a3a3a]/70"
+            }`}
+          >
+            <Search className="w-3 h-3" />
+            <span className="hidden sm:inline">Search</span>
+          </button>
+          <button
+            onClick={() => handleViewSwitch("browse")}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
+              activeView === "browse"
+                ? "bg-white shadow-sm text-[#3d7a64]"
+                : "text-[#3a3a3a]/50 hover:text-[#3a3a3a]/70"
+            }`}
+          >
+            <LayoutGrid className="w-3 h-3" />
+            <span className="hidden sm:inline">Browse</span>
+          </button>
+        </div>
 
         {/* Video Controls */}
-        <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex items-center gap-1.5 sm:gap-2 z-30">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <button onClick={toggleMute} className="p-1.5 sm:p-2 rounded-full bg-white/30 hover:bg-white/50 backdrop-blur-sm transition-colors duration-300" aria-label={isMuted ? "Unmute" : "Mute"}>
             {isMuted ? <VolumeX className="w-4 h-4 sm:w-5 sm:h-5 text-[#3a3a3a]" /> : <Volume2 className="w-4 h-4 sm:w-5 sm:h-5 text-[#3a3a3a]" />}
           </button>
@@ -146,13 +189,16 @@ export default function Home() {
             {isPlaying ? <Pause className="w-4 h-4 sm:w-5 sm:h-5 text-[#3a3a3a]" /> : <Play className="w-4 h-4 sm:w-5 sm:h-5 text-[#3a3a3a]" />}
           </button>
         </div>
+      </div>
 
-        {/* Top Gradient */}
-        <div className="hidden sm:block absolute top-[-36px] left-[-35px] w-[1518px] h-[142px] z-10 pointer-events-none">
-          <Image src="/images/top-gradient.png" alt="" fill className="object-cover" priority />
-        </div>
-        <div className="sm:hidden absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-[#ebfdff]/80 to-transparent z-10 pointer-events-none" />
-
+      {/* ══════════════════════════════════════════
+          SEARCH VIEW
+          ══════════════════════════════════════════ */}
+      <div
+        className={`absolute inset-0 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+          activeView === "search" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        }`}
+      >
         {/* Greeting */}
         <p
           className={`absolute top-2 sm:top-[7px] left-1/2 -translate-x-1/2 font-semibold text-xl sm:text-[33px] tracking-[4px] sm:tracking-[6.27px] whitespace-nowrap text-center z-20 transition-all duration-500 ease-out ${
@@ -224,7 +270,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Search Results — overlays the hero when searching */}
+        {/* Search Results overlay */}
         <div
           className={`absolute inset-x-0 bottom-0 z-20 px-3 sm:px-4 md:px-0 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
             hasSearched ? "top-[56px] sm:top-[60px] opacity-100 translate-y-0" : "top-full opacity-0 pointer-events-none"
@@ -249,38 +295,26 @@ export default function Home() {
             </div>
           </div>
         </div>
-      </section>
+      </div>
 
-      {/* ═══════════════════════════════════════════
-          BRIDGE — flat #EBFDFF rect with blur(2px), bleeds 63px each side
-          Matches Figma exactly: solid color + filter blur, no transparency
-          ═══════════════════════════════════════════ */}
+      {/* ══════════════════════════════════════════
+          BROWSE VIEW
+          ══════════════════════════════════════════ */}
       <div
-        aria-hidden
-        style={{
-          position: 'relative',
-          zIndex: 5,
-          marginTop: '-55px',
-          marginLeft: '-63px',
-          marginRight: '-63px',
-          height: '111px',
-          background: '#EBFDFF',
-          filter: 'blur(2px)',
-          pointerEvents: 'none',
-        }}
-      />
-
-      {/* ═══════════════════════════════════════════
-          SECOND FOLD — Browse section
-          ═══════════════════════════════════════════ */}
-      <section
-        className="relative w-full min-h-screen bg-[#ebfdff]"
-        style={{ marginTop: '-56px' }}
+        className={`absolute inset-0 z-10 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+          activeView === "browse" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        }`}
       >
-        <div className="relative w-full px-4 sm:px-6 md:px-8 max-w-[1200px] mx-auto pt-10 pb-12">
-          <BrowseSection folders={folders} boards={boards} />
+        {/* Frosted glass panel behind browse content */}
+        <div className="absolute inset-0 bg-[#ebfdff]/80 backdrop-blur-sm" />
+
+        {/* Browse content — scrollable within the viewport */}
+        <div className="relative z-10 h-full flex flex-col pt-14 sm:pt-16 pb-4 px-4 sm:px-6 md:px-8 overflow-hidden">
+          <div className="flex-1 min-h-0 w-full max-w-[1200px] mx-auto overflow-y-auto custom-scrollbar">
+            <BrowseSection folders={folders} boards={boards} constrained />
+          </div>
         </div>
-      </section>
+      </div>
 
     </div>
   );

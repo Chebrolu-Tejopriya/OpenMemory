@@ -11,9 +11,10 @@ type BrowseTab = "bookmarks" | "pinterest";
 interface BrowseSectionProps {
   folders: string[];
   boards: string[];
+  constrained?: boolean;
 }
 
-export default function BrowseSection({ folders, boards }: BrowseSectionProps) {
+export default function BrowseSection({ folders, boards, constrained = false }: BrowseSectionProps) {
   const [activeTab, setActiveTab] = useState<BrowseTab>("bookmarks");
   const [selectedItem, setSelectedItem] = useState<string>("");
   const [cards, setCards] = useState<SearchResult[]>([]);
@@ -103,7 +104,7 @@ export default function BrowseSection({ folders, boards }: BrowseSectionProps) {
   );
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className={`flex flex-col gap-4 ${constrained ? "h-full" : ""}`}>
       {/* Section header */}
       <div className="flex items-center gap-2">
         <FolderOpen className="w-4 h-4 text-[#5b9888]/60" />
@@ -148,13 +149,13 @@ export default function BrowseSection({ folders, boards }: BrowseSectionProps) {
       </div>
 
       {/* ── DESKTOP layout (≥ md) ── */}
-      <div className="hidden md:flex gap-6">
-        {/* Left panel — sticky */}
-        <div className="w-52 shrink-0 flex flex-col gap-2 sticky top-6 self-start">
+      <div className={`hidden md:flex gap-6 ${constrained ? "flex-1 min-h-0" : ""}`}>
+        {/* Left panel — sticky when not constrained, flex when constrained */}
+        <div className={`w-52 shrink-0 flex flex-col gap-2 ${constrained ? "self-stretch" : "sticky top-6 self-start"}`}>
           {tabSwitch}
 
           {/* Folder/board list */}
-          <div className="flex flex-col gap-0.5 max-h-[70vh] overflow-y-auto custom-scrollbar pr-1">
+          <div className={`flex flex-col gap-0.5 overflow-y-auto custom-scrollbar pr-1 ${constrained ? "flex-1" : "max-h-[70vh]"}`}>
             {list.length === 0 ? (
               <p className="text-xs text-[#3a3a3a]/30 px-2 py-3 text-center">
                 No {activeTab === "bookmarks" ? "folders" : "boards"} found
@@ -178,7 +179,7 @@ export default function BrowseSection({ folders, boards }: BrowseSectionProps) {
         </div>
 
         {/* Right panel — cards */}
-        <div className="flex-1 min-w-0">
+        <div className={`flex-1 min-w-0 ${constrained ? "overflow-y-auto custom-scrollbar" : ""}`}>
           {isLoading ? skeletonCards : cards.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-sm text-[#3a3a3a]/30">No items found</div>
           ) : (
