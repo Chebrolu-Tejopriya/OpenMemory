@@ -161,8 +161,8 @@ export default function CanvasView({ folders, boards, active }: Props) {
           const r = await fetch(`${BACKEND_URL}/browse?source=pinterest&board=${encodeURIComponent(board)}`);
           if (!r.ok) continue;
           const d = await r.json();
-          (d.results || []).forEach((item: { title: string | null; pin_url: string; board_name: string | null; image_url: string | null }, i: number) => {
-            if (pins.length < CAP) pins.push({ id: `pin-${board}-${i}`, title: item.title || "Untitled", folder: item.board_name || board, url: item.pin_url, source: "pinterest", imageUrl: item.image_url || undefined });
+          (d.results || []).forEach((item: { title: string | null; url: string; folder: string | null; imageUrl?: string | null }, i: number) => {
+            if (pins.length < CAP) pins.push({ id: `pin-${board}-${i}`, title: item.title || "Untitled", folder: item.folder || board, url: item.url, source: "pinterest", imageUrl: item.imageUrl || undefined });
           });
         } catch { /* skip */ }
       }
