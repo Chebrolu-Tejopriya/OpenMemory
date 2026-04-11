@@ -36,7 +36,6 @@ type ThemeMedia = { type: "video"; src: string } | { type: "image"; src: string 
 
 const THEMES: ThemeMedia[] = [
   { type: "video", src: "/videos/leaf-animation.mp4" },
-  { type: "image", src: "/videos/desktop-18.png" },
 ];
 
 type ActiveView = "search" | "browse";
@@ -261,29 +260,6 @@ export default function Home() {
       </div>
       <div className="sm:hidden absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-[#ebfdff]/80 to-transparent z-10 pointer-events-none" />
 
-      {/* ── Theme toggle (top-right) ── */}
-      <div className="absolute top-3 sm:top-4 right-3 sm:right-4 z-30 pointer-events-auto">
-        <div className="flex items-center gap-1 p-1 bg-white/30 backdrop-blur-md border border-white/40 rounded-full shadow-sm">
-          {THEMES.map((_, idx) => (
-            <button
-              key={idx}
-              onClick={() => switchTheme(idx)}
-              aria-label={`Theme ${idx + 1}`}
-              className={`w-6 h-6 rounded-full flex items-center justify-center transition-all duration-200 ${
-                themeIndex === idx
-                  ? "bg-[#3d7a64] shadow-sm shadow-[#3d7a64]/30"
-                  : "hover:bg-white/50"
-              }`}
-            >
-              <span
-                className={`block rounded-full transition-all duration-200 ${
-                  themeIndex === idx ? "w-2 h-2 bg-white" : "w-1.5 h-1.5 bg-[#3a3a3a]/30"
-                }`}
-              />
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* ══════════════════════════════════════════
           SEARCH VIEW
