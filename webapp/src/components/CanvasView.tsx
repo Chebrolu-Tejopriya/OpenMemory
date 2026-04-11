@@ -18,9 +18,11 @@ const COLS = 4;
 const TILES_X = 3;
 const TILES_Y = 3;
 
-const FRICTION = 0.97;       // higher = longer glide
-const VEL_SMOOTH = 0.55;     // EMA alpha — lower = smoother velocity
-const MIN_VEL = 0.05;
+// Time-based friction: velocity * pow(FRICTION_PER_MS, elapsed_ms)
+// 0.998 ≈ half-life ~346ms — feels like thiings.co / nobocore
+const FRICTION_PER_MS = 0.998;
+const LERP = 0.14;           // rendered pan lerps toward target each RAF (0=no lag, higher=smoother)
+const MIN_VEL = 0.02;
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 2.5;
 const MAX_ITEMS = 180;       // cap total to keep DOM lean
@@ -127,12 +129,18 @@ export default function CanvasView({ folders, boards, active }: Props) {
   const layerRef = useRef<HTMLDivElement>(null);
 
   // Pan / zoom — all in refs so RAF never triggers re-render
+  // targetPan = logical position (pointer moves this 1:1; velocity updates this after release)
+  // pan       = rendered position (lerps toward targetPan each RAF tick for silky feel)
+  const targetPan = useRef({ x: 0, y: 0 });
   const pan = useRef({ x: 0, y: 0 });
   const vel = useRef({ x: 0, y: 0 });
   const zoom = useRef(1);
   const dragging = useRef(false);
   const lastPtr = useRef({ x: 0, y: 0 });
   const raf = useRef<number | null>(null);
+  const lastTickTime = useRef(0);
+  // Circular buffer: last 100ms of pointer positions for accurate release velocity
+  const ptrHistory = useRef<{ x: number; y: number; t: number }[]>([]);
 
   // Grid metrics (derived from items, stored in refs to avoid closure staleness)
   const gridW = useRef(0);
@@ -189,10 +197,12 @@ export default function CanvasView({ folders, boards, active }: Props) {
     const ch = containerRef.current.clientHeight;
 
     // Center the middle tile in the viewport
-    pan.current = {
+    const start = {
       x: cw / 2 - (TILES_X * gridW.current) / 2 - gridW.current / 2 + gridW.current,
       y: ch / 2 - (TILES_Y * gridH.current) / 2 - gridH.current / 2 + gridH.current,
     };
+    pan.current = { ...start };
+    targetPan.current = { ...start };
     applyTransform();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
@@ -204,33 +214,47 @@ export default function CanvasView({ folders, boards, active }: Props) {
       `translate3d(${pan.current.x}px,${pan.current.y}px,0) scale(${zoom.current})`;
   }, []);
 
-  // ── Seamless wrap — keep pan within one tile range ───────────────────────
-  const wrapPan = useCallback(() => {
+  // ── Seamless wrap — shift BOTH pan and target together to avoid visual jump ─
+  const wrapTarget = useCallback(() => {
     const gw = gridW.current;
     const gh = gridH.current;
     if (!gw || !gh) return;
-    // Wrap X
-    if (pan.current.x > gw) pan.current.x -= gw;
-    else if (pan.current.x < -gw) pan.current.x += gw;
-    // Wrap Y
-    if (pan.current.y > gh) pan.current.y -= gh;
-    else if (pan.current.y < -gh) pan.current.y += gh;
+    if (targetPan.current.x > gw)        { targetPan.current.x -= gw; pan.current.x -= gw; }
+    else if (targetPan.current.x < -gw)  { targetPan.current.x += gw; pan.current.x += gw; }
+    if (targetPan.current.y > gh)        { targetPan.current.y -= gh; pan.current.y -= gh; }
+    else if (targetPan.current.y < -gh)  { targetPan.current.y += gh; pan.current.y += gh; }
   }, []);
 
-  // ── Inertia tick ─────────────────────────────────────────────────────────
-  const tick = useCallback(() => {
-    vel.current.x *= FRICTION;
-    vel.current.y *= FRICTION;
-    if (Math.abs(vel.current.x) < MIN_VEL && Math.abs(vel.current.y) < MIN_VEL) {
+  // ── RAF tick ─────────────────────────────────────────────────────────────
+  // Two-stage: target follows pointer / inertia; rendered pan lerps toward target.
+  const tick = useCallback((now: number) => {
+    const dt = lastTickTime.current ? Math.min(now - lastTickTime.current, 64) : 16;
+    lastTickTime.current = now;
+
+    if (!dragging.current) {
+      // Time-based friction — frame-rate independent
+      const decay = Math.pow(FRICTION_PER_MS, dt);
+      vel.current.x *= decay;
+      vel.current.y *= decay;
+      targetPan.current.x += vel.current.x;
+      targetPan.current.y += vel.current.y;
+      wrapTarget();
+    }
+
+    // Lerp rendered pan toward logical target — the magic smoothness
+    pan.current.x += (targetPan.current.x - pan.current.x) * LERP;
+    pan.current.y += (targetPan.current.y - pan.current.y) * LERP;
+    applyTransform();
+
+    const velDone = Math.abs(vel.current.x) < MIN_VEL && Math.abs(vel.current.y) < MIN_VEL;
+    const lerpDone = Math.abs(targetPan.current.x - pan.current.x) < 0.1 &&
+                     Math.abs(targetPan.current.y - pan.current.y) < 0.1;
+    if (!dragging.current && velDone && lerpDone) {
       raf.current = null;
       return;
     }
-    pan.current.x += vel.current.x;
-    pan.current.y += vel.current.y;
-    wrapPan();
-    applyTransform();
     raf.current = requestAnimationFrame(tick);
-  }, [applyTransform, wrapPan]);
+  }, [applyTransform, wrapTarget]);
 
   // ── Pointer ──────────────────────────────────────────────────────────────
   const onPointerDown = useCallback((e: React.PointerEvent) => {
@@ -238,33 +262,49 @@ export default function CanvasView({ folders, boards, active }: Props) {
     dragging.current = true;
     lastPtr.current = { x: e.clientX, y: e.clientY };
     vel.current = { x: 0, y: 0 };
-    if (raf.current) { cancelAnimationFrame(raf.current); raf.current = null; }
+    ptrHistory.current = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
+    if (raf.current) cancelAnimationFrame(raf.current);
+    lastTickTime.current = 0;
+    raf.current = requestAnimationFrame(tick); // keep lerp running during drag
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     if (containerRef.current) containerRef.current.style.cursor = "grabbing";
     if (layerRef.current) layerRef.current.style.pointerEvents = "none";
-  }, []);
+  }, [tick]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     if (!dragging.current) return;
     const dx = e.clientX - lastPtr.current.x;
     const dy = e.clientY - lastPtr.current.y;
     lastPtr.current = { x: e.clientX, y: e.clientY };
-    pan.current.x += dx;
-    pan.current.y += dy;
-    // EMA smoothing: blend new delta into running velocity to reduce jitter
-    vel.current.x = vel.current.x * VEL_SMOOTH + dx * (1 - VEL_SMOOTH);
-    vel.current.y = vel.current.y * VEL_SMOOTH + dy * (1 - VEL_SMOOTH);
-    wrapPan();
-    applyTransform();
-  }, [applyTransform, wrapPan]);
+    // Target pan tracks pointer 1:1 — no lag during active drag
+    targetPan.current.x += dx;
+    targetPan.current.y += dy;
+    wrapTarget();
+    // Record history for release velocity
+    const now = performance.now();
+    ptrHistory.current.push({ x: e.clientX, y: e.clientY, t: now });
+    ptrHistory.current = ptrHistory.current.filter(p => now - p.t < 100);
+  }, [wrapTarget]);
 
   const onPointerUp = useCallback(() => {
     if (!dragging.current) return;
     dragging.current = false;
     if (containerRef.current) containerRef.current.style.cursor = "grab";
     if (layerRef.current) layerRef.current.style.pointerEvents = "";
-    raf.current = requestAnimationFrame(tick);
-  }, [tick]);
+    // Compute release velocity from pointer history (last 100ms average)
+    const h = ptrHistory.current;
+    if (h.length >= 2) {
+      const old = h[0];
+      const latest = h[h.length - 1];
+      const dt = latest.t - old.t;
+      if (dt > 0) {
+        // Scale to per-frame (16ms) velocity
+        vel.current.x = ((latest.x - old.x) / dt) * 16;
+        vel.current.y = ((latest.y - old.y) / dt) * 16;
+      }
+    }
+    // RAF already running from onPointerDown — inertia continues automatically
+  }, []);
 
   // ── Wheel zoom ───────────────────────────────────────────────────────────
   const onWheel = useCallback((e: React.WheelEvent) => {
@@ -276,8 +316,11 @@ export default function CanvasView({ folders, boards, active }: Props) {
     const prev = zoom.current;
     const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, prev * (1 - e.deltaY * 0.001)));
     const s = next / prev;
+    // Zoom toward cursor — update both target and rendered pan together
     pan.current.x = mx - s * (mx - pan.current.x);
     pan.current.y = my - s * (my - pan.current.y);
+    targetPan.current.x = pan.current.x;
+    targetPan.current.y = pan.current.y;
     zoom.current = next;
     applyTransform();
   }, [applyTransform]);
