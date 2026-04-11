@@ -37,10 +37,11 @@ function domain(url: string) {
 
 // ── Card ───────────────────────────────────────────────────────────────────
 function Card({ result, style }: { result: SearchResult; style: React.CSSProperties }) {
-  const [loaded, setLoaded] = useState(false);
-  const [err, setErr] = useState(false);
+  const [shotLoaded, setShotLoaded] = useState(false);
+  const [shotErr, setShotErr] = useState(false);
+  const [pinErr, setPinErr] = useState(false);
   const isPin = result.source === "pinterest";
-  const pinImg = isPin && result.imageUrl && !result.imageUrl.includes("favicon");
+  const pinImg = isPin && result.imageUrl && !result.imageUrl.includes("favicon") && !pinErr;
   // Screenshot service only for bookmarks — Pinterest URLs are login-gated and return junk
   const shot = !isPin ? screenshotUrl(result.url) : null;
   const fav = faviconUrl(result.url);
@@ -63,25 +64,29 @@ function Card({ result, style }: { result: SearchResult; style: React.CSSPropert
         <div className="relative w-full rounded-xl overflow-hidden bg-gray-200" style={{ height: CARD_H - 78 }}>
           {pinImg ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={result.imageUrl!} alt={result.title} className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300" />
+            <img
+              src={result.imageUrl!}
+              alt={result.title}
+              className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
+              onError={() => setPinErr(true)}
+            />
           ) : (
             <>
-              <div className={`absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#f8fffe] to-[#eef7f4] transition-opacity duration-300 ${loaded && !err ? "opacity-0" : "opacity-100"}`}>
-                {fav && (
-                  <div className="flex flex-col items-center gap-1.5">
-                    <div className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center p-2">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={fav} alt="" className="w-full h-full object-contain" />
-                    </div>
-                    <span className="text-[9px] text-gray-400">{dom}</span>
-                  </div>
-                )}
+              {/* Placeholder shown while screenshot loads or if no image available */}
+              <div className={`absolute inset-0 flex flex-col items-center justify-center gap-2 transition-opacity duration-300 ${shotLoaded && !shotErr ? "opacity-0" : "opacity-100"}`}
+                style={{ background: isPin ? "linear-gradient(135deg,#fce4ec,#f3e5f5)" : "linear-gradient(135deg,#f8fffe,#eef7f4)" }}
+              >
+                <div className="w-10 h-10 rounded-xl bg-white/70 shadow-sm flex items-center justify-center p-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={fav} alt="" className="w-full h-full object-contain" />
+                </div>
+                <span className="text-[9px] font-medium text-gray-400 max-w-[80%] text-center truncate">{label}</span>
               </div>
-              {shot && !err && (
+              {shot && !shotErr && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={shot} alt={result.title}
-                  className={`absolute inset-0 w-full h-full object-cover group-hover:scale-[1.03] transition-all duration-500 ${loaded ? "opacity-100" : "opacity-0"}`}
-                  onLoad={() => setLoaded(true)} onError={() => setErr(true)} />
+                  className={`absolute inset-0 w-full h-full object-cover group-hover:scale-[1.03] transition-all duration-500 ${shotLoaded ? "opacity-100" : "opacity-0"}`}
+                  onLoad={() => setShotLoaded(true)} onError={() => setShotErr(true)} />
               )}
             </>
           )}
