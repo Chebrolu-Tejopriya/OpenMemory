@@ -36,7 +36,7 @@ type ThemeMedia = { type: "video"; src: string } | { type: "image"; src: string 
 
 const THEMES: ThemeMedia[] = [
   { type: "video", src: "/videos/leaf-animation.mp4" },
-  { type: "image", src: "/videos/Desktop - 18.png" },
+  { type: "image", src: "/videos/desktop-18.png" },
 ];
 
 type ActiveView = "search" | "browse";
