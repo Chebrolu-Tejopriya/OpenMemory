@@ -247,12 +247,11 @@ export default function Home() {
           <source src={THEMES[themeIndex].src} type="video/mp4" />
         </video>
       ) : (
-        <Image
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
           src={THEMES[themeIndex].src}
           alt=""
-          fill
-          className="absolute inset-0 object-cover md:object-fill"
-          priority
+          className="absolute inset-0 w-full h-full object-cover md:object-fill"
         />
       )}
 
