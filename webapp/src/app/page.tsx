@@ -249,35 +249,8 @@ export default function Home() {
       </div>
       <div className="sm:hidden absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-[#ebfdff]/80 to-transparent z-10 pointer-events-none" />
 
-      {/* ── Top bar: View toggle (left) + Video controls (right) ── */}
-      <div className="absolute top-2 sm:top-4 left-2 sm:left-4 right-2 sm:right-4 flex items-center justify-between z-30 pointer-events-none">
-
-        {/* Search / Collections toggle */}
-        <div className={`pointer-events-auto flex items-center bg-white/40 backdrop-blur-sm border border-[#5b9888]/20 rounded-full p-0.5 gap-0.5 transition-all duration-300 ${hasSearched ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
-          <button
-            onClick={() => handleViewSwitch("search")}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
-              activeView === "search"
-                ? "bg-white shadow-sm text-[#3d7a64]"
-                : "text-[#3a3a3a]/50 hover:text-[#3a3a3a]/70"
-            }`}
-          >
-            <Search className="w-3 h-3" />
-            <span className="hidden sm:inline">Search</span>
-          </button>
-          <button
-            onClick={() => handleViewSwitch("browse")}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
-              activeView === "browse"
-                ? "bg-white shadow-sm text-[#3d7a64]"
-                : "text-[#3a3a3a]/50 hover:text-[#3a3a3a]/70"
-            }`}
-          >
-            <LayoutGrid className="w-3 h-3" />
-            <span className="hidden sm:inline">Collections</span>
-          </button>
-        </div>
-
+      {/* ── Top bar: Video controls only (right) ── */}
+      <div className="absolute top-2 sm:top-4 right-2 sm:right-4 flex items-center z-30 pointer-events-none">
         {/* Video Controls */}
         <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
           <button onClick={toggleMute} className="p-1.5 sm:p-2 rounded-full bg-white/30 hover:bg-white/50 backdrop-blur-sm transition-colors duration-300" aria-label={isMuted ? "Unmute" : "Mute"}>
@@ -476,6 +449,34 @@ export default function Home() {
           <div className="flex-1 min-h-0 w-full max-w-[1200px] mx-auto overflow-y-auto custom-scrollbar">
             <BrowseSection folders={folders} boards={boards} constrained />
           </div>
+        </div>
+      </div>
+
+      {/* ── Bottom dock — Search / Collections tab switch ── */}
+      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 pointer-events-auto">
+        <div className="flex items-center gap-2 p-1.5 bg-white/30 backdrop-blur-md border border-white/40 rounded-2xl shadow-lg shadow-black/10">
+          <button
+            onClick={() => handleViewSwitch("search")}
+            aria-label="Search"
+            className={`p-3 rounded-xl transition-all duration-200 ${
+              activeView === "search"
+                ? "bg-[#3d7a64] text-white shadow-md shadow-[#3d7a64]/30"
+                : "text-[#3a3a3a]/40 hover:text-[#3d7a64] hover:bg-white/60"
+            }`}
+          >
+            <Search className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => handleViewSwitch("browse")}
+            aria-label="Collections"
+            className={`p-3 rounded-xl transition-all duration-200 ${
+              activeView === "browse"
+                ? "bg-[#3d7a64] text-white shadow-md shadow-[#3d7a64]/30"
+                : "text-[#3a3a3a]/40 hover:text-[#3d7a64] hover:bg-white/60"
+            }`}
+          >
+            <LayoutGrid className="w-5 h-5" />
+          </button>
         </div>
       </div>
 
