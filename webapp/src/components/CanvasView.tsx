@@ -138,34 +138,30 @@ export default function CanvasView({ folders, boards, active }: Props) {
     setLoading(true);
 
     (async () => {
-      // Cap each source independently so bookmarks can't starve pinterest items
-      const CAP = MAX_ITEMS;
       const bookmarks: SearchResult[] = [];
       const pins: SearchResult[] = [];
 
-      for (const folder of folders) {
-        if (bookmarks.length >= CAP) break;
-        try {
-          const r = await fetch(`${BACKEND_URL}/browse?source=chrome&folder=${encodeURIComponent(folder)}`);
-          if (!r.ok) continue;
+      // Fetch ALL bookmarks in one request (no folder filter) so nothing is missed
+      try {
+        const r = await fetch(`${BACKEND_URL}/browse?source=chrome`);
+        if (r.ok) {
           const d = await r.json();
-          (d.results || []).forEach((item: { title: string; url: string; folder: string | null; source: string; imageUrl: string | null }, i: number) => {
-            if (bookmarks.length < CAP) bookmarks.push({ id: `bm-${folder}-${i}`, title: item.title, folder: item.folder || folder, url: item.url, source: "chrome", imageUrl: item.imageUrl || undefined });
+          (d.results || []).forEach((item: { title: string; url: string; folder: string | null; imageUrl?: string | null }, i: number) => {
+            bookmarks.push({ id: `bm-${i}`, title: item.title, folder: item.folder || "", url: item.url, source: "chrome", imageUrl: item.imageUrl || undefined });
           });
-        } catch { /* skip */ }
-      }
+        }
+      } catch { /* skip */ }
 
-      for (const board of boards) {
-        if (pins.length >= CAP) break;
-        try {
-          const r = await fetch(`${BACKEND_URL}/browse?source=pinterest&board=${encodeURIComponent(board)}`);
-          if (!r.ok) continue;
+      // Fetch ALL pins in one request (no board filter)
+      try {
+        const r = await fetch(`${BACKEND_URL}/browse?source=pinterest`);
+        if (r.ok) {
           const d = await r.json();
           (d.results || []).forEach((item: { title: string | null; url: string; folder: string | null; imageUrl?: string | null }, i: number) => {
-            if (pins.length < CAP) pins.push({ id: `pin-${board}-${i}`, title: item.title || "Untitled", folder: item.folder || board, url: item.url, source: "pinterest", imageUrl: item.imageUrl || undefined });
+            pins.push({ id: `pin-${i}`, title: item.title || "Untitled", folder: item.folder || "", url: item.url, source: "pinterest", imageUrl: item.imageUrl || undefined });
           });
-        } catch { /* skip */ }
-      }
+        }
+      } catch { /* skip */ }
 
       // Combine and shuffle within each source group
       const all = [...bookmarks, ...pins].sort(() => Math.random() - 0.5);

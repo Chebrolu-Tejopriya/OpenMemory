@@ -742,12 +742,15 @@ export async function browseSupabase(
   const PAGE_SIZE = 1000;
   try {
     if (source === 'chrome') {
-      const encoded = encodeURIComponent(folderOrBoard);
       const all: Array<{ id: string; url: string; title: string; folder: string | null; created_at: string | null }> = [];
       let offset = 0;
       while (true) {
+        // Empty folderOrBoard → fetch all bookmarks (no folder filter)
+        const folderFilter = folderOrBoard
+          ? `&folder=eq.${encodeURIComponent(folderOrBoard)}`
+          : '';
         const response = await fetch(
-          `${SUPABASE_URL}/rest/v1/bookmarks?select=id,url,title,folder,created_at&folder=eq.${encoded}&limit=${PAGE_SIZE}&offset=${offset}&order=created_at.desc`,
+          `${SUPABASE_URL}/rest/v1/bookmarks?select=id,url,title,folder,created_at${folderFilter}&limit=${PAGE_SIZE}&offset=${offset}&order=created_at.desc`,
           { method: 'GET', headers: requestHeaders }
         );
         if (!response.ok) break;

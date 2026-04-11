@@ -126,10 +126,8 @@ app.get('/browse', async (req, res) => {
       return res.status(400).json({ error: 'source must be chrome or pinterest' });
     }
 
-    const folderOrBoard = source === 'chrome' ? folder : board;
-    if (!folderOrBoard) {
-      return res.status(400).json({ error: 'folder or board is required' });
-    }
+    // folder/board is optional — omitting it returns ALL items for that source
+    const folderOrBoard = (source === 'chrome' ? folder : board) ?? '';
 
     const result = await browseSupabase(source, folderOrBoard);
     res.json(result);
