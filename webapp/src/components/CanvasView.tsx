@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { Bookmark, Pin, ChevronDown } from "lucide-react";
 import { SearchResult } from "./SearchResultCard";
+
+type CanvasSource = "chrome" | "pinterest";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
@@ -103,6 +106,21 @@ export default function CanvasView({ folders, boards, active }: Props) {
   const [items, setItems] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const hasFetched = useRef(false);
+
+  // ── Filter state ──────────────────────────────────────────────────────────
+  const [source, setSource] = useState<CanvasSource>("chrome");
+  const [selectedFolder, setSelectedFolder] = useState<string>("");
+  const [selectedBoard, setSelectedBoard] = useState<string>("");
+  const [folderOpen, setFolderOpen] = useState(false);
+  const [boardOpen, setBoardOpen] = useState(false);
+
+  // Set default folder/board when folders/boards arrive
+  useEffect(() => {
+    if (folders.length && !selectedFolder) setSelectedFolder("");
+  }, [folders, selectedFolder]);
+  useEffect(() => {
+    if (boards.length && !selectedBoard) setSelectedBoard("");
+  }, [boards, selectedBoard]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const layerRef = useRef<HTMLDivElement>(null);
@@ -263,8 +281,22 @@ export default function CanvasView({ folders, boards, active }: Props) {
 
   useEffect(() => () => { if (raf.current) cancelAnimationFrame(raf.current); }, []);
 
+  // ── Filter items by source + folder/board ────────────────────────────────
+  const filteredItems = items.filter((item) => {
+    if (item.source !== source) return false;
+    if (source === "chrome" && selectedFolder) {
+      const itemFolder = item.folder?.split("/").pop() || item.folder || "";
+      const filterFolder = selectedFolder.split("/").pop() || selectedFolder;
+      return itemFolder === filterFolder;
+    }
+    if (source === "pinterest" && selectedBoard) {
+      return item.folder === selectedBoard;
+    }
+    return true;
+  });
+
   // ── Build tiled positions ─────────────────────────────────────────────────
-  const rows = Math.ceil(items.length / COLS);
+  const rows = Math.ceil(filteredItems.length / COLS);
   const tileW = COLS * (CARD_W + GAP_X);
   const tileH = rows * (CARD_H + GAP_Y);
   const totalW = TILES_X * tileW;
@@ -273,7 +305,7 @@ export default function CanvasView({ folders, boards, active }: Props) {
   const tiledCards: { item: SearchResult; x: number; y: number; key: string }[] = [];
   for (let ty = 0; ty < TILES_Y; ty++) {
     for (let tx = 0; tx < TILES_X; tx++) {
-      items.forEach((item, i) => {
+      filteredItems.forEach((item, i) => {
         const col = i % COLS;
         const row = Math.floor(i / COLS);
         tiledCards.push({
@@ -284,6 +316,15 @@ export default function CanvasView({ folders, boards, active }: Props) {
         });
       });
     }
+  }
+
+  const activeList = source === "chrome" ? folders : boards;
+  const activeSelected = source === "chrome" ? selectedFolder : selectedBoard;
+  const dropdownOpen = source === "chrome" ? folderOpen : boardOpen;
+  const setDropdownOpen = source === "chrome" ? setFolderOpen : setBoardOpen;
+
+  function displayName(path: string) {
+    return path.split("/").pop() || path;
   }
 
   return (
@@ -300,6 +341,67 @@ export default function CanvasView({ folders, boards, active }: Props) {
       {/* Background */}
       <div className="absolute inset-0 bg-[#ebfdff]/85 backdrop-blur-sm" />
 
+      {/* ── Top-right filter bar ── */}
+      <div
+        className="absolute top-3 right-3 z-30 flex items-center gap-2 pointer-events-auto"
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        {/* Source tab switch */}
+        <div className="flex items-center bg-white/40 backdrop-blur-md border border-white/50 rounded-xl p-1 gap-0.5 shadow-sm">
+          <button
+            onClick={() => { setSource("chrome"); setFolderOpen(false); setBoardOpen(false); }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
+              source === "chrome" ? "bg-white shadow-sm text-[#3d7a64]" : "text-[#3a3a3a]/50 hover:text-[#3a3a3a]/70"
+            }`}
+          >
+            <Bookmark className="w-3 h-3" />
+            Bookmarks
+          </button>
+          <button
+            onClick={() => { setSource("pinterest"); setFolderOpen(false); setBoardOpen(false); }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
+              source === "pinterest" ? "bg-white shadow-sm text-[#3d7a64]" : "text-[#3a3a3a]/50 hover:text-[#3a3a3a]/70"
+            }`}
+          >
+            <Pin className="w-3 h-3" />
+            Pinterest
+          </button>
+        </div>
+
+        {/* Folder / Board dropdown */}
+        {activeList.length > 0 && (
+          <div className="relative">
+            <button
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-white/40 backdrop-blur-md border border-white/50 rounded-xl text-xs font-medium text-[#3a3a3a]/70 hover:bg-white/60 transition-all duration-200 shadow-sm max-w-[160px]"
+            >
+              <span className="truncate">{activeSelected ? displayName(activeSelected) : `All ${source === "chrome" ? "Folders" : "Boards"}`}</span>
+              <ChevronDown className={`w-3 h-3 flex-shrink-0 transition-transform duration-200 ${dropdownOpen ? "rotate-180" : ""}`} />
+            </button>
+
+            {dropdownOpen && (
+              <div className="absolute top-full right-0 mt-1.5 w-52 bg-white/90 backdrop-blur-md border border-[#5b9888]/15 rounded-xl shadow-lg overflow-hidden z-40 max-h-64 overflow-y-auto custom-scrollbar">
+                <button
+                  onClick={() => { source === "chrome" ? setSelectedFolder("") : setSelectedBoard(""); setDropdownOpen(false); }}
+                  className={`w-full text-left px-3 py-2 text-xs transition-colors ${!activeSelected ? "text-[#3d7a64] font-medium bg-[#5b9888]/8" : "text-[#3a3a3a]/60 hover:bg-[#5b9888]/5"}`}
+                >
+                  All {source === "chrome" ? "Folders" : "Boards"}
+                </button>
+                {activeList.map((item) => (
+                  <button
+                    key={item}
+                    onClick={() => { source === "chrome" ? setSelectedFolder(item) : setSelectedBoard(item); setDropdownOpen(false); }}
+                    className={`w-full text-left px-3 py-2 text-xs truncate transition-colors ${activeSelected === item ? "text-[#3d7a64] font-medium bg-[#5b9888]/8" : "text-[#3a3a3a]/60 hover:bg-[#5b9888]/5"}`}
+                  >
+                    {displayName(item)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Loading */}
       {loading && (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 pointer-events-none">
@@ -309,7 +411,7 @@ export default function CanvasView({ folders, boards, active }: Props) {
       )}
 
       {/* Hint */}
-      {!loading && items.length > 0 && (
+      {!loading && filteredItems.length > 0 && (
         <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none select-none">
           <p className="text-[10px] text-[#3a3a3a]/25 tracking-widest uppercase">Drag to explore · scroll to zoom</p>
         </div>
