@@ -72,14 +72,18 @@ export default function BrowseSection({ folders, boards, constrained = false }: 
   }
 
   const skeletonCards = (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-      {[...Array(8)].map((_, i) => (
-        <div key={i} className="rounded-2xl bg-white border border-gray-100 overflow-hidden animate-pulse">
-          <div className="px-3 pt-3 pb-1 h-6 bg-gray-50" />
-          <div className="px-3 pb-3"><div className="aspect-video rounded-xl bg-gray-100" /></div>
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      {[...Array(6)].map((_, i) => (
+        <div key={i} className="flex flex-col bg-[#f4f4f4] rounded-2xl overflow-hidden animate-pulse">
+          <div className="px-3 pt-3 pb-1 h-7 flex items-center">
+            <div className="h-2.5 w-20 bg-gray-300/60 rounded-full" />
+          </div>
+          <div className="px-3 pb-2">
+            <div className="w-full aspect-3/4 rounded-xl bg-gray-300/50" />
+          </div>
           <div className="px-3 pb-3 space-y-1.5">
-            <div className="h-3.5 bg-gray-100 rounded w-full" />
-            <div className="h-3 bg-gray-100 rounded w-2/3" />
+            <div className="h-3 bg-gray-300/50 rounded w-full" />
+            <div className="h-2.5 bg-gray-300/40 rounded w-2/3" />
           </div>
         </div>
       ))}
@@ -183,7 +187,7 @@ export default function BrowseSection({ folders, boards, constrained = false }: 
           {isLoading ? skeletonCards : cards.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-sm text-[#3a3a3a]/30">No items found</div>
           ) : (
-            <div className="grid grid-cols-4 gap-3 pb-2">
+            <div className="grid grid-cols-3 gap-3 pb-2">
               {cards.map((card) => <SearchResultCard key={card.id} result={card} />)}
             </div>
           )}

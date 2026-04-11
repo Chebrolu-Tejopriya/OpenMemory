@@ -6,26 +6,21 @@ interface SearchResultsProps {
   isLoading?: boolean;
 }
 
-export default function SearchResults({
-  results,
-  isLoading,
-}: SearchResultsProps) {
+export default function SearchResults({ results, isLoading }: SearchResultsProps) {
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3 md:gap-4">
-        {[...Array(8)].map((_, i) => (
-          <div
-            key={i}
-            className="rounded-lg sm:rounded-xl bg-white border border-gray-100 overflow-hidden animate-pulse"
-          >
-            <div className="aspect-[4/3] sm:aspect-[16/10] bg-gradient-to-br from-gray-100 to-gray-50">
-              <div className="w-full h-full flex items-center justify-center">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gray-200/60" />
-              </div>
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="flex flex-col bg-[#f4f4f4] rounded-2xl overflow-hidden animate-pulse">
+            <div className="px-3 pt-3 pb-1 h-7 flex items-center">
+              <div className="h-2.5 w-20 bg-gray-300/60 rounded-full" />
             </div>
-            <div className="p-2.5 sm:p-3.5 space-y-2 sm:space-y-2.5">
-              <div className="h-3 sm:h-4 bg-gray-100 rounded-md w-full" />
-              <div className="h-2.5 sm:h-3 bg-gray-100 rounded-md w-2/3" />
+            <div className="px-3 pb-2">
+              <div className="w-full aspect-3/4 rounded-xl bg-gray-300/50" />
+            </div>
+            <div className="px-3 pb-3 space-y-1.5">
+              <div className="h-3 bg-gray-300/50 rounded w-full" />
+              <div className="h-2.5 bg-gray-300/40 rounded w-2/3" />
             </div>
           </div>
         ))}
@@ -44,15 +39,14 @@ export default function SearchResults({
           No results found
         </h3>
         <p className="text-gray-400 text-xs sm:text-sm max-w-xs">
-          Try different keywords or adjust your filters to find what you&apos;re
-          looking for
+          Try different keywords or adjust your filters to find what you&apos;re looking for
         </p>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3 md:gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
       {results.map((result) => (
         <SearchResultCard key={result.id} result={result} />
       ))}

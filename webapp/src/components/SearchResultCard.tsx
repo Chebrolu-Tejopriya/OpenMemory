@@ -1,6 +1,5 @@
 import Image from "next/image";
 import { useState } from "react";
-import { Pin } from "lucide-react";
 
 export interface SearchResult {
   id: string;
@@ -47,7 +46,6 @@ export default function SearchResultCard({ result }: SearchResultCardProps) {
   const screenshotUrl = !isPinterest ? getScreenshotUrl(result.url) : null;
   const faviconUrl = getFaviconUrl(result.url);
 
-  // Category label: use folder name, fallback to domain
   const categoryLabel = result.folder && result.folder !== "Bookmarks"
     ? result.folder.split("/").pop() || result.folder
     : domain;
@@ -57,40 +55,42 @@ export default function SearchResultCard({ result }: SearchResultCardProps) {
       href={result.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="group flex flex-col bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300 hover:-translate-y-0.5 overflow-hidden"
+      className="group flex flex-col bg-[#f4f4f4] rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-md hover:-translate-y-0.5"
     >
-      {/* Card header: category label + optional pin icon */}
-      <div className="flex items-center justify-between px-3 pt-3 pb-1">
-        <span className="text-[10px] sm:text-[11px] font-medium text-gray-400 uppercase tracking-wider truncate max-w-[80%]">
+      {/* Top row — category + source dot */}
+      <div className="flex items-center justify-between px-3 pt-3 pb-1 min-h-[28px]">
+        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest truncate max-w-[85%]">
           {categoryLabel}
         </span>
         {isPinterest && (
-          <Pin className="w-3 h-3 text-[#E60023]/60 flex-shrink-0" />
+          <span className="w-2 h-2 rounded-full bg-[#E60023]/50 flex-shrink-0" />
         )}
       </div>
 
-      {/* Contained image area with padding */}
-      <div className="px-3 pb-3">
-        <div className="relative w-full aspect-[4/3] rounded-xl overflow-hidden bg-gray-50">
+      {/* Image container — inset with padding, tall portrait ratio */}
+      <div className="px-3 pb-2">
+        <div className="relative w-full aspect-[3/4] rounded-xl overflow-hidden bg-gray-200">
+
+          {/* Image */}
           {hasPinterestImage ? (
             <Image
               src={result.imageUrl!}
               alt={result.title}
               fill
-              className="object-cover"
+              className="object-cover transition-all duration-300 group-hover:scale-[1.02]"
               unoptimized
             />
           ) : (
             <>
-              {/* Placeholder shown while screenshot loads or on error */}
+              {/* Favicon placeholder */}
               <div
-                className={`absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#f8fffe] to-[#f0f9f6] transition-opacity duration-300 ${
+                className={`absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#f8fffe] to-[#eef7f4] transition-opacity duration-300 ${
                   screenshotLoaded && !screenshotError ? "opacity-0" : "opacity-100"
                 }`}
               >
                 {faviconUrl ? (
                   <div className="flex flex-col items-center gap-2">
-                    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl bg-white shadow-sm flex items-center justify-center p-2">
+                    <div className="w-12 h-12 rounded-xl bg-white shadow-sm flex items-center justify-center p-2.5">
                       <Image
                         src={faviconUrl}
                         alt=""
@@ -109,13 +109,13 @@ export default function SearchResultCard({ result }: SearchResultCardProps) {
                 )}
               </div>
 
-              {/* Screenshot loads in background */}
+              {/* Screenshot */}
               {screenshotUrl && !screenshotError && (
                 <Image
                   src={screenshotUrl}
                   alt={result.title}
                   fill
-                  className={`object-cover transition-opacity duration-500 ${
+                  className={`object-cover transition-all duration-500 group-hover:scale-[1.02] ${
                     screenshotLoaded ? "opacity-100" : "opacity-0"
                   }`}
                   unoptimized
@@ -125,15 +125,22 @@ export default function SearchResultCard({ result }: SearchResultCardProps) {
               )}
             </>
           )}
+
+          {/* Hover overlay — blur + Open button */}
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 backdrop-blur-[0px] group-hover:backdrop-blur-[3px] transition-all duration-300 flex items-center justify-center">
+            <span className="opacity-0 group-hover:opacity-100 transition-all duration-200 delay-75 bg-white/90 text-gray-700 text-xs font-semibold px-5 py-2 rounded-full shadow-sm tracking-wide">
+              Open
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Title and domain */}
-      <div className="px-3 pb-3 flex flex-col gap-1">
-        <h3 className="text-[12px] sm:text-[13px] font-semibold text-gray-800 leading-snug line-clamp-2 group-hover:text-[#3d7a64] transition-colors duration-200">
+      {/* Title */}
+      <div className="px-3 pb-3 flex flex-col gap-0.5">
+        <h3 className="text-[12px] sm:text-[13px] font-semibold text-gray-700 leading-snug line-clamp-2">
           {result.title}
         </h3>
-        <span className="text-[10px] sm:text-[11px] text-gray-400 truncate">{domain}</span>
+        <span className="text-[10px] text-gray-400 truncate">{domain}</span>
       </div>
     </a>
   );
