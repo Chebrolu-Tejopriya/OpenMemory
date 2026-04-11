@@ -250,10 +250,10 @@ export default function Home() {
       <div className="sm:hidden absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-[#ebfdff]/80 to-transparent z-10 pointer-events-none" />
 
       {/* ── Top bar: View toggle (left) + Video controls (right) ── */}
-      <div className="absolute top-2 sm:top-4 left-2 sm:left-4 right-2 sm:right-4 flex items-center justify-between z-30">
+      <div className="absolute top-2 sm:top-4 left-2 sm:left-4 right-2 sm:right-4 flex items-center justify-between z-30 pointer-events-none">
 
         {/* Search / Collections toggle */}
-        <div className={`flex items-center bg-white/40 backdrop-blur-sm border border-[#5b9888]/20 rounded-full p-0.5 gap-0.5 transition-all duration-300 ${hasSearched ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
+        <div className={`pointer-events-auto flex items-center bg-white/40 backdrop-blur-sm border border-[#5b9888]/20 rounded-full p-0.5 gap-0.5 transition-all duration-300 ${hasSearched ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
           <button
             onClick={() => handleViewSwitch("search")}
             className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
@@ -279,7 +279,7 @@ export default function Home() {
         </div>
 
         {/* Video Controls */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
           <button onClick={toggleMute} className="p-1.5 sm:p-2 rounded-full bg-white/30 hover:bg-white/50 backdrop-blur-sm transition-colors duration-300" aria-label={isMuted ? "Unmute" : "Mute"}>
             {isMuted ? <VolumeX className="w-4 h-4 sm:w-5 sm:h-5 text-[#3a3a3a]" /> : <Volume2 className="w-4 h-4 sm:w-5 sm:h-5 text-[#3a3a3a]" />}
           </button>
