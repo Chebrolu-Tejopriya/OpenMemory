@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, Volume2, VolumeX, Play, Pause, RefreshCw, LayoutGrid } from "lucide-react";
+import { Search, Volume2, VolumeX, Play, Pause, RefreshCw, LayoutGrid, X, Bookmark, Hash } from "lucide-react";
 import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
@@ -25,9 +25,16 @@ function getRandomSuggestions(count = 4): string[] {
   return shuffled.slice(0, count);
 }
 
+function displayName(path: string) {
+  const parts = path.split("/");
+  return parts[parts.length - 1] || path;
+}
+
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
 type ActiveView = "search" | "browse";
+type MentionType = "folder" | "board" | null;
+interface ActiveScope { type: "folder" | "board"; value: string }
 
 export default function Home() {
   const [activeView, setActiveView] = useState<ActiveView>("search");
@@ -45,7 +52,16 @@ export default function Home() {
   const [suggestions, setSuggestions] = useState<string[]>(() => getRandomSuggestions(4));
   const [suggestionsVisible, setSuggestionsVisible] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Mention / scope state
+  const [mentionType, setMentionType] = useState<MentionType>(null);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [activeScope, setActiveScope] = useState<ActiveScope | null>(null);
+
   const videoRef = useRef<HTMLVideoElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const mentionContainerRef = useRef<HTMLDivElement>(null);
   const userName = "TEJA";
 
   useEffect(() => {
@@ -62,6 +78,17 @@ export default function Home() {
     fetchFilters();
   }, []);
 
+  // Close mention dropdown on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (mentionContainerRef.current && !mentionContainerRef.current.contains(e.target as Node)) {
+        setMentionOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
   const toggleMute = () => {
     if (videoRef.current) {
       videoRef.current.muted = !videoRef.current.muted;
@@ -76,6 +103,76 @@ export default function Home() {
       setIsPlaying(!isPlaying);
     }
   };
+
+  // Detect @ or # trigger in current cursor word
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchQuery(value);
+
+    const cursor = e.target.selectionStart ?? value.length;
+    const before = value.slice(0, cursor);
+
+    const atMatch = before.match(/@(\S*)$/);
+    const hashMatch = before.match(/#(\S*)$/);
+
+    if (atMatch) {
+      setMentionType("folder");
+      setMentionQuery(atMatch[1]);
+      setMentionOpen(true);
+    } else if (hashMatch) {
+      setMentionType("board");
+      setMentionQuery(hashMatch[1]);
+      setMentionOpen(true);
+    } else {
+      setMentionOpen(false);
+      setMentionType(null);
+      setMentionQuery("");
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") {
+      setMentionOpen(false);
+    }
+  };
+
+  // User picks a folder or board from the dropdown
+  const handleScopeSelect = (item: string) => {
+    // Strip the @... or #... trigger from the query
+    const trigger = mentionType === "folder" ? "@" : "#";
+    const cleaned = searchQuery.replace(new RegExp(`${trigger}\\S*`), "").trim();
+    setSearchQuery(cleaned);
+
+    const type = mentionType!;
+    if (type === "folder") {
+      setSelectedFolder(item);
+      setSelectedBoard("");
+      setSourceFilter("chrome");
+    } else {
+      setSelectedBoard(item);
+      setSelectedFolder("");
+      setSourceFilter("pinterest");
+    }
+    setActiveScope({ type, value: item });
+    setMentionOpen(false);
+    setMentionType(null);
+    setMentionQuery("");
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  // Clear the active scope chip
+  const clearScope = () => {
+    setActiveScope(null);
+    setSelectedFolder("");
+    setSelectedBoard("");
+    setSourceFilter("all");
+    inputRef.current?.focus();
+  };
+
+  // Filtered mention list
+  const mentionList = mentionType === "folder"
+    ? folders.filter(f => displayName(f).toLowerCase().includes(mentionQuery.toLowerCase()))
+    : boards.filter(b => b.toLowerCase().includes(mentionQuery.toLowerCase()));
 
   const performSearch = useCallback(
     async (query: string, source: SourceFilter, folder?: string, board?: string) => {
@@ -123,13 +220,14 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [searchQuery, sourceFilter, selectedFolder, selectedBoard, performSearch]);
 
-  // When switching to browse, clear search state
+  // When switching to collections, clear search state
   const handleViewSwitch = (view: ActiveView) => {
     setActiveView(view);
     if (view === "browse") {
       setSearchQuery("");
       setResults([]);
       setHasSearched(false);
+      setMentionOpen(false);
     }
   };
 
@@ -154,7 +252,7 @@ export default function Home() {
       {/* ── Top bar: View toggle (left) + Video controls (right) ── */}
       <div className="absolute top-2 sm:top-4 left-2 sm:left-4 right-2 sm:right-4 flex items-center justify-between z-30">
 
-        {/* Search / Browse toggle */}
+        {/* Search / Collections toggle */}
         <div className={`flex items-center bg-white/40 backdrop-blur-sm border border-[#5b9888]/20 rounded-full p-0.5 gap-0.5 transition-all duration-300 ${hasSearched ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
           <button
             onClick={() => handleViewSwitch("search")}
@@ -225,6 +323,7 @@ export default function Home() {
 
         {/* Search Bar */}
         <div
+          ref={mentionContainerRef}
           className={`absolute left-1/2 -translate-x-1/2 z-20 px-4 sm:px-0 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
             hasSearched
               ? "top-2 sm:top-[12px] w-full sm:w-[90%] max-w-[928px]"
@@ -233,19 +332,83 @@ export default function Home() {
         >
           <form onSubmit={(e) => { e.preventDefault(); performSearch(searchQuery, sourceFilter, selectedFolder, selectedBoard); }} className="w-full">
             <div className={`w-full flex items-center bg-white/[0.38] border-4 border-solid border-[#5b9888] rounded-[13px] transition-all duration-500 ease-out ${hasSearched ? "px-3 sm:px-[10px] py-1.5 sm:py-[5px]" : "px-3 sm:px-[14px] py-2 sm:py-[8px]"}`}>
-              <div className="flex items-center gap-2 sm:gap-[10px] flex-1">
+              <div className="flex items-center gap-2 sm:gap-[10px] flex-1 min-w-0">
                 <Search className="w-4 h-4 text-[#646464] flex-shrink-0" />
+
+                {/* Active scope chip — folder or board */}
+                {activeScope && (
+                  <div className="flex items-center gap-1 bg-[#5b9888]/15 border border-[#5b9888]/30 rounded-full px-2 py-0.5 flex-shrink-0">
+                    {activeScope.type === "folder"
+                      ? <Bookmark className="w-2.5 h-2.5 text-[#3d7a64]" />
+                      : <Hash className="w-2.5 h-2.5 text-[#3d7a64]" />
+                    }
+                    <span className="text-[11px] font-medium text-[#3d7a64] max-w-[120px] truncate">
+                      {displayName(activeScope.value)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={clearScope}
+                      className="text-[#3d7a64]/60 hover:text-[#3d7a64] transition-colors"
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                )}
+
                 <input
+                  ref={inputRef}
                   type="text"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search your inspirations..."
-                  className={`flex-1 bg-transparent outline-none placeholder:text-[#3a3a3a]/60 text-[#3a3a3a] transition-all duration-300 ${hasSearched ? "text-sm sm:text-[14px] leading-5 sm:leading-[20px]" : "text-base sm:text-[16px] leading-6 sm:leading-[24px]"}`}
+                  onChange={handleInputChange}
+                  onKeyDown={handleKeyDown}
+                  placeholder={activeScope ? "Search within..." : "Search... or @ folders, # boards"}
+                  className={`flex-1 min-w-0 bg-transparent outline-none placeholder:text-[#3a3a3a]/60 text-[#3a3a3a] transition-all duration-300 ${hasSearched ? "text-sm sm:text-[14px] leading-5 sm:leading-[20px]" : "text-base sm:text-[16px] leading-6 sm:leading-[24px]"}`}
                   style={{ fontFamily: "var(--font-geist), sans-serif" }}
                 />
               </div>
             </div>
           </form>
+
+          {/* Mention dropdown */}
+          {mentionOpen && mentionList.length > 0 && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-white/90 backdrop-blur-md rounded-xl shadow-lg border border-[#5b9888]/20 overflow-hidden z-30 max-h-52 overflow-y-auto custom-scrollbar">
+              <div className="px-3 py-1.5 border-b border-[#5b9888]/10">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-[#3a3a3a]/40">
+                  {mentionType === "folder" ? "Bookmark Folders" : "Pinterest Boards"}
+                </p>
+              </div>
+              {mentionList.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); handleScopeSelect(item); }}
+                  className="w-full text-left px-3 py-2 flex items-center gap-2.5 hover:bg-[#5b9888]/8 transition-colors duration-100 group"
+                >
+                  {mentionType === "folder"
+                    ? <Bookmark className="w-3 h-3 text-[#5b9888]/50 group-hover:text-[#5b9888] flex-shrink-0 transition-colors" />
+                    : <Hash className="w-3 h-3 text-[#5b9888]/50 group-hover:text-[#5b9888] flex-shrink-0 transition-colors" />
+                  }
+                  <span className="text-sm text-[#3a3a3a]/80 group-hover:text-[#3a3a3a] truncate transition-colors">
+                    {displayName(item)}
+                  </span>
+                  {item !== displayName(item) && (
+                    <span className="text-[10px] text-[#3a3a3a]/30 truncate ml-auto flex-shrink-0">
+                      {item}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* No matches hint */}
+          {mentionOpen && mentionList.length === 0 && mentionQuery.length > 0 && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-white/90 backdrop-blur-md rounded-xl shadow-lg border border-[#5b9888]/20 z-30 px-4 py-3">
+              <p className="text-xs text-[#3a3a3a]/40">
+                No {mentionType === "folder" ? "folders" : "boards"} matching &quot;{mentionQuery}&quot;
+              </p>
+            </div>
+          )}
 
           {/* Suggestion chips */}
           <div className={`flex flex-col items-center gap-2 mt-3 transition-all duration-500 ease-out ${hasSearched ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
@@ -280,7 +443,7 @@ export default function Home() {
             <div className="relative z-20 flex-shrink-0">
               <SearchFilters
                 activeSource={sourceFilter}
-                onSourceChange={(s) => { setSourceFilter(s); if (s !== "chrome") setSelectedFolder(""); if (s !== "pinterest") setSelectedBoard(""); }}
+                onSourceChange={(s) => { setSourceFilter(s); if (s !== "chrome") { setSelectedFolder(""); if (activeScope?.type === "folder") setActiveScope(null); } if (s !== "pinterest") { setSelectedBoard(""); if (activeScope?.type === "board") setActiveScope(null); } }}
                 resultCount={results.length}
                 folders={folders}
                 boards={boards}
@@ -298,17 +461,17 @@ export default function Home() {
       </div>
 
       {/* ══════════════════════════════════════════
-          BROWSE VIEW
+          COLLECTIONS VIEW
           ══════════════════════════════════════════ */}
       <div
         className={`absolute inset-0 z-10 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
           activeView === "browse" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
       >
-        {/* Frosted glass panel behind browse content */}
+        {/* Frosted glass panel */}
         <div className="absolute inset-0 bg-[#ebfdff]/80 backdrop-blur-sm" />
 
-        {/* Browse content — scrollable within the viewport */}
+        {/* Collections content */}
         <div className="relative z-10 h-full flex flex-col pt-14 sm:pt-16 pb-4 px-4 sm:px-6 md:px-8 overflow-hidden">
           <div className="flex-1 min-h-0 w-full max-w-[1200px] mx-auto overflow-y-auto custom-scrollbar">
             <BrowseSection folders={folders} boards={boards} constrained />
