@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bookmark, Pin, ChevronDown } from "lucide-react";
 import { SearchResult } from "./SearchResultCard";
 
@@ -14,18 +14,14 @@ const GAP_X = 28;
 const GAP_Y = 28;
 const COLS = 4;
 
-// Tile 3×3 so the canvas feels infinite — wrap seamlessly when hitting edges
-const TILES_X = 3;
-const TILES_Y = 3;
+// 5×5 tiling gives 4 full tile-widths of scroll range before needing to wrap
+const TILES_X = 5;
+const TILES_Y = 5;
 
-// Time-based friction: velocity * pow(FRICTION_PER_MS, elapsed_ms)
-// 0.998 ≈ half-life ~346ms — feels like thiings.co / nobocore
-const FRICTION_PER_MS = 0.998;
-const LERP = 0.14;           // rendered pan lerps toward target each RAF (0=no lag, higher=smoother)
-const MIN_VEL = 0.02;
-const ZOOM_MIN = 0.25;
-const ZOOM_MAX = 2.5;
-const MAX_ITEMS = 180;       // cap total to keep DOM lean
+const MAX_ITEMS = 180;
+
+// Mouse-drag inertia (touch/trackpad use native browser inertia)
+const FRICTION_PER_MS = 0.998; // time-based — frame-rate independent
 
 // ── helpers ────────────────────────────────────────────────────────────────
 function screenshotUrl(url: string) {
@@ -58,7 +54,6 @@ function Card({ result, style }: { result: SearchResult; style: React.CSSPropert
       rel="noopener noreferrer"
       style={style}
       className="absolute group flex flex-col bg-[#f4f4f4] rounded-2xl overflow-hidden hover:shadow-xl transition-shadow duration-200"
-      onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="px-3 pt-2.5 pb-1 flex-shrink-0">
         <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-400 truncate block">{label}</span>
@@ -110,41 +105,23 @@ export default function CanvasView({ folders, boards, active }: Props) {
   const [loading, setLoading] = useState(false);
   const hasFetched = useRef(false);
 
-  // ── Filter state ──────────────────────────────────────────────────────────
+  // ── Filter state ─────────────────────────────────────────────────────────
   const [source, setSource] = useState<CanvasSource>("chrome");
   const [selectedFolder, setSelectedFolder] = useState<string>("");
   const [selectedBoard, setSelectedBoard] = useState<string>("");
   const [folderOpen, setFolderOpen] = useState(false);
   const [boardOpen, setBoardOpen] = useState(false);
 
-  // Set default folder/board when folders/boards arrive
-  useEffect(() => {
-    if (folders.length && !selectedFolder) setSelectedFolder("");
-  }, [folders, selectedFolder]);
-  useEffect(() => {
-    if (boards.length && !selectedBoard) setSelectedBoard("");
-  }, [boards, selectedBoard]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const tileWRef = useRef(0);
+  const tileHRef = useRef(0);
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const layerRef = useRef<HTMLDivElement>(null);
-
-  // Pan / zoom — all in refs so RAF never triggers re-render
-  // targetPan = logical position (pointer moves this 1:1; velocity updates this after release)
-  // pan       = rendered position (lerps toward targetPan each RAF tick for silky feel)
-  const targetPan = useRef({ x: 0, y: 0 });
-  const pan = useRef({ x: 0, y: 0 });
-  const vel = useRef({ x: 0, y: 0 });
-  const zoom = useRef(1);
+  // Mouse drag refs
   const dragging = useRef(false);
   const lastPtr = useRef({ x: 0, y: 0 });
+  const vel = useRef({ x: 0, y: 0 });
   const raf = useRef<number | null>(null);
-  const lastTickTime = useRef(0);
-  // Circular buffer: last 100ms of pointer positions for accurate release velocity
   const ptrHistory = useRef<{ x: number; y: number; t: number }[]>([]);
-
-  // Grid metrics (derived from items, stored in refs to avoid closure staleness)
-  const gridW = useRef(0);
-  const gridH = useRef(0);
 
   // ── Fetch ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -179,155 +156,132 @@ export default function CanvasView({ folders, boards, active }: Props) {
         } catch { /* skip */ }
       }
 
-      // Shuffle so bookmarks + pinterest interleave
       all.sort(() => Math.random() - 0.5);
       setItems(all);
       setLoading(false);
     })();
   }, [active, folders, boards]);
 
-  // ── Grid metrics + initial pan ───────────────────────────────────────────
+  // ── Scroll to center tile when content mounts ────────────────────────────
   useEffect(() => {
-    if (!items.length || !containerRef.current) return;
-    const rows = Math.ceil(items.length / COLS);
-    gridW.current = COLS * (CARD_W + GAP_X) - GAP_X;
-    gridH.current = rows * (CARD_H + GAP_Y) - GAP_Y;
-
-    const cw = containerRef.current.clientWidth;
-    const ch = containerRef.current.clientHeight;
-
-    // Center the middle tile in the viewport
-    const start = {
-      x: cw / 2 - (TILES_X * gridW.current) / 2 - gridW.current / 2 + gridW.current,
-      y: ch / 2 - (TILES_Y * gridH.current) / 2 - gridH.current / 2 + gridH.current,
-    };
-    pan.current = { ...start };
-    targetPan.current = { ...start };
-    applyTransform();
+    const el = scrollRef.current;
+    if (!el || !tileWRef.current || !tileHRef.current) return;
+    // Start at tile (2,2) — center of 5×5 grid
+    el.scrollLeft = tileWRef.current * 2;
+    el.scrollTop = tileHRef.current * 2;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items]);
+  }, [items, source, selectedFolder, selectedBoard]);
 
-  // ── Transform ────────────────────────────────────────────────────────────
-  const applyTransform = useCallback(() => {
-    if (!layerRef.current) return;
-    layerRef.current.style.transform =
-      `translate3d(${pan.current.x}px,${pan.current.y}px,0) scale(${zoom.current})`;
+  // ── Infinite wrap: reset scroll to equivalent center-tile position ───────
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const onScroll = () => {
+      const tw = tileWRef.current;
+      const th = tileHRef.current;
+      if (!tw || !th) return;
+      // Keep scrollLeft in the range [tw, tw*3] — if it drifts outside, jump by one tile
+      if (el.scrollLeft >= tw * 3) el.scrollLeft -= tw;
+      else if (el.scrollLeft < tw) el.scrollLeft += tw;
+      if (el.scrollTop >= th * 3) el.scrollTop -= th;
+      else if (el.scrollTop < th) el.scrollTop += th;
+    };
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
   }, []);
 
-  // ── Seamless wrap — shift BOTH pan and target together to avoid visual jump ─
-  const wrapTarget = useCallback(() => {
-    const gw = gridW.current;
-    const gh = gridH.current;
-    if (!gw || !gh) return;
-    if (targetPan.current.x > gw)        { targetPan.current.x -= gw; pan.current.x -= gw; }
-    else if (targetPan.current.x < -gw)  { targetPan.current.x += gw; pan.current.x += gw; }
-    if (targetPan.current.y > gh)        { targetPan.current.y -= gh; pan.current.y -= gh; }
-    else if (targetPan.current.y < -gh)  { targetPan.current.y += gh; pan.current.y += gh; }
-  }, []);
+  // ── Mouse drag (touch/trackpad use native scroll automatically) ──────────
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
 
-  // ── RAF tick ─────────────────────────────────────────────────────────────
-  // Two-stage: target follows pointer / inertia; rendered pan lerps toward target.
-  const tick = useCallback((now: number) => {
-    const dt = lastTickTime.current ? Math.min(now - lastTickTime.current, 64) : 16;
-    lastTickTime.current = now;
+    const onDown = (e: PointerEvent) => {
+      // Only handle mouse — touch and pen use native scroll
+      if (e.pointerType !== "mouse" || e.button !== 0) return;
+      // Don't drag when clicking a link or button
+      if ((e.target as HTMLElement).closest("a, button")) return;
 
-    if (!dragging.current) {
-      // Time-based friction — frame-rate independent
-      const decay = Math.pow(FRICTION_PER_MS, dt);
-      vel.current.x *= decay;
-      vel.current.y *= decay;
-      targetPan.current.x += vel.current.x;
-      targetPan.current.y += vel.current.y;
-      wrapTarget();
-    }
+      e.preventDefault();
+      dragging.current = true;
+      lastPtr.current = { x: e.clientX, y: e.clientY };
+      vel.current = { x: 0, y: 0 };
+      ptrHistory.current = [{ x: e.clientX, y: e.clientY, t: e.timeStamp }];
+      if (raf.current) { cancelAnimationFrame(raf.current); raf.current = null; }
+      el.setPointerCapture(e.pointerId);
+      el.style.cursor = "grabbing";
+    };
 
-    // Lerp rendered pan toward logical target — the magic smoothness
-    pan.current.x += (targetPan.current.x - pan.current.x) * LERP;
-    pan.current.y += (targetPan.current.y - pan.current.y) * LERP;
-    applyTransform();
-
-    const velDone = Math.abs(vel.current.x) < MIN_VEL && Math.abs(vel.current.y) < MIN_VEL;
-    const lerpDone = Math.abs(targetPan.current.x - pan.current.x) < 0.1 &&
-                     Math.abs(targetPan.current.y - pan.current.y) < 0.1;
-    if (!dragging.current && velDone && lerpDone) {
-      raf.current = null;
-      return;
-    }
-    raf.current = requestAnimationFrame(tick);
-  }, [applyTransform, wrapTarget]);
-
-  // ── Pointer ──────────────────────────────────────────────────────────────
-  const onPointerDown = useCallback((e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    dragging.current = true;
-    lastPtr.current = { x: e.clientX, y: e.clientY };
-    vel.current = { x: 0, y: 0 };
-    ptrHistory.current = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
-    if (raf.current) cancelAnimationFrame(raf.current);
-    lastTickTime.current = 0;
-    raf.current = requestAnimationFrame(tick); // keep lerp running during drag
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    if (containerRef.current) containerRef.current.style.cursor = "grabbing";
-    if (layerRef.current) layerRef.current.style.pointerEvents = "none";
-  }, [tick]);
-
-  const onPointerMove = useCallback((e: React.PointerEvent) => {
-    if (!dragging.current) return;
-    const dx = e.clientX - lastPtr.current.x;
-    const dy = e.clientY - lastPtr.current.y;
-    lastPtr.current = { x: e.clientX, y: e.clientY };
-    // Target pan tracks pointer 1:1 — no lag during active drag
-    targetPan.current.x += dx;
-    targetPan.current.y += dy;
-    wrapTarget();
-    // Record history for release velocity
-    const now = performance.now();
-    ptrHistory.current.push({ x: e.clientX, y: e.clientY, t: now });
-    ptrHistory.current = ptrHistory.current.filter(p => now - p.t < 100);
-  }, [wrapTarget]);
-
-  const onPointerUp = useCallback(() => {
-    if (!dragging.current) return;
-    dragging.current = false;
-    if (containerRef.current) containerRef.current.style.cursor = "grab";
-    if (layerRef.current) layerRef.current.style.pointerEvents = "";
-    // Compute release velocity from pointer history (last 100ms average)
-    const h = ptrHistory.current;
-    if (h.length >= 2) {
-      const old = h[0];
-      const latest = h[h.length - 1];
-      const dt = latest.t - old.t;
-      if (dt > 0) {
-        // Scale to per-frame (16ms) velocity
-        vel.current.x = ((latest.x - old.x) / dt) * 16;
-        vel.current.y = ((latest.y - old.y) / dt) * 16;
+    const onMove = (e: PointerEvent) => {
+      if (!dragging.current || e.pointerType !== "mouse") return;
+      // Process all coalesced events for sub-frame accuracy
+      const events = (e as PointerEvent & { getCoalescedEvents?(): PointerEvent[] }).getCoalescedEvents?.() ?? [e];
+      for (const ev of events) {
+        const dx = ev.clientX - lastPtr.current.x;
+        const dy = ev.clientY - lastPtr.current.y;
+        lastPtr.current = { x: ev.clientX, y: ev.clientY };
+        // Direct scrollLeft/scrollTop — no RAF, no transform, handled by browser
+        el.scrollLeft -= dx;
+        el.scrollTop -= dy;
+        ptrHistory.current.push({ x: ev.clientX, y: ev.clientY, t: ev.timeStamp });
       }
-    }
-    // RAF already running from onPointerDown — inertia continues automatically
+      const now = e.timeStamp;
+      ptrHistory.current = ptrHistory.current.filter(p => now - p.t < 80);
+    };
+
+    const onUp = (e: PointerEvent) => {
+      if (!dragging.current || e.pointerType !== "mouse") return;
+      dragging.current = false;
+      el.style.cursor = "grab";
+
+      // Derive release velocity from 80ms pointer history
+      const h = ptrHistory.current;
+      if (h.length >= 2) {
+        const oldest = h[0];
+        const latest = h[h.length - 1];
+        const dt = latest.t - oldest.t;
+        if (dt > 0) {
+          // Negate because scrollLeft decreases when dragging right
+          vel.current.x = -((latest.x - oldest.x) / dt) * 16;
+          vel.current.y = -((latest.y - oldest.y) / dt) * 16;
+        }
+      }
+
+      // Inertia: apply decaying velocity to scrollLeft/scrollTop via RAF
+      let lastTime = 0;
+      const tick = (now: number) => {
+        const dt = lastTime ? Math.min(now - lastTime, 64) : 16;
+        lastTime = now;
+        const decay = Math.pow(FRICTION_PER_MS, dt);
+        vel.current.x *= decay;
+        vel.current.y *= decay;
+        el.scrollLeft += vel.current.x;
+        el.scrollTop += vel.current.y;
+        if (Math.abs(vel.current.x) > 0.1 || Math.abs(vel.current.y) > 0.1) {
+          raf.current = requestAnimationFrame(tick);
+        } else {
+          raf.current = null;
+        }
+      };
+      raf.current = requestAnimationFrame(tick);
+    };
+
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointermove", onMove, { passive: true });
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onUp);
+
+    return () => {
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
+      if (raf.current) cancelAnimationFrame(raf.current);
+    };
   }, []);
 
-  // ── Wheel zoom ───────────────────────────────────────────────────────────
-  const onWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    const prev = zoom.current;
-    const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, prev * (1 - e.deltaY * 0.001)));
-    const s = next / prev;
-    // Zoom toward cursor — update both target and rendered pan together
-    pan.current.x = mx - s * (mx - pan.current.x);
-    pan.current.y = my - s * (my - pan.current.y);
-    targetPan.current.x = pan.current.x;
-    targetPan.current.y = pan.current.y;
-    zoom.current = next;
-    applyTransform();
-  }, [applyTransform]);
-
-  useEffect(() => () => { if (raf.current) cancelAnimationFrame(raf.current); }, []);
-
-  // ── Filter items by source + folder/board ────────────────────────────────
+  // ── Filter items ─────────────────────────────────────────────────────────
   const filteredItems = items.filter((item) => {
     if (item.source !== source) return false;
     if (source === "chrome" && selectedFolder) {
@@ -341,10 +295,13 @@ export default function CanvasView({ folders, boards, active }: Props) {
     return true;
   });
 
-  // ── Build tiled positions ─────────────────────────────────────────────────
+  // ── Build tiled grid ──────────────────────────────────────────────────────
   const rows = Math.ceil(filteredItems.length / COLS);
   const tileW = COLS * (CARD_W + GAP_X);
   const tileH = rows * (CARD_H + GAP_Y);
+  // Store in refs for the scroll/wrap handlers
+  tileWRef.current = tileW;
+  tileHRef.current = tileH;
   const totalW = TILES_X * tileW;
   const totalH = TILES_Y * tileH;
 
@@ -374,25 +331,43 @@ export default function CanvasView({ folders, boards, active }: Props) {
   }
 
   return (
-    <div
-      ref={containerRef}
-      className="absolute inset-0 overflow-hidden"
-      style={{ cursor: "grab", touchAction: "none" }}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerLeave={onPointerUp}
-      onWheel={onWheel}
-    >
+    <div className="absolute inset-0">
       {/* Background */}
-      <div className="absolute inset-0 bg-[#ebfdff]/85 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-[#ebfdff]/85 backdrop-blur-sm pointer-events-none" />
 
-      {/* ── Top-right filter bar ── */}
+      {/* ── Native scroll canvas ── */}
       <div
-        className="absolute top-3 right-3 z-30 flex items-center gap-2 pointer-events-auto"
+        ref={scrollRef}
+        className="absolute inset-0 overflow-auto"
+        style={{
+          cursor: "grab",
+          // Hide scrollbars — navigation is via drag/touch
+          scrollbarWidth: "none",
+          // Disable overscroll bounce so wrap feels seamless
+          overscrollBehavior: "none",
+        }}
+      >
+        {/* Hide webkit scrollbar */}
+        <style>{`.hide-scrollbar::-webkit-scrollbar{display:none}`}</style>
+        <div
+          className="hide-scrollbar relative"
+          style={{ width: totalW, height: totalH }}
+        >
+          {tiledCards.map(({ item, x, y, key }) => (
+            <Card
+              key={key}
+              result={item}
+              style={{ width: CARD_W, height: CARD_H, left: x, top: y }}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* ── Top-right filter bar — floats above scroll ── */}
+      <div
+        className="absolute top-3 right-3 z-30 flex items-center gap-2"
         onPointerDown={(e) => e.stopPropagation()}
       >
-        {/* Source tab switch */}
         <div className="flex items-center bg-white/40 backdrop-blur-md border border-white/50 rounded-xl p-1 gap-0.5 shadow-sm">
           <button
             onClick={() => { setSource("chrome"); setFolderOpen(false); setBoardOpen(false); }}
@@ -414,7 +389,6 @@ export default function CanvasView({ folders, boards, active }: Props) {
           </button>
         </div>
 
-        {/* Folder / Board dropdown */}
         {activeList.length > 0 && (
           <div className="relative">
             <button
@@ -426,7 +400,7 @@ export default function CanvasView({ folders, boards, active }: Props) {
             </button>
 
             {dropdownOpen && (
-              <div className="absolute top-full right-0 mt-1.5 w-52 bg-white/90 backdrop-blur-md border border-[#5b9888]/15 rounded-xl shadow-lg overflow-hidden z-40 max-h-64 overflow-y-auto custom-scrollbar">
+              <div className="absolute top-full right-0 mt-1.5 w-52 bg-white/90 backdrop-blur-md border border-[#5b9888]/15 rounded-xl shadow-lg overflow-hidden z-40 max-h-64 overflow-y-auto">
                 <button
                   onClick={() => { source === "chrome" ? setSelectedFolder("") : setSelectedBoard(""); setDropdownOpen(false); }}
                   className={`w-full text-left px-3 py-2 text-xs transition-colors ${!activeSelected ? "text-[#3d7a64] font-medium bg-[#5b9888]/8" : "text-[#3a3a3a]/60 hover:bg-[#5b9888]/5"}`}
@@ -459,24 +433,9 @@ export default function CanvasView({ folders, boards, active }: Props) {
       {/* Hint */}
       {!loading && filteredItems.length > 0 && (
         <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none select-none">
-          <p className="text-[10px] text-[#3a3a3a]/25 tracking-widest uppercase">Drag to explore · scroll to zoom</p>
+          <p className="text-[10px] text-[#3a3a3a]/25 tracking-widest uppercase">Drag to explore</p>
         </div>
       )}
-
-      {/* Pan layer — tiled 3×3 */}
-      <div
-        ref={layerRef}
-        className="absolute top-0 left-0"
-        style={{ width: totalW, height: totalH, transformOrigin: "0 0", willChange: "transform" }}
-      >
-        {tiledCards.map(({ item, x, y, key }) => (
-          <Card
-            key={key}
-            result={item}
-            style={{ width: CARD_W, height: CARD_H, left: x, top: y }}
-          />
-        ))}
-      </div>
     </div>
   );
 }
