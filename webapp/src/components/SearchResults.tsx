@@ -16,7 +16,7 @@ export default function SearchResults({ results, isLoading }: SearchResultsProps
               <div className="h-2.5 w-20 bg-gray-300/60 rounded-full" />
             </div>
             <div className="px-3 pb-2">
-              <div className="w-full aspect-3/4 rounded-xl bg-gray-300/50" />
+              <div className="w-full aspect-square rounded-xl bg-gray-300/50" />
             </div>
             <div className="px-3 pb-3 space-y-1.5">
               <div className="h-3 bg-gray-300/50 rounded w-full" />

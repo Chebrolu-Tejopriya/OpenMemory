@@ -69,7 +69,7 @@ export default function SearchResultCard({ result }: SearchResultCardProps) {
 
       {/* Image container — inset with padding, tall portrait ratio */}
       <div className="px-3 pb-2">
-        <div className="relative w-full aspect-[3/4] rounded-xl overflow-hidden bg-gray-200">
+        <div className="relative w-full aspect-square rounded-xl overflow-hidden bg-gray-200">
 
           {/* Image */}
           {hasPinterestImage ? (
