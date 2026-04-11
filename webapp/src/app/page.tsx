@@ -32,9 +32,13 @@ function displayName(path: string) {
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
-const VIDEOS = [
-  "/videos/leaf-animation.mp4",
-  "/videos/leaf-animation-2.mp4",
+type ThemeMedia = { type: "video"; src: string } | { type: "image"; src: string };
+
+const THEMES: ThemeMedia[] = [
+  { type: "video", src: "/videos/leaf-animation.mp4" },
+  { type: "video", src: "/videos/leaf-animation-2.mp4" },
+  // Add more themes here — either { type: "video", src: "..." } or { type: "image", src: "..." }
+  // e.g. { type: "image", src: "/images/leaf-bg.png" },
 ];
 
 type ActiveView = "search" | "browse";
@@ -47,7 +51,7 @@ export default function Home() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [videoIndex, setVideoIndex] = useState(0);
+  const [themeIndex, setThemeIndex] = useState(0);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [folders, setFolders] = useState<string[]>([]);
   const [boards, setBoards] = useState<string[]>([]);
@@ -93,14 +97,16 @@ export default function Home() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const switchVideo = (idx: number) => {
-    setVideoIndex(idx);
-    setTimeout(() => {
-      if (videoRef.current) {
-        videoRef.current.load();
-        videoRef.current.play();
-      }
-    }, 0);
+  const switchTheme = (idx: number) => {
+    setThemeIndex(idx);
+    if (THEMES[idx].type === "video") {
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.load();
+          videoRef.current.play();
+        }
+      }, 0);
+    }
   };
 
   // Detect @ or # trigger in current cursor word
@@ -233,14 +239,24 @@ export default function Home() {
   return (
     <div className="relative w-full h-screen overflow-hidden bg-[#ebfdff]">
 
-      {/* Video Background */}
-      <video
-        ref={videoRef}
-        className="absolute inset-0 w-full h-full object-cover md:object-fill"
-        autoPlay loop muted playsInline
-      >
-        <source src={VIDEOS[videoIndex]} type="video/mp4" />
-      </video>
+      {/* Background — video or image depending on active theme */}
+      {THEMES[themeIndex].type === "video" ? (
+        <video
+          ref={videoRef}
+          className="absolute inset-0 w-full h-full object-cover md:object-fill"
+          autoPlay loop muted playsInline
+        >
+          <source src={THEMES[themeIndex].src} type="video/mp4" />
+        </video>
+      ) : (
+        <Image
+          src={THEMES[themeIndex].src}
+          alt=""
+          fill
+          className="absolute inset-0 object-cover md:object-fill"
+          priority
+        />
+      )}
 
       {/* Top Gradient */}
       <div className="hidden sm:block absolute top-[-36px] left-[-35px] w-[1518px] h-[142px] z-10 pointer-events-none">
@@ -251,13 +267,13 @@ export default function Home() {
       {/* ── Theme toggle (top-right) ── */}
       <div className="absolute top-3 sm:top-4 right-3 sm:right-4 z-30 pointer-events-auto">
         <div className="flex items-center gap-1 p-1 bg-white/30 backdrop-blur-md border border-white/40 rounded-full shadow-sm">
-          {VIDEOS.map((_, idx) => (
+          {THEMES.map((_, idx) => (
             <button
               key={idx}
-              onClick={() => switchVideo(idx)}
+              onClick={() => switchTheme(idx)}
               aria-label={`Theme ${idx + 1}`}
               className={`w-6 h-6 rounded-full flex items-center justify-center transition-all duration-200 ${
-                videoIndex === idx
+                themeIndex === idx
                   ? "bg-[#3d7a64] shadow-sm shadow-[#3d7a64]/30"
                   : "hover:bg-white/50"
               }`}
