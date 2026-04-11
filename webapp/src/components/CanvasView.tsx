@@ -118,6 +118,8 @@ export default function CanvasView({ folders, boards, active }: Props) {
 
   // Mouse drag refs
   const dragging = useRef(false);
+  const didDrag = useRef(false);   // true once movement > threshold — suppresses link click
+  const dragStart = useRef({ x: 0, y: 0 });
   const lastPtr = useRef({ x: 0, y: 0 });
   const vel = useRef({ x: 0, y: 0 });
   const raf = useRef<number | null>(null);
@@ -130,33 +132,37 @@ export default function CanvasView({ folders, boards, active }: Props) {
     setLoading(true);
 
     (async () => {
-      const all: SearchResult[] = [];
+      // Cap each source independently so bookmarks can't starve pinterest items
+      const CAP = MAX_ITEMS;
+      const bookmarks: SearchResult[] = [];
+      const pins: SearchResult[] = [];
 
       for (const folder of folders) {
-        if (all.length >= MAX_ITEMS) break;
+        if (bookmarks.length >= CAP) break;
         try {
           const r = await fetch(`${BACKEND_URL}/browse?source=chrome&folder=${encodeURIComponent(folder)}`);
           if (!r.ok) continue;
           const d = await r.json();
           (d.results || []).forEach((item: { title: string; url: string; folder: string | null; source: string; imageUrl: string | null }, i: number) => {
-            if (all.length < MAX_ITEMS) all.push({ id: `bm-${folder}-${i}`, title: item.title, folder: item.folder || folder, url: item.url, source: "chrome", imageUrl: item.imageUrl || undefined });
+            if (bookmarks.length < CAP) bookmarks.push({ id: `bm-${folder}-${i}`, title: item.title, folder: item.folder || folder, url: item.url, source: "chrome", imageUrl: item.imageUrl || undefined });
           });
         } catch { /* skip */ }
       }
 
       for (const board of boards) {
-        if (all.length >= MAX_ITEMS) break;
+        if (pins.length >= CAP) break;
         try {
           const r = await fetch(`${BACKEND_URL}/browse?source=pinterest&board=${encodeURIComponent(board)}`);
           if (!r.ok) continue;
           const d = await r.json();
           (d.results || []).forEach((item: { title: string | null; pin_url: string; board_name: string | null; image_url: string | null }, i: number) => {
-            if (all.length < MAX_ITEMS) all.push({ id: `pin-${board}-${i}`, title: item.title || "Untitled", folder: item.board_name || board, url: item.pin_url, source: "pinterest", imageUrl: item.image_url || undefined });
+            if (pins.length < CAP) pins.push({ id: `pin-${board}-${i}`, title: item.title || "Untitled", folder: item.board_name || board, url: item.pin_url, source: "pinterest", imageUrl: item.image_url || undefined });
           });
         } catch { /* skip */ }
       }
 
-      all.sort(() => Math.random() - 0.5);
+      // Combine and shuffle within each source group
+      const all = [...bookmarks, ...pins].sort(() => Math.random() - 0.5);
       setItems(all);
       setLoading(false);
     })();
@@ -198,19 +204,16 @@ export default function CanvasView({ folders, boards, active }: Props) {
     if (!el) return;
 
     const onDown = (e: PointerEvent) => {
-      // Only handle mouse — touch and pen use native scroll
+      // Only handle mouse — touch/pen get native scroll
       if (e.pointerType !== "mouse" || e.button !== 0) return;
-      // Don't drag when clicking a link or button
-      if ((e.target as HTMLElement).closest("a, button")) return;
-
-      e.preventDefault();
       dragging.current = true;
+      didDrag.current = false;
+      dragStart.current = { x: e.clientX, y: e.clientY };
       lastPtr.current = { x: e.clientX, y: e.clientY };
       vel.current = { x: 0, y: 0 };
       ptrHistory.current = [{ x: e.clientX, y: e.clientY, t: e.timeStamp }];
       if (raf.current) { cancelAnimationFrame(raf.current); raf.current = null; }
       el.setPointerCapture(e.pointerId);
-      el.style.cursor = "grabbing";
     };
 
     const onMove = (e: PointerEvent) => {
@@ -221,13 +224,30 @@ export default function CanvasView({ folders, boards, active }: Props) {
         const dx = ev.clientX - lastPtr.current.x;
         const dy = ev.clientY - lastPtr.current.y;
         lastPtr.current = { x: ev.clientX, y: ev.clientY };
-        // Direct scrollLeft/scrollTop — no RAF, no transform, handled by browser
         el.scrollLeft -= dx;
         el.scrollTop -= dy;
         ptrHistory.current.push({ x: ev.clientX, y: ev.clientY, t: ev.timeStamp });
       }
+      // Crossed threshold → this is a real drag
+      if (!didDrag.current) {
+        const mx = e.clientX - dragStart.current.x;
+        const my = e.clientY - dragStart.current.y;
+        if (Math.abs(mx) > 4 || Math.abs(my) > 4) {
+          didDrag.current = true;
+          el.style.cursor = "grabbing";
+        }
+      }
       const now = e.timeStamp;
       ptrHistory.current = ptrHistory.current.filter(p => now - p.t < 80);
+    };
+
+    // Swallow link/button clicks that followed a drag
+    const onClickCapture = (e: MouseEvent) => {
+      if (didDrag.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        didDrag.current = false;
+      }
     };
 
     const onUp = (e: PointerEvent) => {
@@ -271,12 +291,14 @@ export default function CanvasView({ folders, boards, active }: Props) {
     el.addEventListener("pointermove", onMove, { passive: true });
     el.addEventListener("pointerup", onUp);
     el.addEventListener("pointercancel", onUp);
+    el.addEventListener("click", onClickCapture, { capture: true });
 
     return () => {
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onUp);
+      el.removeEventListener("click", onClickCapture, { capture: true });
       if (raf.current) cancelAnimationFrame(raf.current);
     };
   }, []);
