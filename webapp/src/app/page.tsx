@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, Volume2, VolumeX, Play, Pause, RefreshCw, LayoutGrid, X, Bookmark, Hash } from "lucide-react";
+import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash } from "lucide-react";
 import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
@@ -32,6 +32,11 @@ function displayName(path: string) {
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
+const VIDEOS = [
+  "/videos/leaf-animation.mp4",
+  "/videos/leaf-animation-2.mp4",
+];
+
 type ActiveView = "search" | "browse";
 type MentionType = "folder" | "board" | null;
 interface ActiveScope { type: "folder" | "board"; value: string }
@@ -42,8 +47,7 @@ export default function Home() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [videoIndex, setVideoIndex] = useState(0);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [folders, setFolders] = useState<string[]>([]);
   const [boards, setBoards] = useState<string[]>([]);
@@ -89,19 +93,14 @@ export default function Home() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const toggleMute = () => {
-    if (videoRef.current) {
-      videoRef.current.muted = !videoRef.current.muted;
-      setIsMuted(!isMuted);
-    }
-  };
-
-  const togglePlayPause = () => {
-    if (videoRef.current) {
-      if (isPlaying) videoRef.current.pause();
-      else videoRef.current.play();
-      setIsPlaying(!isPlaying);
-    }
+  const switchVideo = (idx: number) => {
+    setVideoIndex(idx);
+    setTimeout(() => {
+      if (videoRef.current) {
+        videoRef.current.load();
+        videoRef.current.play();
+      }
+    }, 0);
   };
 
   // Detect @ or # trigger in current cursor word
@@ -240,7 +239,7 @@ export default function Home() {
         className="absolute inset-0 w-full h-full object-cover md:object-fill"
         autoPlay loop muted playsInline
       >
-        <source src="/videos/leaf-animation.mp4" type="video/mp4" />
+        <source src={VIDEOS[videoIndex]} type="video/mp4" />
       </video>
 
       {/* Top Gradient */}
@@ -249,16 +248,27 @@ export default function Home() {
       </div>
       <div className="sm:hidden absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-[#ebfdff]/80 to-transparent z-10 pointer-events-none" />
 
-      {/* ── Top bar: Video controls only (right) ── */}
-      <div className="absolute top-2 sm:top-4 right-2 sm:right-4 flex items-center z-30 pointer-events-none">
-        {/* Video Controls */}
-        <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
-          <button onClick={toggleMute} className="p-1.5 sm:p-2 rounded-full bg-white/30 hover:bg-white/50 backdrop-blur-sm transition-colors duration-300" aria-label={isMuted ? "Unmute" : "Mute"}>
-            {isMuted ? <VolumeX className="w-4 h-4 sm:w-5 sm:h-5 text-[#3a3a3a]" /> : <Volume2 className="w-4 h-4 sm:w-5 sm:h-5 text-[#3a3a3a]" />}
-          </button>
-          <button onClick={togglePlayPause} className="p-1.5 sm:p-2 rounded-full bg-white/30 hover:bg-white/50 backdrop-blur-sm transition-colors duration-300" aria-label={isPlaying ? "Pause" : "Play"}>
-            {isPlaying ? <Pause className="w-4 h-4 sm:w-5 sm:h-5 text-[#3a3a3a]" /> : <Play className="w-4 h-4 sm:w-5 sm:h-5 text-[#3a3a3a]" />}
-          </button>
+      {/* ── Theme toggle (top-right) ── */}
+      <div className="absolute top-3 sm:top-4 right-3 sm:right-4 z-30 pointer-events-auto">
+        <div className="flex items-center gap-1 p-1 bg-white/30 backdrop-blur-md border border-white/40 rounded-full shadow-sm">
+          {VIDEOS.map((_, idx) => (
+            <button
+              key={idx}
+              onClick={() => switchVideo(idx)}
+              aria-label={`Theme ${idx + 1}`}
+              className={`w-6 h-6 rounded-full flex items-center justify-center transition-all duration-200 ${
+                videoIndex === idx
+                  ? "bg-[#3d7a64] shadow-sm shadow-[#3d7a64]/30"
+                  : "hover:bg-white/50"
+              }`}
+            >
+              <span
+                className={`block rounded-full transition-all duration-200 ${
+                  videoIndex === idx ? "w-2 h-2 bg-white" : "w-1.5 h-1.5 bg-[#3a3a3a]/30"
+                }`}
+              />
+            </button>
+          ))}
         </div>
       </div>
 
