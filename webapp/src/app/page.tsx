@@ -126,7 +126,7 @@ export default function Home() {
       {/* ═══════════════════════════════════════════
           FIRST FOLD — Hero (sticky, stays behind as browse scrolls over)
           ═══════════════════════════════════════════ */}
-      <section className="sticky top-0 h-screen w-full overflow-hidden bg-[#ebfdff]" style={{ zIndex: 0 }}>
+      <section className="relative h-screen w-full overflow-hidden bg-[#ebfdff]">
 
         {/* Video Background */}
         <video
@@ -181,8 +181,8 @@ export default function Home() {
         <div
           className={`absolute left-1/2 -translate-x-1/2 z-20 px-4 sm:px-0 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
             hasSearched
-              ? "top-2 sm:top-[12px] w-full sm:w-[90%] max-w-[600px]"
-              : "top-[120px] sm:top-[200px] w-full sm:w-[95%] max-w-[700px]"
+              ? "top-2 sm:top-[12px] w-full sm:w-[90%] max-w-[928px]"
+              : "top-[120px] sm:top-[200px] w-full sm:w-[95%] max-w-[836px]"
           }`}
         >
           <form onSubmit={(e) => { e.preventDefault(); performSearch(searchQuery, sourceFilter, selectedFolder, selectedBoard); }} className="w-full">
@@ -252,33 +252,32 @@ export default function Home() {
       </section>
 
       {/* ═══════════════════════════════════════════
-          SECOND FOLD — Browse section (scrolls over sticky hero)
+          BRIDGE — flat #EBFDFF rect with blur(2px), bleeds 63px each side
+          Matches Figma exactly: solid color + filter blur, no transparency
+          ═══════════════════════════════════════════ */}
+      <div
+        aria-hidden
+        style={{
+          position: 'relative',
+          zIndex: 5,
+          marginTop: '-55px',
+          marginLeft: '-63px',
+          marginRight: '-63px',
+          height: '111px',
+          background: '#EBFDFF',
+          filter: 'blur(2px)',
+          pointerEvents: 'none',
+        }}
+      />
+
+      {/* ═══════════════════════════════════════════
+          SECOND FOLD — Browse section
           ═══════════════════════════════════════════ */}
       <section
-        className="relative w-full min-h-screen"
-        style={{
-          zIndex: 10,
-          /* Gradient bg: transparent at top (shows hero leaves through bridge), soft fade to solid */
-          background: 'linear-gradient(180deg, transparent 0px, transparent 80px, #EBFDFF 130px)',
-        }}
+        className="relative w-full min-h-screen bg-[#ebfdff]"
+        style={{ marginTop: '-56px' }}
       >
-        {/* Bridge — bleeds 63px each side, blurs hero leaves at the seam */}
-        <div
-          className="absolute pointer-events-none"
-          style={{
-            top: 0,
-            left: '-63px',
-            width: 'calc(100% + 126px)',
-            height: '111px',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
-            background: 'linear-gradient(180deg, rgba(235,253,255,0.1) 0%, rgba(235,253,255,0.6) 55%, #EBFDFF 100%)',
-            filter: 'blur(2px)',
-            zIndex: 10,
-          }}
-        />
-
-        <div className="relative w-full px-4 sm:px-6 md:px-8 max-w-[1200px] mx-auto pb-12" style={{ zIndex: 20, paddingTop: '120px' }}>
+        <div className="relative w-full px-4 sm:px-6 md:px-8 max-w-[1200px] mx-auto pt-10 pb-12">
           <BrowseSection folders={folders} boards={boards} />
         </div>
       </section>
