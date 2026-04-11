@@ -7,16 +7,14 @@ Claude MUST follow this strictly. No assumptions. No deviations.
 
 # 1. PRODUCT DEFINITION
 
-OpenMemory is a:
-
-> Personal inspiration memory system with semantic search
+OpenMemory is a personal inspiration memory system.
 
 Users can:
-
-* Save content (Chrome bookmarks, Pinterest pins)
-* Search using natural language ("dark fintech dashboard")
-* Filter by source, folder, board, and time
-* Retrieve relevant inspiration instantly
+- Save content (Chrome bookmarks, Pinterest pins) via the Chrome extension
+- Search using natural language ("dark fintech dashboard")
+- Filter by source, folder, or board
+- Browse all saved items in a collections grid
+- Explore visually in a drag-to-pan infinite canvas
 
 ---
 
@@ -38,50 +36,53 @@ Users can:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Chrome Extension (Manifest V3)                             │
-│  ├── sidepanel.html (UI - dark theme)                       │
-│  ├── search.ts (hybrid search: vector + text)               │
-│  ├── background.ts (service worker, alarms, sync)           │
-│  ├── supabase.ts (cloud CRUD operations)                    │
-│  ├── pinterest.ts + pinterest_active.ts (Pinterest sync)    │
-│  └── db.ts (IndexedDB via Dexie.js)                         │
+│  ├── sidepanel.html              UI                         │
+│  ├── background.ts               service worker, alarms     │
+│  ├── search.ts                   hybrid search logic        │
+│  ├── supabase.ts                 cloud CRUD + embeddings    │
+│  ├── pinterest.ts                Pinterest content script   │
+│  └── db.ts                       IndexedDB via Dexie.js     │
 ├─────────────────────────────────────────────────────────────┤
-│  Local Backend (localhost:3000) - AUTO-STARTS ON LOGIN      │
-│  ├── Express server (Node.js + TypeScript)                  │
-│  ├── Python FastEmbed for embedding generation              │
-│  │   └── Models: bge-small-en-v1.5, clip-ViT-B-32           │
-│  ├── SQLite via better-sqlite3 (local cache)                │
-│  └── Endpoints: /embed, /search, /pinterest/ingest          │
+│  Next.js Webapp  →  Vercel (open-memory-nine.vercel.app)    │
+│  src/app/page.tsx                single-viewport layout     │
+│  src/components/                                            │
+│  ├── SearchResultCard            card with screenshot       │
+│  ├── SearchResults               3-col result grid          │
+│  ├── BrowseSection               collections panel          │
+│  └── CanvasView                  infinite drag canvas       │
 ├─────────────────────────────────────────────────────────────┤
-│  Supabase (Cloud)                                           │
-│  ├── PostgreSQL + pgvector extension                        │
-│  ├── HNSW indexes for fast vector search                    │
-│  ├── RPC functions for combined search                      │
-│  └── Edge Function: generate-embedding                      │
+│  Express API  →  Render free tier                           │
+│  backend/src/                                               │
+│  ├── server.ts                   REST endpoints             │
+│  ├── supabase-search.ts          hybrid search + browse     │
+│  └── embeddings.ts               FastEmbed Python bridge    │
+│  Python FastEmbed server (port 3002)                        │
+│  └── bge-small-en-v1.5 (384-dim text embeddings)           │
+├─────────────────────────────────────────────────────────────┤
+│  Supabase                                                   │
+│  ├── bookmarks table             Chrome bookmarks + vectors │
+│  ├── pinterest_pins table        Pinterest pins + vectors   │
+│  └── pgvector HNSW indexes       cosine similarity search   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## 3.2 Data Flow
+## 3.2 Deployment
 
-```
-User Search Query
-    ↓
-Extension generates embedding (POST localhost:3000/embed)
-    ↓
-Supabase RPC: search_all_items(query_embedding, filters)
-    ↓
-Combined scoring: vector + keyword + recency
-    ↓
-Results displayed in 2-column grid
-```
+| Component | Platform | URL |
+|---|---|---|
+| Webapp | Vercel | `open-memory-nine.vercel.app` |
+| Backend | Render free tier | (set in `NEXT_PUBLIC_BACKEND_URL`) |
+| Database | Supabase | pgvector, free tier |
 
 ## 3.3 Architecture Rules
 
-❌ NO serverless complexity
-❌ NO queues or background workers
-❌ NO multiple databases per user
-❌ NO per-user database instances
-✅ Single Supabase project for all data
-✅ Local backend for embedding generation only
+❌ NO serverless complexity  
+❌ NO queues or background workers  
+❌ NO multiple databases per user  
+❌ NO per-user database instances  
+✅ Single Supabase project for all data  
+✅ Render backend handles both search API and embedding generation  
+✅ Render free tier memory limit: ~512MB — keep FastEmbed model loaded once at startup
 
 ---
 
@@ -91,7 +92,7 @@ Results displayed in 2-column grid
 
 ```sql
 CREATE TABLE bookmarks (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   url TEXT UNIQUE NOT NULL,
   title TEXT,
   folder TEXT,
@@ -101,7 +102,6 @@ CREATE TABLE bookmarks (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Indexes
 CREATE INDEX idx_bookmarks_url ON bookmarks(url);
 CREATE INDEX idx_bookmarks_chrome_id ON bookmarks(chrome_id);
 CREATE INDEX idx_bookmarks_folder ON bookmarks(folder);
@@ -114,576 +114,357 @@ CREATE INDEX idx_bookmarks_embedding ON bookmarks
 
 ```sql
 CREATE TABLE pinterest_pins (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  pin_id TEXT UNIQUE,
-  board_name TEXT,
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  pin_id TEXT NOT NULL UNIQUE,
+  board_name TEXT NOT NULL,
   board_url TEXT,
   title TEXT,
   description TEXT,
-  pin_url TEXT UNIQUE,
+  pin_url TEXT NOT NULL,
   image_url TEXT,
   embedding vector(384),
-  image_embedding vector(512),
   synced_at TIMESTAMPTZ DEFAULT now(),
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Indexes
 CREATE INDEX idx_pinterest_pins_pin_id ON pinterest_pins(pin_id);
 CREATE INDEX idx_pinterest_pins_board_name ON pinterest_pins(board_name);
-CREATE INDEX idx_pinterest_pins_synced_at ON pinterest_pins(synced_at DESC);
+CREATE INDEX idx_pinterest_pins_synced_at ON pinterest_pins(synced_at);
 CREATE INDEX idx_pinterest_pins_embedding ON pinterest_pins
   USING hnsw (embedding vector_cosine_ops);
-CREATE INDEX idx_pinterest_pins_image_embedding ON pinterest_pins
-  USING hnsw (image_embedding vector_cosine_ops);
 ```
 
-## 4.3 pinterest_boards
+## 4.3 Schema Rules
 
-```sql
-CREATE TABLE pinterest_boards (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  board_name TEXT,
-  board_url TEXT UNIQUE,
-  total_pins INTEGER DEFAULT 0,
-  imported_pins INTEGER DEFAULT 0,
-  last_synced_at TIMESTAMPTZ
-);
-```
-
-## 4.4 Schema Rules
-
-* URLs are UNIQUE - prevents duplicates
-* Embeddings: 384 dimensions for text (STRICT)
-* Image embeddings: 512 dimensions (CLIP model)
-* Embedding format: `Array<number>` (NOT Float32Array)
-* NEVER change embedding dimensions
-* NEVER create per-user tables
+- URLs are UNIQUE — prevents duplicates
+- Embeddings: **384 dimensions** (STRICT — never change)
+- Embedding format: `Array<number>` (NOT Float32Array)
+- `image_url` for Pinterest pins: direct CDN URL (e.g. `https://i.pinimg.com/...`)
+- NEVER create per-user tables
+- NEVER change embedding dimensions
 
 ---
 
 # 5. EMBEDDING SYSTEM (CRITICAL)
 
-## 5.1 Models
+## 5.1 Model
 
 | Type | Model | Dimensions |
-|------|-------|------------|
-| Text | BAAI/bge-small-en-v1.5 | 384 |
-| Image | Qdrant/clip-ViT-B-32-vision | 512 |
+|---|---|---|
+| Text | BAAI/bge-small-en-v1.5 (FastEmbed) | 384 |
 
 ## 5.2 Generation Pipeline
 
-**Primary: Local Backend (localhost:3000/embed)**
 ```
-Extension → HTTP POST localhost:3000/embed
-         → Node.js server calls Python FastEmbed
-         → 384-dim array returned
-```
-
-**Fallback: Supabase Edge Function**
-```
-Extension → HTTP POST {supabase_url}/functions/v1/generate-embedding
-         → HuggingFace Inference API
-         → 384/512-dim array returned
+Extension / Webapp → POST /embed (Render backend)
+    → Node.js calls Python FastEmbed HTTP server (port 3002)
+    → 384-dim array returned
 ```
 
-## 5.3 Why Local Backend?
+## 5.3 Rules (STRICT)
 
-❌ `@xenova/transformers` does NOT work in Chrome service workers
-❌ HuggingFace API has rate limits
-✅ Local FastEmbed runs without rate limits
-✅ Faster response times (~100ms after model loads)
-✅ Works offline once model is cached
+✅ MUST be `Array<number>`  
+✅ MUST be exactly 384 dimensions  
+✅ MUST use HTTP API calls (NOT in-browser ML)  
+❌ NEVER use Float32Array directly  
+❌ NEVER nest arrays  
+❌ NEVER change dimensions  
+❌ NEVER use @xenova/transformers in extension code  
 
-## 5.4 Auto-Start Backend (Windows)
+## 5.4 LRU Embedding Cache (Backend)
 
-The backend auto-starts on Windows login via startup script:
-```
-Location: %APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\start-openmemory-backend.bat
-```
+- Cache size: 100 entries
+- Key: normalized query string (lowercase, trimmed)
+- Eviction: LRU (oldest timestamp)
+- Hit: return cached embedding immediately
 
-Script contents:
-```batch
-@echo off
-cd /d "C:\Users\{user}\OneDrive\Desktop\extension\backend"
-start /min cmd /c "npm run dev"
-```
+## 5.5 Smart Vector Skip
 
-## 5.5 Embedding Rules (STRICT)
-
-✅ MUST be `Array<number>`
-✅ MUST be exactly 384 dimensions (text)
-✅ MUST use HTTP API calls from extension (NOT in-browser ML)
-
-❌ NEVER use Float32Array directly
-❌ NEVER nest arrays `[...][...]`
-❌ NEVER change dimensions
-❌ NEVER use @xenova/transformers in extension code
-
-## 5.6 Auto-Generation
-
-Embeddings are generated automatically:
-1. **On sync**: `backfillAllMissingEmbeddings()` runs every 5 minutes
-2. **On insert**: `bulkUpsertBookmarks()` and `bulkInsertPinterestPins()` trigger backfill
-3. **Background**: Service worker calls backfill after each sync cycle
-
-## 5.7 Manual Backfill Script
-
-```bash
-npx tsx scripts/generateEmbeddings.ts
-```
-
-Behavior:
-* Fetch rows where `embedding IS NULL`
-* Generate embedding via Python FastEmbed
-* Update via RPC `update_embedding(id, embedding_array)`
-* Batch size: 50
+If keyword score ≥ 0.5 with ≥ 5 results → skip vector search entirely.  
+Response time drops from ~5-8s to ~150-500ms for strong keyword queries.
 
 ---
 
 # 6. SEARCH SYSTEM (CRITICAL)
 
-## 6.1 Search Modes
-
-**Primary: Supabase Vector Search**
-* Requires Supabase configuration
-* Uses HNSW index for fast similarity
-* Combined with keyword matching
-
-**Fallback: Local Text Search**
-* Uses MiniSearch library
-* Searches IndexedDB cache
-* Field weights: title 2x, folder 1.5x
-
-## 6.1.1 Query Understanding
-
-**Query Expansion**: Automatic synonym expansion for design terms
-```
-dashboard → admin, panel, analytics, metrics
-ui → interface, design, ux
-fintech → finance, banking, payment, crypto
-mobile → app, ios, android, responsive
-landing → homepage, hero, marketing
-```
-
-**Multi-word Matching**: Improved scoring for multi-term queries
-* All terms match in title → 0.7
-* >50% terms match → 0.55
-* Expanded terms match → 0.1-0.25
-
-## 6.2 Scoring Formula (MANDATORY)
+## 6.1 Scoring Formula (MANDATORY)
 
 ```
-FINAL_SCORE = 0.55 × keyword_match    (PRIMARY - exact word matches)
-            + 0.10 × vector_similarity (secondary - semantic context)
-            + 0.15 × recency
+FINAL_SCORE = 0.55 × keyword_score
+            + 0.10 × vector_similarity
+            + 0.15 × recency_score
             + 0.20 × source_boost
 ```
 
-**Bookmarks-First Search**: Bookmarks ALWAYS appear before Pinterest pins.
-**Within each source**: Sorted by keyword match score, then combined score.
+**Source ordering:** Bookmarks ALWAYS appear before Pinterest pins.  
+Within each source: sorted by keyword score, then combined score.
 
-**Search Priority Order:**
-1. ALL matching bookmarks (sorted by relevance)
-2. ALL matching Pinterest pins (sorted by relevance)
+## 6.2 Keyword Scoring (client-side, highest match wins)
 
-### Vector Similarity (0-1)
-```sql
--- Normalized cosine distance
-1 - (embedding <=> query_embedding)
-```
-
-### Keyword Match (0-1)
-```sql
--- Multi-term aware scoring (SQL)
-CASE
-  WHEN title = query THEN 1.0                    -- Exact match
-  WHEN title LIKE '%' || query || '%' THEN 0.8  -- Contains full query
-  WHEN all_terms_in_title THEN 0.7              -- All query terms found
-  WHEN >50%_terms_in_title THEN 0.5             -- Most terms found
-  WHEN folder LIKE '%' || query || '%' THEN 0.4 -- Folder match
-  WHEN any_term_in_title THEN 0.3               -- Partial term match
-  WHEN url LIKE '%' || query || '%' THEN 0.2    -- URL match
-  ELSE 0
-END
-```
-
-**Client-side keyword scoring (computed locally for accuracy):**
 | Score | Condition |
-|-------|-----------|
+|---|---|
 | 1.0 | Exact title match (case-insensitive) |
 | 0.8 | Title contains full query |
 | 0.75 | URL contains full query |
-| 0.7 | All original terms in title |
-| 0.6 | Folder/board contains full query |
-| 0.55 | >50% terms in title |
+| 0.7 | All original query terms in title |
+| 0.55 | >50% of query terms in title |
 | 0.5 | URL contains any term (length > 2) |
-| 0.4 | Folder contains query |
-| 0.35 | Board contains any term |
+| 0.4 | Folder/board contains query |
 | 0.3 | Description contains query |
-| 0.1-0.25 | Expanded synonym matches |
 | 0.15 | Any term found anywhere |
-| 0 | No match (filtered out from text results) |
+| 0 | No match |
 
-**Note:** Requires minimum 2-character query for keyword scoring.
+## 6.3 Query Expansion
 
-### Recency (0-1)
-```sql
--- Decay over 30 days (2592000 seconds)
-GREATEST(0, 1 - (EXTRACT(EPOCH FROM now() - updated_at) / 2592000))
+Automatic synonym matching for design terms:
+```
+dashboard → admin, panel, analytics, metrics
+ui        → interface, design, ux
+fintech   → finance, banking, payment, crypto
+mobile    → app, ios, android, responsive
+landing   → homepage, hero, marketing
 ```
 
-## 6.3 Search RPC Function
+## 6.4 Recency Score
+
+```sql
+GREATEST(0, 1 - (EXTRACT(EPOCH FROM now() - created_at) / 2592000))
+-- Decays to 0 over 30 days
+```
+
+## 6.5 Supabase RPC
 
 ```sql
 search_all_items(
-  query_embedding vector(384),
-  search_query TEXT,
-  use_vector_only BOOLEAN DEFAULT false,
-  match_count INTEGER DEFAULT 30,
-  filter_source TEXT DEFAULT NULL,
-  filter_folder TEXT DEFAULT NULL,
-  filter_board TEXT DEFAULT NULL
+  query_embedding  vector(384),
+  search_query     TEXT,
+  use_vector_only  BOOLEAN DEFAULT false,
+  match_count      INTEGER DEFAULT 30,
+  filter_source    TEXT DEFAULT NULL,
+  filter_folder    TEXT DEFAULT NULL,
+  filter_board     TEXT DEFAULT NULL
 )
 ```
 
-Returns:
-```sql
-source TEXT,           -- 'chrome' or 'pinterest'
-item_id UUID,
-url TEXT,
-title TEXT,
-folder_or_board TEXT,
-image_url TEXT,
-similarity FLOAT,
-keyword_score FLOAT,
-recency_score FLOAT,
-final_score FLOAT
-```
+All RPC calls and browse queries use `?select=` to **exclude the embedding column** from API responses — prevents Supabase egress from being exhausted by ~1.5KB per row of vector data.
 
-## 6.4 Result Limits
+## 6.6 Browse (Collections + Canvas)
 
 ```
-MAX_RESULTS = 30 (default)
-BATCH_SIZE = 20 (pagination)
+GET /browse?source=chrome&folder=<name>
+GET /browse?source=pinterest&board=<name>
 ```
+
+- Paginates internally at 1000 rows/page — no item cap
+- Returns full `SearchResult[]` with camelCase fields (`imageUrl`, `url`, `folder`)
+- Does NOT include `embedding` column
 
 ---
 
-# 7. FILTERS (IMPLEMENTED)
+# 7. API ENDPOINTS (Backend)
 
-## 7.1 Source Filter
-
+## Search
 ```
-All | Chrome Bookmarks | Pinterest
+GET  /search?q=<query>
 ```
+Hybrid keyword + vector search. Returns ranked `SearchResult[]`.
 
-Applied as: `WHERE source = 'chrome'` or `WHERE source = 'pinterest'`
+## Browse
+```
+GET  /browse?source=chrome&folder=<name>
+GET  /browse?source=pinterest&board=<name>
+```
+All items in folder/board. No limit. Returns `{ results: SearchResult[], total: number }`.
 
-## 7.2 Folder Filter (Chrome)
-
-* Dropdown populated from unique `folder` values
-* Syntax in search: `@design` or `@ui/components`
-* Applied as: `WHERE folder ILIKE '%' || filter || '%'`
-
-## 7.3 Board Filter (Pinterest)
-
-* Dropdown populated from unique `board_name` values
-* Applied as: `WHERE board_name = filter`
-
-## 7.4 Time Filter
-
-* **Recent**: Items from last 30 days
-* **Older**: Items older than 30 days
-
----
-
-# 8. API ENDPOINTS
-
-## 8.1 Local Backend (localhost:3000)
-
-### Setup Requirements
-
-```bash
-# Install Python dependencies (one-time)
-cd backend/python
-pip install -r requirements.txt
-
-# Start the server
-cd backend
-npm run dev
+## Metadata
+```
+GET  /folders       → { folders: string[] }
+GET  /boards        → { boards: string[] }
 ```
 
-**Auto-start:** Backend auto-starts on Windows login via startup script in:
-`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\`
-
-### POST /embed
-```json
-Request:  { "text": "dark fintech dashboard" }
-Response: { "embedding": [0.123, -0.456, ...] }  // 384 floats
+## Embedding
+```
+POST /embed
+Body:     { "text": "dark fintech dashboard" }
+Response: { "embedding": [0.123, ...] }   // 384 floats
 ```
 
-### POST /search
-```json
-Request:  { "query": "dashboard", "limit": 30, "folder": "design" }
-Response: [{ "id": "...", "title": "...", "score": 0.85 }, ...]
-```
-
-### POST /pinterest/ingest
-```json
-Request:  { "pins": [{ "pin_id": "...", "title": "...", ... }] }
-Response: { "success": true, "count": 50 }
-```
-
-### POST /run-embeddings
-```
-Purpose: Trigger batch embedding generation after import
-Response: { "processed": 50, "remaining": 100 }
-```
-
-### GET /folders
-```
-Response: { "folders": ["Design", "UI/Components", "Reference"] }
-```
-
-## 8.2 Supabase Edge Function
-
-### POST /functions/v1/generate-embedding
-
-```json
-Request: {
-  "text": "search query",      // OR
-  "image_url": "https://...",
-  "type": "text"               // or "image"
-}
-Response: { "embedding": [...] }  // 384 or 512 floats
-```
-
----
-
-# 9. CHROME EXTENSION STRUCTURE
-
-## 9.1 Key Files
-
-| File | Lines | Purpose |
-|------|-------|---------|
-| `background.ts` | ~2000 | Service worker, alarms, bookmark monitoring |
-| `search.ts` | ~2600 | Hybrid search logic, result formatting |
-| `supabase.ts` | ~1300 | Supabase client, CRUD, embedding generation |
-| `pinterest.ts` | ~950 | Pinterest content script |
-| `pinterest_active.ts` | ~1400 | Deep scroll, API interception |
-| `sidepanel.html` | ~1250 | UI with dark theme |
-| `db.ts` | ~200 | IndexedDB (Dexie.js) layer |
-
-## 9.2 Dependencies (package.json)
-
-```json
-{
-  "dependencies": {
-    "@supabase/supabase-js": "^2.100.1",
-    "dexie": "^4.3.0",
-    "minisearch": "^7.2.0"
-  }
-}
-```
-
-**Note:** `@xenova/transformers` is NOT used - it doesn't work in Chrome service workers.
-Embeddings are generated via HTTP API calls to localhost:3000/embed.
-
-## 9.3 IndexedDB Schema (Dexie.js)
-
+## SearchResult shape (API response)
 ```typescript
-// bookmarks - local cache
-++id, &url, title, folder, indexStatus, extendedContent
-
-// pins - Pinterest cache
-++id, &pinId, boardName, title, imageBlob, syncedAt
-
-// integrations - connection status
-++id, &name, connected, syncStatus, lastSyncAt
-
-// queue - indexing queue
-++id, url, priority, createdAt
+{
+  id: string;
+  title: string;
+  url: string;
+  folder: string | null;   // folder name (bookmarks) or board name (pins)
+  source: "chrome" | "pinterest";
+  imageUrl?: string;       // screenshot URL or Pinterest CDN URL
+  score?: number;
+}
 ```
 
-## 9.3 Chrome Alarms
+---
 
-| Alarm | Interval | Purpose |
-|-------|----------|---------|
-| `checkIndexing` | 2 min | Process metadata fetching queue |
-| `pinterestSync` | 1 hour | Sync Pinterest boards |
-| `supabaseAutoSync` | 5 min | Auto-sync to Supabase |
+# 8. WEBAPP UI (page.tsx)
+
+## 8.1 Layout
+
+Single-viewport, `h-screen overflow-hidden`. Three views toggled by bottom dock.
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Video background (leaf-animation.mp4, looping)     │
+│                                                     │
+│  ┌──── Active view (fills viewport) ───────────┐   │
+│  │  Search  /  Collections  /  Canvas          │   │
+│  └─────────────────────────────────────────────┘   │
+│                                                     │
+│  ┌── Bottom dock (floating, center) ─────────┐     │
+│  │  🔍  Search  │  ⊞  Collections  │  ⊹ Canvas│     │
+│  └────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────┘
+```
+
+## 8.2 Search View
+
+- Search bar with scope chip (@ folder, # board)
+- `@` mention → folder dropdown to scope search
+- `#` mention → Pinterest board dropdown
+- Scope chip shown inside bar with X to clear
+- Results: 3-column grid (`SearchResultCard`)
+
+## 8.3 Collections View (BrowseSection)
+
+- Left sidebar: folder list (bookmarks) or board list (Pinterest)
+- Right: card grid of all items in selected folder/board
+- Tab switch between Bookmarks and Pinterest at top
+- Fully scrollable within viewport (`constrained` prop)
+
+## 8.4 Canvas View (CanvasView)
+
+- Infinite drag-to-explore grid
+- **Scrolling**: native `overflow: auto` — compositor thread, smooth on touch/trackpad
+- **Mouse drag**: direct `scrollLeft`/`scrollTop` manipulation in `pointermove`, no RAF
+- **Inertia**: RAF with `Math.pow(0.998, dt_ms)` time-based friction after mouse release
+- **Velocity**: computed from 80ms pointer history on release
+- **Infinite loop**: 5×5 tiled grid; scroll event snaps back by one tile when near edge
+- **Filter bar** (top-right): Bookmarks/Pinterest tab + folder/board dropdown
+- **Cards**: 300×340px, 4 columns, gap 28px
+- **Fetch**: bookmarks and pins fetched into separate arrays (each capped at 180) to prevent one source starving the other
+
+---
+
+# 9. COMPONENT REFERENCE
+
+## SearchResultCard
+- `#f4f4f4` background, square aspect-ratio image area
+- Pinterest pins: red dot indicator, direct `image_url` thumbnail
+- Bookmarks: `screenshot.11ty.dev` opengraph screenshot
+- Hover: blur overlay + "Open" pill button
+- Fallback: favicon + domain if screenshot/image fails
+
+## BrowseSection
+- Props: `source`, `folders`, `boards`, `constrained`
+- Fetches via `GET /browse` with full pagination (1000/page loop)
+- 3-column grid
+
+## CanvasView
+- Props: `folders: string[]`, `boards: string[]`, `active: boolean`
+- Fetches lazily (only on first `active=true`)
+- Separate fetch loops for bookmarks and pins (independent 180-item caps)
+- `imageUrl` field: uses camelCase from API response — do NOT use `image_url`
 
 ---
 
 # 10. PINTEREST INTEGRATION
 
-## 10.1 Features
+## 10.1 Sync (Chrome Extension)
 
-* Login detection via cookies
-* Board list fetching (API interception)
-* Deep scroll for full board sync
-* Image conversion to WebP (offscreen document)
-* Incremental sync with checkpoints
+1. Detect Pinterest login via cookie check
+2. Fetch board list via API interception (`api.pinterest.com`)
+3. Deep scroll to load all pins per board
+4. Extract: `pin_id`, `pin_url`, `image_url`, `title`, `description`, `board_name`
+5. Batch upsert to Supabase → trigger embedding generation
 
-## 10.2 Data Extraction Methods
+## 10.2 image_url
 
-1. **API Interception**: Intercept XHR/Fetch to api.pinterest.com
-2. **DOM Scraping**: Parse HTML as fallback
-3. **Deep Scroll**: Simulate scrolling for infinite load
+- Stored as direct Pinterest CDN URL: `https://i.pinimg.com/736x/...`
+- If null (old pins synced without image): card shows favicon placeholder
+- Re-sync the board from the extension to populate missing `image_url`
 
-## 10.3 Sync Flow
+## 10.3 Data Extraction Methods
 
-```
-User clicks "Sync All"
-    ↓
-Detect Pinterest login (cookie check)
-    ↓
-Fetch board list via API interception
-    ↓
-User selects boards → Start sync
-    ↓
-For each board:
-  - Deep scroll to load all pins
-  - Extract pin metadata
-  - Convert images to WebP
-  - Store in IndexedDB
-    ↓
-Batch sync to Supabase
-    ↓
-Trigger embedding generation
-```
+1. **API Interception**: XHR/Fetch to `api.pinterest.com` (primary)
+2. **DOM Scraping**: HTML parsing fallback
+3. **Deep Scroll**: simulates scrolling for infinite boards
 
 ---
 
 # 11. CHROME BOOKMARKS INTEGRATION
 
-## 11.1 Real-time Sync
+Real-time sync via Chrome extension alarms:
 
 ```typescript
-// Event listeners in background.ts
 chrome.bookmarks.onCreated  → upsertBookmark()
 chrome.bookmarks.onRemoved  → deleteBookmark()
 chrome.bookmarks.onChanged  → updateBookmark()
 chrome.bookmarks.onMoved    → updateBookmark()
 ```
 
-## 11.2 Sync Behavior
-
-* UPSERT on create/update (dedupe by URL)
-* DELETE on remove
-* Auto-generate embedding via Edge Function
-* Batch sync every 5 minutes
-
----
-
-# 12. UI/UX DESIGN
-
-## 12.1 Theme
-
-* **Background**: Black (#000000)
-* **Text**: White (#FFFFFF)
-* **Secondary text**: Gray (#888888)
-* **Pinterest badge**: Red (#E60023)
-* **Chrome badge**: Blue (#4285F4)
-* **Success/Connected**: Green (#4ade80)
-
-## 12.2 Layout
-
-* Side panel (400px width)
-* 2-column grid for results
-* Card design with thumbnails
-* Sticky search header
-* Collapsible integrations panel
-
-## 12.3 Search UX
-
-* Instant search on typing (debounced 350ms)
-* Minimum 2-character query requirement
-* Folder autocomplete with `@` prefix
-* Filter chips (removable)
-* "Load more" pagination
-* Empty state messaging
-* Keyword-first ranking: exact matches appear before semantic matches
+| Alarm | Interval | Purpose |
+|---|---|---|
+| `checkIndexing` | 2 min | Process metadata queue |
+| `pinterestSync` | 1 hour | Sync Pinterest boards |
+| `supabaseAutoSync` | 5 min | Auto-sync to Supabase |
 
 ---
 
-# 13. PERFORMANCE TARGETS
+# 12. PERFORMANCE TARGETS
 
 | Metric | Target |
-|--------|--------|
+|---|---|
 | Supabase vector search | < 500ms |
-| Local text search | < 50ms |
-| Embedding generation | < 5s (first call) |
+| Strong keyword match | ~150-500ms (vector skipped) |
+| Cached query | ~100-200ms |
+| Semantic search | ~5-8s (first call) |
 | UI render | < 100ms |
-
-## 13.1 Optimization Rules
-
-* Always use HNSW indexes for vector columns
-* Limit results to 30 by default
-* Batch operations (20-50 items)
-* Cache embeddings locally
-* Use pagination, not infinite scroll
+| Canvas drag | Native compositor speed (touch/trackpad) |
 
 ---
 
-# 14. CURRENT PRIORITY
+# 13. WHAT CLAUDE MUST NEVER DO
 
-Focus ONLY on:
-
-```
-1. Search ranking quality
-2. Filter functionality
-3. UX improvements
-4. Performance optimization
-```
-
----
-
-# 15. WHAT CLAUDE MUST NEVER DO
-
-❌ Change database schema unnecessarily
-❌ Introduce new services or dependencies
-❌ Modify embedding dimensions
-❌ Add complexity without clear benefit
-❌ Rebuild existing architecture
-❌ Create new files when editing existing ones works
-❌ Add features not explicitly requested
-❌ Use Float32Array for embeddings
-❌ Skip reading files before editing
+❌ Change database schema unnecessarily  
+❌ Introduce new services or dependencies  
+❌ Modify embedding dimensions (always 384)  
+❌ Use `image_url` (snake_case) when reading from the browse API — the response uses `imageUrl` (camelCase)  
+❌ Call `screenshotUrl()` on Pinterest pin URLs — Pinterest blocks scrapers, returns junk  
+❌ Add complexity without clear benefit  
+❌ Create new files when editing existing ones works  
+❌ Add features not explicitly requested  
+❌ Use Float32Array for embeddings  
+❌ Skip reading files before editing  
 
 ---
 
-# 16. SUCCESS CRITERIA
-
-Search should feel:
+# 14. SUCCESS CRITERIA
 
 ```
-✓ Fast (< 500ms response)
-✓ Relevant (semantic understanding)
-✓ Predictable (consistent ranking)
-✓ Useful (finds what user wants)
+✓ Fast      (< 500ms for keyword queries)
+✓ Relevant  (semantic understanding for vague queries)
+✓ Predictable (consistent, explainable ranking)
+✓ Visual    (thumbnails, canvas, smooth animations)
 ```
 
 ---
 
-# 17. FUTURE ENHANCEMENTS (NOT CURRENT PRIORITY)
+# 15. FUTURE ENHANCEMENTS (NOT CURRENT PRIORITY)
 
-## 17.1 Authentication (Phase 2)
-* Firebase integration
-* User isolation: `WHERE user_id = auth.uid()`
-* Multi-account support
-
-## 17.2 Public Sharing (Phase 3)
-* Collections table with `is_public` flag
-* Read-only sharing links
-* Social features
-
-## 17.3 Advanced Search (Phase 4)
-* Image-to-image search (CLIP embeddings ready)
-* Cross-modal search
-* Semantic clustering
+- **Authentication** — Firebase/Supabase Auth, per-user data isolation
+- **Public sharing** — read-only collection share links
+- **Image search** — CLIP embeddings for image-to-image search
+- **Zoom in canvas** — pinch-to-zoom with CSS scale transform
+- **Re-sync from webapp** — trigger Pinterest board re-sync without the extension
 
 ---
 

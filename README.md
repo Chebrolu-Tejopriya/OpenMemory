@@ -1,255 +1,245 @@
 # OpenMemory
 
-A Chrome extension and web app for semantic search of your design inspirations. Search your bookmarks and Pinterest pins using natural language and find relevant design resources instantly.
+A personal inspiration memory system — search your Chrome bookmarks and Pinterest pins using natural language and browse them visually in a drag-to-explore infinite canvas.
+
+**Live:** [open-memory-nine.vercel.app](https://open-memory-nine.vercel.app)
+
+---
 
 ## Features
 
-- **Hybrid Search**: Combines keyword matching with AI semantic search (vector embeddings)
-- **Keyword-First Ranking**: Exact matches appear at the top before semantic results
-- **Pinterest Integration**: Sync and search your Pinterest pins alongside bookmarks
-- **Bookmarks Priority**: Chrome bookmarks always appear before Pinterest pins
-- **Recency Boost**: Recently saved items get higher ranking
-- **Query Expansion**: Automatic synonym matching for design terms
-- **Folder Filtering**: Use `@` to filter by bookmark folders
-- **Board Filtering**: Filter Pinterest results by board
-- **Website Thumbnails**: Preview sites with automatic screenshots
-- **Web App**: Standalone Next.js web app with identical search functionality
-- **Dark UI**: Clean Vercel-inspired dark theme
+### Search
+- **Hybrid search** — keyword scoring + Supabase pgvector semantic search
+- **@ mention** — type `@` in the search bar to scope search to a bookmark folder
+- **# mention** — type `#` to scope search to a Pinterest board
+- **Scope chip** — selected folder/board shown inside the bar with one-click clear
+- **LRU embedding cache** — repeated queries return instantly; smart skip if keyword score is strong enough
+
+### Collections
+- Browse all items organized by folder (bookmarks) or board (Pinterest)
+- Frosted glass panel with sidebar folder/board list and scrollable card grid
+- Full pagination — fetches all rows (1000/page loop, no 40-item cap)
+
+### Canvas
+- Infinite drag-to-explore grid of your saved items
+- Native `overflow: auto` scroll — compositor-thread smooth on touch/trackpad
+- Mouse drag via direct `scrollLeft`/`scrollTop` manipulation + pointer-history inertia
+- Infinite loop: 5×5 tiled grid with seamless scroll-event wrap
+- Top-right filter bar: Bookmarks / Pinterest tab switch + folder/board dropdown
+
+### Visual
+- Card design: `#f4f4f4` background, square aspect-ratio image, hover blur + "Open" pill
+- Screenshot thumbnails via `screenshot.11ty.dev` (bookmarks); direct CDN image (Pinterest pins)
+- Animated video background (`leaf-animation.mp4`)
+- Bottom-center floating dock: Search · Collections · Canvas icons
+
+---
 
 ## Architecture
 
 ```
-extension/
-├── src/extension/          # Chrome extension source
-│   ├── manifest.json       # Extension manifest v3
-│   ├── sidepanel.html      # Main UI
-│   ├── search.ts           # Client-side search logic
-│   └── background.ts       # Service worker
-├── backend/                # Express API server
-│   └── src/
-│       ├── server.ts       # API endpoints
-│       ├── supabase-search.ts  # Unified search logic (matches extension)
-│       ├── embeddings.ts   # FastEmbed BGE embeddings generation
-│       └── db.ts           # Database layer
-├── webapp/                 # Next.js web application
-│   └── src/
-│       ├── app/page.tsx    # Main search UI
-│       └── components/     # React components
-├── supabase/               # Supabase migrations and setup
-├── dist/                   # Built extension (generated)
-└── scripts/                # Build utilities
+┌─────────────────────────────────────────────────────────────┐
+│  Chrome Extension (Manifest V3)                             │
+│  ├── sidepanel.html              UI                         │
+│  ├── background.ts               service worker, alarms     │
+│  ├── search.ts                   hybrid search logic        │
+│  ├── supabase.ts                 cloud CRUD + embeddings    │
+│  ├── pinterest.ts                Pinterest content script   │
+│  └── db.ts                       IndexedDB via Dexie.js     │
+├─────────────────────────────────────────────────────────────┤
+│  Next.js Webapp  →  Vercel (open-memory-nine.vercel.app)    │
+│  ├── app/page.tsx                Search / Collections /     │
+│  │                               Canvas tab layout          │
+│  ├── components/SearchResultCard  card with screenshot      │
+│  ├── components/BrowseSection     collections grid          │
+│  └── components/CanvasView        infinite drag canvas      │
+├─────────────────────────────────────────────────────────────┤
+│  Express API  →  Render free tier                           │
+│  ├── server.ts                   REST endpoints             │
+│  ├── supabase-search.ts          unified search + browse    │
+│  ├── embeddings.ts               FastEmbed HTTP server      │
+│  └── Python FastEmbed (port 3002) bge-small-en-v1.5 model  │
+├─────────────────────────────────────────────────────────────┤
+│  Supabase                                                   │
+│  ├── bookmarks                   Chrome bookmarks + vectors │
+│  ├── pinterest_pins              pins + vectors             │
+│  └── pgvector HNSW indexes       fast similarity search     │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-## Prerequisites
-
-- Node.js 18+
-- Chrome browser
-- OpenAI API key (for generating embeddings)
-
-## Setup Instructions
-
-### 1. Clone the Repository
-
-```bash
-git clone <your-repo-url>
-cd extension
+### Data flow — search
+```
+User types query
+    ↓
+Webapp POST /search → Render backend
+    ↓
+Backend generates embedding (FastEmbed Python server)
+    ↓
+Supabase RPC: hybrid keyword + vector scoring
+    ↓
+Results ranked by: 0.55×keyword + 0.10×semantic + 0.15×recency + 0.20×source
+    ↓
+3-column card grid with screenshot thumbnails
 ```
 
-### 2. Install Dependencies
-
-```bash
-# Install extension dependencies
-npm install
-
-# Install backend dependencies
-cd backend
-npm install
-```
-
-### 3. Configure Environment
-
-Create a `.env` file in the `backend/` folder:
-
-```bash
-cd backend
-echo "OPENAI_API_KEY=your-openai-api-key" > .env
-```
-
-### 4. Import Your Chrome Bookmarks
-
-This reads bookmarks from your Chrome profile, scrapes metadata, and generates embeddings:
-
-```bash
-cd backend
-npm run import
-```
-
-> **Note**: This process may take a while depending on the number of bookmarks. It scrapes each URL for metadata and generates vector embeddings.
-
-### 5. Export Data for Extension
-
-```bash
-npm run export
-```
-
-This creates `dist/data.json` with all your bookmarks and embeddings.
-
-### 6. Build the Extension
-
-```bash
-cd ..
-npm run build
-```
-
-### 7. Load Extension in Chrome
-
-1. Open Chrome and navigate to `chrome://extensions/`
-2. Enable **Developer mode** (toggle in top-right)
-3. Click **Load unpacked**
-4. Select the `dist/` folder
-5. Click the extension icon to open the side panel
-
-## Usage
-
-### Basic Search
-
-Type any search query to find relevant bookmarks:
-- `dashboard design` - finds dashboard UI inspiration
-- `landing page examples` - finds landing page designs
-- `minimal portfolio` - finds minimalist portfolio sites
-
-### Folder Filtering
-
-Use `@` to filter by folder:
-- `@design` - shows folder suggestions starting with "design"
-- `buttons @ui` - searches "buttons" within UI folder
-
-### Keyboard Navigation
-
-- `↑/↓` - Navigate folder suggestions
-- `Enter` - Select folder
-- `Escape` - Close suggestions
-
-## Development
-
-### Available Scripts
-
-**Extension (root folder):**
-
-```bash
-npm run build       # Build extension to dist/
-npm run build:ts    # Compile TypeScript only
-npm run build:icons # Generate extension icons
-npm run typecheck   # Type check without building
-```
-
-**Backend:**
-
-```bash
-cd backend
-npm run dev         # Run server in development mode
-npm run import      # Import Chrome bookmarks
-npm run export      # Export data.json for extension
-npm run typecheck   # Type check
-```
-
-### Project Structure
-
-| File | Description |
-|------|-------------|
-| `src/extension/search.ts` | Client-side search with intent filtering |
-| `src/extension/sidepanel.html` | Main UI with Vercel dark theme |
-| `backend/src/import-chrome-bookmarks.ts` | Reads Chrome bookmarks file |
-| `backend/src/scraper.ts` | Scrapes website metadata (title, description, OG tags) |
-| `backend/src/embeddings.ts` | Generates OpenAI text-embedding-3-small vectors |
-| `backend/src/intent.ts` | Classifies bookmark intent (inspiration, learning, etc.) |
-| `backend/src/export.ts` | Exports SQLite data to JSON for extension |
-
-## How It Works
-
-1. **Import**: Reads bookmarks from Chrome's local storage
-2. **Scrape**: Fetches metadata from each URL (title, description, Open Graph tags)
-3. **Embed**: Generates vector embeddings using FastEmbed BGE-small model
-4. **Store**: Saves to Supabase with pgvector for similarity search
-5. **Search**: Hybrid text + vector search with unified scoring
-
-## Search Algorithm
-
-Both the extension and webapp use identical search logic:
-
-### Scoring Formula
-```
-combinedScore = (0.55 × keywordScore) + (0.10 × semanticScore) + (0.15 × recencyScore) + (0.20 × sourceBoost)
-```
-
-### Keyword Scoring (Hierarchical)
-| Score | Match Type |
-|-------|------------|
-| 1.0 | Exact title match |
-| 0.8 | Title contains query |
-| 0.75 | URL contains query |
-| 0.7 | All terms found in title |
-| 0.55 | >50% of terms in title |
-| 0.5 | URL contains any term |
-| 0.4 | Folder/board contains query |
-| 0.35 | Folder contains any term |
-| 0.3 | Description contains query |
-| 0.15 | Any term found anywhere |
-
-### Query Expansion
-Automatic synonym matching for common design terms:
-- `dashboard` → admin, panel, analytics, metrics
-- `fintech` → finance, banking, payment, crypto
-- `mobile` → app, ios, android, responsive
-- `landing` → homepage, hero, marketing
-
-### Source Priority
-- Chrome bookmarks always appear before Pinterest pins
-- Within each source, results are sorted by keyword score, then combined score
-
-### Recency Boost
-Items saved within the last 30 days get a recency boost (0-1 scale based on age)
-
-## Performance Optimizations
-
-The backend includes several optimizations for fast search response:
-
-### Embedding Cache
-- LRU cache stores up to 100 query embeddings
-- Repeated searches return instantly without regenerating embeddings
-
-### Smart Vector Skip
-- If keyword matches are strong (score ≥ 0.5 with 5+ results), vector search is skipped
-- This provides instant results for common queries like "figma", "dashboard", "landing page"
-
-### Search Response Times
-| Query Type | Response Time |
-|------------|---------------|
-| Strong keyword match | ~150-500ms |
-| Cached query | ~100-200ms |
-| Semantic search needed | ~5-8s |
-
-## Website Screenshots
-
-Bookmark cards display website screenshots for visual preview:
-- Screenshots fetched from `screenshot.11ty.dev` service
-- Favicon shown as placeholder while screenshot loads
-- Smooth fade-in transition when screenshot is ready
-- Falls back to favicon if screenshot unavailable
-
-## Intent Classification
-
-The search prioritizes design inspiration by:
-- Boosting items in folders like `design`, `ui`, `inspiration`
-- Boosting items with titles containing design keywords
-- Filtering out developer/tutorial content for inspiration queries
+---
 
 ## Tech Stack
 
-- **Extension**: TypeScript, Chrome Extension Manifest V3, Side Panel API
-- **Backend**: Node.js, TypeScript, SQLite (better-sqlite3), OpenAI API
-- **Build**: esbuild
-- **Styling**: Vanilla CSS (Vercel dark theme)
+| Layer | Tech |
+|---|---|
+| Webapp | Next.js 14, React, Tailwind CSS |
+| Hosting | Vercel (webapp), Render (backend) |
+| Database | Supabase (PostgreSQL + pgvector) |
+| Embeddings | FastEmbed `bge-small-en-v1.5` (384-dim) |
+| Extension | TypeScript, Manifest V3, Dexie.js |
+| Icons | lucide-react |
+
+---
+
+## Local Development
+
+### Prerequisites
+- Node.js 18+
+- Python 3.9+ (for the FastEmbed embedding server)
+- Chrome browser
+
+### 1. Clone
+```bash
+git clone https://github.com/Chebrolu-Tejopriya/OpenMemory.git
+cd OpenMemory
+```
+
+### 2. Backend
+```bash
+cd backend
+npm install
+
+# Install Python dependencies for FastEmbed
+cd python
+pip install -r requirements.txt
+cd ..
+
+# Create .env
+cp .env.example .env
+# Fill in SUPABASE_URL and SUPABASE_ANON_KEY
+
+npm run dev   # starts on port 3001
+```
+
+### 3. Webapp
+```bash
+cd webapp
+npm install
+
+# Create .env.local
+echo "NEXT_PUBLIC_BACKEND_URL=http://localhost:3001" > .env.local
+
+npm run dev   # starts on port 3000
+```
+
+### 4. Extension
+```bash
+# Root folder
+npm install
+npm run build   # outputs to dist/
+```
+Load `dist/` as an unpacked extension in `chrome://extensions/`.
+
+---
+
+## API Reference
+
+All endpoints served by the Express backend (Render in prod, `localhost:3001` locally).
+
+### `GET /search?q=<query>`
+Hybrid keyword + vector search across bookmarks and Pinterest pins.
+
+### `GET /browse?source=chrome&folder=<name>`
+### `GET /browse?source=pinterest&board=<name>`
+Returns all items in a folder or board (paginated internally, no cap).
+
+### `GET /folders`
+Returns all unique bookmark folder names.
+
+### `GET /boards`
+Returns all unique Pinterest board names.
+
+### `POST /embed`
+```json
+{ "text": "dark fintech dashboard" }
+→ { "embedding": [0.123, ...] }   // 384 floats
+```
+
+---
+
+## Search Algorithm
+
+### Scoring formula
+```
+score = 0.55 × keyword_score
+      + 0.10 × semantic_similarity
+      + 0.15 × recency_score
+      + 0.20 × source_boost
+```
+
+Bookmarks always ranked before Pinterest pins within the same relevance tier.
+
+### Keyword scoring (highest match wins)
+| Score | Condition |
+|---|---|
+| 1.0 | Exact title match |
+| 0.8 | Title contains full query |
+| 0.75 | URL contains full query |
+| 0.7 | All query terms in title |
+| 0.55 | >50% of terms in title |
+| 0.5 | URL contains any term |
+| 0.4 | Folder/board contains query |
+| 0.3 | Description contains query |
+| 0.15 | Any term found anywhere |
+
+### Smart vector skip
+If keyword score ≥ 0.5 with 5+ results, vector search is skipped entirely — reduces latency to ~150ms for common queries like `"figma"` or `"dashboard"`.
+
+### Supabase egress optimization
+All RPC calls and browse queries use `?select=` to exclude the `embedding` vector column from API responses (~1.5 KB saved per row).
+
+---
+
+## Supabase Schema
+
+```sql
+-- bookmarks
+CREATE TABLE bookmarks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  url TEXT UNIQUE NOT NULL,
+  title TEXT,
+  folder TEXT,
+  chrome_id TEXT,
+  embedding vector(384),
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- pinterest_pins
+CREATE TABLE pinterest_pins (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  pin_id TEXT UNIQUE,
+  board_name TEXT,
+  pin_url TEXT UNIQUE NOT NULL,
+  image_url TEXT,
+  title TEXT,
+  description TEXT,
+  embedding vector(384),
+  synced_at TIMESTAMPTZ DEFAULT now(),
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+Both tables have HNSW indexes on the `embedding` column for fast cosine similarity search.
+
+---
 
 ## License
 
