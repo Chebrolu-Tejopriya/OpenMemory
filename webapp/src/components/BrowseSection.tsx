@@ -153,7 +153,7 @@ export default function BrowseSection({ folders, boards, constrained = false }: 
             <div className="flex items-center justify-center h-32 text-sm text-[#3a3a3a]/30">No items found</div>
           ) : (
             <div className="grid grid-cols-2 gap-3 pb-24">
-              {cards.map((card) => <SearchResultCard key={card.id} result={card} />)}
+              {cards.map((card, i) => <SearchResultCard key={card.id} result={card} revealDelay={Math.min(i, 5) * 60} />)}
             </div>
           )}
         </div>
@@ -194,7 +194,7 @@ export default function BrowseSection({ folders, boards, constrained = false }: 
             <div className="flex items-center justify-center h-32 text-sm text-[#3a3a3a]/30">No items found</div>
           ) : (
             <div className="grid grid-cols-3 gap-3 pb-2">
-              {cards.map((card) => <SearchResultCard key={card.id} result={card} />)}
+              {cards.map((card, i) => <SearchResultCard key={card.id} result={card} revealDelay={Math.min(i, 5) * 60} />)}
             </div>
           )}
         </div>

@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 
 export interface SearchResult {
   id: string;
@@ -12,6 +12,7 @@ export interface SearchResult {
 
 interface SearchResultCardProps {
   result: SearchResult;
+  revealDelay?: number; // ms stagger for scroll reveal
 }
 
 function getDomainFromUrl(url: string): string {
@@ -41,14 +42,27 @@ function cleanPinterestTitle(title: string): string {
   return title.replace(/^this may contain:?\s*/i, "").trim();
 }
 
-export default function SearchResultCard({ result }: SearchResultCardProps) {
+export default function SearchResultCard({ result, revealDelay = 0 }: SearchResultCardProps) {
   const isPinterest = result.source === "pinterest";
   const domain = getDomainFromUrl(result.url);
   const displayTitle = isPinterest ? cleanPinterestTitle(result.title) : result.title;
   const [screenshotLoaded, setScreenshotLoaded] = useState(false);
   const [screenshotError, setScreenshotError] = useState(false);
-
   const [pinImgError, setPinImgError] = useState(false);
+
+  // Scroll reveal
+  const cardRef = useRef<HTMLAnchorElement>(null);
+  const [revealed, setRevealed] = useState(false);
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) { setRevealed(true); observer.disconnect(); } },
+      { threshold: 0.08, rootMargin: "0px 0px -30px 0px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   const hasPinterestImage = isPinterest && result.imageUrl && !result.imageUrl.includes("favicon") && !pinImgError;
   const screenshotUrl = !isPinterest ? getScreenshotUrl(result.url) : null;
   const faviconUrl = getFaviconUrl(result.url);
@@ -59,11 +73,17 @@ export default function SearchResultCard({ result }: SearchResultCardProps) {
 
   return (
     <a
+      ref={cardRef}
       href={result.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="group flex flex-col bg-[#f4f4f4] rounded-2xl overflow-hidden transition-[box-shadow,transform] duration-500 ease-out hover:-translate-y-0.5"
-      style={{ boxShadow: "0 0 0 rgba(0,0,0,0)" }}
+      className="group flex flex-col bg-[#f4f4f4] rounded-2xl overflow-hidden"
+      style={{
+        opacity: revealed ? 1 : 0,
+        transform: revealed ? "translateY(0px)" : "translateY(22px)",
+        transition: `opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1) ${revealDelay}ms, transform 0.6s cubic-bezier(0.22, 1, 0.36, 1) ${revealDelay}ms, box-shadow 500ms ease-out`,
+        boxShadow: "0 0 0 rgba(0,0,0,0)",
+      }}
       onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 12px 40px rgba(0,0,0,0.08), 0 3px 10px rgba(0,0,0,0.04)")}
       onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 0 0 rgba(0,0,0,0)")}
     >
