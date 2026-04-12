@@ -9,7 +9,8 @@ type CanvasSource = "chrome" | "pinterest";
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
 const CARD_W = 240;
-const CARD_H = 280;
+// Height computed from content: pt-2.5(10) + aspect-video(220×9/16≈124) + title-section(~48) ≈ 182
+const CARD_H = 185;
 const GAP_X = 24;
 const GAP_Y = 24;
 const COLS = 5;
@@ -60,9 +61,9 @@ function Card({ result, style }: { result: SearchResult; style: React.CSSPropert
       style={style}
       className="absolute group flex flex-col bg-[#f4f4f4] rounded-2xl overflow-hidden hover:shadow-xl transition-shadow duration-200"
     >
-      {/* Image — fills remaining height between label and title */}
-      <div className="px-2 py-1.5 flex-1 min-h-0">
-        <div className={`relative w-full h-full rounded-xl overflow-hidden ${pinImg ? "bg-[#e8e8e8]" : "bg-gray-200"}`}>
+      {/* Image — aspect-video inset, matches search/collections card style */}
+      <div className="px-2.5 pt-2.5 pb-0 shrink-0">
+        <div className={`relative w-full aspect-video rounded-xl overflow-hidden ${pinImg ? "bg-[#e8e8e8]" : "bg-gray-200"}`}>
           {pinImg ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -98,7 +99,7 @@ function Card({ result, style }: { result: SearchResult; style: React.CSSPropert
       </div>
 
       {/* Title + meta */}
-      <div className="px-2.5 pt-1.5 pb-2.5 shrink-0 flex flex-col gap-0.5">
+      <div className="px-2.5 pt-2 pb-2.5 shrink-0 flex flex-col gap-0.5">
         <p className="text-[11px] font-semibold text-gray-700 leading-snug truncate">{displayTitle}</p>
         <div className="flex items-center justify-between gap-1">
           {!isPin && <span className="text-[9px] text-gray-400 truncate">{dom}</span>}
