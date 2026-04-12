@@ -60,11 +60,9 @@ function Card({ result, style }: { result: SearchResult; style: React.CSSPropert
       style={style}
       className="absolute group flex flex-col bg-[#f4f4f4] rounded-2xl overflow-hidden hover:shadow-xl transition-shadow duration-200"
     >
-      <div className="px-3 pt-2.5 pb-1 flex-shrink-0">
-        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-400 truncate block">{label}</span>
-      </div>
-      <div className="px-2.5 pb-2 flex-1 min-h-0">
-        <div className={`relative w-full h-full rounded-xl overflow-hidden ${pinImg ? "bg-[#e8e8e8]" : "bg-gray-200"}`}>
+      {/* Image — inset with padding, aspect-video matches opengraph screenshots */}
+      <div className="px-2 pt-2 pb-0 shrink-0">
+        <div className={`relative w-full aspect-video rounded-xl overflow-hidden ${pinImg ? "bg-[#e8e8e8]" : "bg-gray-200"}`}>
           {pinImg ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -75,20 +73,20 @@ function Card({ result, style }: { result: SearchResult; style: React.CSSPropert
             />
           ) : (
             <>
-              {/* Placeholder shown while screenshot loads or if no image available */}
+              {/* Favicon placeholder while screenshot loads */}
               <div className={`absolute inset-0 flex flex-col items-center justify-center gap-2 transition-opacity duration-300 ${shotLoaded && !shotErr ? "opacity-0" : "opacity-100"}`}
-                style={{ background: isPin ? "linear-gradient(135deg,#fce4ec,#f3e5f5)" : "linear-gradient(135deg,#f8fffe,#eef7f4)" }}
+                style={{ background: "linear-gradient(135deg,#f8fffe,#eef7f4)" }}
               >
-                <div className="w-10 h-10 rounded-xl bg-white/70 shadow-sm flex items-center justify-center p-2">
+                <div className="w-8 h-8 rounded-xl bg-white/70 shadow-sm flex items-center justify-center p-1.5">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={fav} alt="" className="w-full h-full object-contain" />
                 </div>
-                <span className="text-[9px] font-medium text-gray-400 max-w-[80%] text-center truncate">{label}</span>
+                <span className="text-[9px] font-medium text-gray-400 max-w-[80%] text-center truncate">{dom}</span>
               </div>
               {shot && !shotErr && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={shot} alt={result.title}
-                  className={`absolute inset-0 w-full h-full object-contain group-hover:scale-[1.03] transition-all duration-500 ${shotLoaded ? "opacity-100" : "opacity-0"}`}
+                  className={`absolute inset-0 w-full h-full object-cover group-hover:scale-[1.03] transition-all duration-500 ${shotLoaded ? "opacity-100" : "opacity-0"}`}
                   onLoad={() => setShotLoaded(true)} onError={() => setShotErr(true)} />
               )}
             </>
@@ -98,9 +96,15 @@ function Card({ result, style }: { result: SearchResult; style: React.CSSPropert
           </div>
         </div>
       </div>
-      <div className="px-3 pb-2.5 flex-shrink-0">
-        <p className="text-[11px] font-semibold text-gray-700 leading-snug truncate">{displayTitle}</p>
-        {!isPin && <p className="text-[9px] text-gray-400 mt-0.5 truncate">{dom}</p>}
+
+      {/* Title + meta */}
+      <div className="px-2.5 pt-2 pb-2.5 flex flex-col gap-0.5">
+        <p className="text-[11px] font-semibold text-gray-700 leading-snug line-clamp-2">{displayTitle}</p>
+        <div className="flex items-center justify-between gap-1">
+          {!isPin && <span className="text-[9px] text-gray-400 truncate">{dom}</span>}
+          {isPin && <span className="w-1.5 h-1.5 rounded-full bg-[#E60023]/40 shrink-0" />}
+          <span className="text-[9px] font-medium text-gray-400/70 uppercase tracking-wider truncate text-right flex-1">{label}</span>
+        </div>
       </div>
     </a>
   );
