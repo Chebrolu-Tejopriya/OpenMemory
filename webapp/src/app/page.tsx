@@ -297,7 +297,7 @@ export default function Home() {
         {/* Search Bar */}
         <div
           ref={mentionContainerRef}
-          className={`absolute left-1/2 -translate-x-1/2 z-20 px-4 sm:px-0 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+          className={`absolute left-1/2 -translate-x-1/2 z-30 px-4 sm:px-0 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
             hasSearched
               ? "top-2 sm:top-[12px] w-full sm:w-[90%] max-w-[928px]"
               : "top-[120px] sm:top-[200px] w-full sm:w-[95%] max-w-[836px]"
