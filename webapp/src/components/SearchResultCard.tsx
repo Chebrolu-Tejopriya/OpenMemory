@@ -89,7 +89,7 @@ export default function SearchResultCard({ result, revealDelay = 0 }: SearchResu
     >
       {/* Image container — landscape for screenshots, portrait for Pinterest pins */}
       <div className="px-2.5 pt-2.5 pb-0">
-        <div className={`relative w-full rounded-xl overflow-hidden bg-gray-200 ${hasPinterestImage ? "aspect-[3/4]" : "aspect-video"}`}>
+        <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-gray-200">
 
           {/* Image */}
           {hasPinterestImage ? (
