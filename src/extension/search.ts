@@ -2592,6 +2592,7 @@ async function updatePinterestBoardsUI(): Promise<void> {
           </div>
           <div class="board-action">
             <button class="resync-btn" data-board-url="${encodedBoardUrl}" data-board-name="${encodedBoardName}">Resync</button>
+            <button class="delete-board-btn" data-board-url="${encodedBoardUrl}" data-board-name="${encodedBoardName}" title="Delete all pins from this board">Delete</button>
           </div>
         </div>
       `;
@@ -2622,6 +2623,52 @@ function formatRelativeTime(timestamp: string): string {
 
 pinterestBoardsList?.addEventListener('click', async (event) => {
   const target = event.target as HTMLElement;
+
+  // ── Delete board ──────────────────────────────────────────────────────────
+  const deleteBtn = target.closest('.delete-board-btn') as HTMLButtonElement | null;
+  if (deleteBtn) {
+    const boardName = deleteBtn.dataset.boardName ? decodeURIComponent(deleteBtn.dataset.boardName) : '';
+    if (!boardName) return;
+    if (!confirm(`Delete all pins from "${boardName}"?\nThis cannot be undone.`)) return;
+
+    deleteBtn.disabled = true;
+    deleteBtn.textContent = 'Deleting...';
+    pinterestBoardsMessage.style.display = 'none';
+
+    try {
+      const config = await getSupabaseConfig();
+      if (!config) throw new Error('Supabase not configured');
+
+      const headers = {
+        'apikey': config.anonKey,
+        'Authorization': `Bearer ${config.anonKey}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      };
+
+      // Delete all pins for this board from Supabase
+      const res = await fetch(
+        `${config.url}/rest/v1/pinterest_pins?board_name=eq.${encodeURIComponent(boardName)}`,
+        { method: 'DELETE', headers }
+      );
+
+      if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+
+      pinterestBoardsMessage.textContent = `Deleted all pins from "${boardName}"`;
+      pinterestBoardsMessage.style.color = '#4ade80';
+      pinterestBoardsMessage.style.display = 'block';
+      await updatePinterestBoardsUI();
+    } catch (error) {
+      pinterestBoardsMessage.textContent = error instanceof Error ? error.message : 'Delete failed';
+      pinterestBoardsMessage.style.color = '#f87171';
+      pinterestBoardsMessage.style.display = 'block';
+      deleteBtn.disabled = false;
+      deleteBtn.textContent = 'Delete';
+    }
+    return;
+  }
+
+  // ── Resync board ──────────────────────────────────────────────────────────
   const button = target.closest('.resync-btn') as HTMLButtonElement | null;
   if (!button) return;
 
