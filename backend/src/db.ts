@@ -103,6 +103,10 @@ const getBoardsStmt = db.prepare(`
   SELECT * FROM pinterest_boards ORDER BY last_synced_at DESC
 `);
 
+const deleteBoardStmt = db.prepare(`
+  DELETE FROM pinterest_boards WHERE board_name = ?
+`);
+
 const insertStmt = db.prepare(`
   INSERT INTO items (source, title, url, folder, intent, metadata, embedding, created_at, ingested_at)
   VALUES (@source, @title, @url, @folder, @intent, @metadata, @embedding, @created_at, @ingested_at)
@@ -223,6 +227,10 @@ export function upsertPinterestBoard(board: PinterestBoardRow): void {
 
 export function getPinterestBoards(): PinterestBoardRow[] {
   return getBoardsStmt.all() as PinterestBoardRow[];
+}
+
+export function deletePinterestBoard(boardName: string): void {
+  deleteBoardStmt.run(boardName);
 }
 
 export { db };

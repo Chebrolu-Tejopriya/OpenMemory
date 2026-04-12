@@ -2651,8 +2651,13 @@ pinterestBoardsList?.addEventListener('click', async (event) => {
         `${config.url}/rest/v1/pinterest_pins?board_name=eq.${encodeURIComponent(boardName)}`,
         { method: 'DELETE', headers }
       );
+      if (!res.ok) throw new Error(`Supabase delete failed: ${res.status}`);
 
-      if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+      // Remove the board entry from the local backend SQLite so it disappears from the list
+      await fetch(
+        `http://localhost:3000/board?board_name=${encodeURIComponent(boardName)}`,
+        { method: 'DELETE' }
+      ).catch(() => { /* non-critical — board will still be removed from Supabase */ });
 
       pinterestBoardsMessage.textContent = `Deleted all pins from "${boardName}"`;
       pinterestBoardsMessage.style.color = '#4ade80';

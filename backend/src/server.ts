@@ -7,7 +7,7 @@ import { spawn } from 'child_process';
 import { ingestItems } from './ingest.js';
 import { search } from './search.js';
 import { searchSupabase, getSupabaseFolders, getSupabaseBoards, browseSupabase } from './supabase-search.js';
-import { getAllFolders, getPinterestBoards, getPinterestPinsCountByBoard, upsertPinterestBoard, upsertPinterestPins, getExistingPinterestPinUrls, PinterestPinRow, PinterestBoardRow } from './db.js';
+import { getAllFolders, getPinterestBoards, getPinterestPinsCountByBoard, upsertPinterestBoard, upsertPinterestPins, getExistingPinterestPinUrls, deletePinterestBoard, PinterestPinRow, PinterestBoardRow } from './db.js';
 import { StandardizedItem } from './types.js';
 import { generateEmbeddings } from './embeddings.js';
 
@@ -243,6 +243,23 @@ app.get('/pinterest-boards', (req, res) => {
     res.status(500).json({
       error: err instanceof Error ? err.message : 'Unknown error'
     });
+  }
+});
+
+/**
+ * DELETE /board?board_name=NAME
+ * Remove a board entry from local SQLite so it disappears from the board list.
+ * (Caller is responsible for deleting pins from Supabase separately.)
+ */
+app.delete('/board', (req, res) => {
+  try {
+    const boardName = req.query.board_name as string;
+    if (!boardName) return res.status(400).json({ error: 'board_name is required' });
+    deletePinterestBoard(boardName);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Delete board error:', err);
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }
 });
 
