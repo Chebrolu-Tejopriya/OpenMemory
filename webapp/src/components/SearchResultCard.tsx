@@ -87,19 +87,9 @@ export default function SearchResultCard({ result, revealDelay = 0 }: SearchResu
       onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 12px 40px rgba(0,0,0,0.08), 0 3px 10px rgba(0,0,0,0.04)")}
       onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 0 0 rgba(0,0,0,0)")}
     >
-      {/* Top row — category + source dot */}
-      <div className="flex items-center justify-between px-3 pt-3 pb-1 min-h-[28px]">
-        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest truncate max-w-[85%]">
-          {categoryLabel}
-        </span>
-        {isPinterest && (
-          <span className="w-2 h-2 rounded-full bg-[#E60023]/50 flex-shrink-0" />
-        )}
-      </div>
-
-      {/* Image container — inset with padding, tall portrait ratio */}
-      <div className="px-3 pb-2">
-        <div className="relative w-full aspect-square rounded-xl overflow-hidden bg-gray-200">
+      {/* Image container — landscape ratio matches opengraph screenshots */}
+      <div className="px-2.5 pt-2.5 pb-0">
+        <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-gray-200">
 
           {/* Image */}
           {hasPinterestImage ? (
@@ -166,14 +156,22 @@ export default function SearchResultCard({ result, revealDelay = 0 }: SearchResu
         </div>
       </div>
 
-      {/* Title */}
-      <div className="px-3 pb-3 flex flex-col gap-0.5">
+      {/* Title + meta */}
+      <div className="px-3 pt-2.5 pb-3 flex flex-col gap-1">
         <h3 className="text-[12px] sm:text-[13px] font-semibold text-gray-700 leading-snug line-clamp-2">
           {displayTitle}
         </h3>
-        {!isPinterest && (
-          <span className="text-[10px] text-gray-400 truncate">{domain}</span>
-        )}
+        <div className="flex items-center justify-between gap-1">
+          {!isPinterest && (
+            <span className="text-[10px] text-gray-400 truncate">{domain}</span>
+          )}
+          {isPinterest && (
+            <span className="w-1.5 h-1.5 rounded-full bg-[#E60023]/40 shrink-0" />
+          )}
+          <span className="text-[10px] font-medium text-gray-400/70 uppercase tracking-wider truncate text-right flex-1">
+            {categoryLabel}
+          </span>
+        </div>
       </div>
     </a>
   );
