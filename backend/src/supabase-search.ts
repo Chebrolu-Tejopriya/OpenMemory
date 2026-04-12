@@ -8,6 +8,15 @@ import { generateQueryEmbedding } from './embeddings.js';
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ghfybenvdenuupiqgouf.supabase.co';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdoZnliZW52ZGVudXVwaXFnb3VmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NTgwNDIsImV4cCI6MjA5MDIzNDA0Mn0._ADsqO0uFMEwNJ1lTKc3_0sBuuN3Jvxa3-naDmdYK1k';
 
+// Boards hidden from search results and collections (case-insensitive)
+const HIDDEN_BOARDS = new Set([
+  'book art drawings',
+  'your profile',
+  'test board',
+]);
+const isHiddenBoard = (name: string | null) =>
+  name ? HIDDEN_BOARDS.has(name.toLowerCase().trim()) : false;
+
 // Constants matching extension
 const RECENT_DAYS = 30;
 const RECENT_WINDOW_MS = RECENT_DAYS * 24 * 60 * 60 * 1000;
@@ -532,7 +541,9 @@ export async function searchSupabase(
         created_at: p.synced_at ?? null
       };
     })
-  ].filter(r => r.keyword_score > 0); // Only keep actual matches!
+  ]
+  .filter(r => r.keyword_score > 0) // Only keep actual matches!
+  .filter(r => !(r.source === 'pinterest' && isHiddenBoard(r.folder_or_board))); // Hide blocked boards
 
   // Check if we have strong enough text results to skip vector search
   const bestKeywordScore = textResults.length > 0
@@ -641,6 +652,9 @@ export async function searchSupabase(
 
   // Add vector results that weren't already in text results
   for (const result of vectorResults) {
+    // Skip pins from hidden boards
+    if (result.source === 'pinterest' && isHiddenBoard(result.folder_or_board)) continue;
+
     if (!seenUrls.has(result.url)) {
       seenUrls.add(result.url);
       mergedResults.push(result);
@@ -738,7 +752,7 @@ export async function getSupabaseBoards(): Promise<string[]> {
     const data = await response.json();
     const boards = new Set<string>();
     data.forEach((item: { board_name: string | null }) => {
-      if (item.board_name) boards.add(item.board_name);
+      if (item.board_name && !isHiddenBoard(item.board_name)) boards.add(item.board_name);
     });
 
     return Array.from(boards).sort();
@@ -802,14 +816,16 @@ export async function browseSupabase(
         if (page.length < PAGE_SIZE) break;
         offset += PAGE_SIZE;
       }
-      const results: SearchResult[] = all.map(p => ({
-        title: p.title || 'Untitled',
-        url: p.pin_url,
-        folder: p.board_name,
-        source: 'pinterest',
-        score: 1,
-        imageUrl: p.image_url || null,
-      }));
+      const results: SearchResult[] = all
+        .filter(p => !isHiddenBoard(p.board_name))
+        .map(p => ({
+          title: p.title || 'Untitled',
+          url: p.pin_url,
+          folder: p.board_name,
+          source: 'pinterest',
+          score: 1,
+          imageUrl: p.image_url || null,
+        }));
       return { results, total: results.length };
     }
   } catch (err) {
