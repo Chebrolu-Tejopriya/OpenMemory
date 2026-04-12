@@ -297,13 +297,13 @@ export default function Home() {
         {/* Search Bar */}
         <div
           ref={mentionContainerRef}
-          className={`absolute left-1/2 -translate-x-1/2 z-30 px-4 sm:px-0 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+          className={`absolute left-1/2 -translate-x-1/2 z-30 px-4 sm:px-0 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] pointer-events-none ${
             hasSearched
               ? "top-2 sm:top-[12px] w-full sm:w-[90%] max-w-[928px]"
               : "top-[120px] sm:top-[200px] w-full sm:w-[95%] max-w-[836px]"
           }`}
         >
-          <form onSubmit={(e) => { e.preventDefault(); performSearch(searchQuery, sourceFilter, selectedFolder, selectedBoard); }} className="w-full">
+          <form onSubmit={(e) => { e.preventDefault(); performSearch(searchQuery, sourceFilter, selectedFolder, selectedBoard); }} className="w-full pointer-events-auto">
             <div className={`w-full flex items-center bg-white/[0.38] border-4 border-solid border-[#5b9888] rounded-[13px] transition-all duration-500 ease-out ${hasSearched ? "px-3 sm:px-[10px] py-1.5 sm:py-[5px]" : "px-3 sm:px-[14px] py-2 sm:py-[8px]"}`}>
               <div className="flex items-center gap-2 sm:gap-[10px] flex-1 min-w-0">
                 <Search className="w-4 h-4 text-[#646464] flex-shrink-0" />
@@ -344,7 +344,7 @@ export default function Home() {
 
           {/* Mention dropdown */}
           {mentionOpen && mentionList.length > 0 && (
-            <div className="absolute top-full left-0 right-0 mt-2 bg-white/90 backdrop-blur-md rounded-xl shadow-lg border border-[#5b9888]/20 overflow-hidden z-30 max-h-52 overflow-y-auto custom-scrollbar">
+            <div className="absolute top-full left-0 right-0 mt-2 bg-white/90 backdrop-blur-md rounded-xl shadow-lg border border-[#5b9888]/20 overflow-hidden z-30 max-h-52 overflow-y-auto custom-scrollbar pointer-events-auto">
               <div className="px-3 py-1.5 border-b border-[#5b9888]/10">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-[#3a3a3a]/40">
                   {mentionType === "folder" ? "Bookmark Folders" : "Pinterest Boards"}
@@ -384,7 +384,7 @@ export default function Home() {
           )}
 
           {/* Suggestion chips */}
-          <div className={`flex flex-col items-center gap-2 mt-3 transition-all duration-500 ease-out ${hasSearched ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
+          <div className={`flex flex-col items-center gap-2 mt-3 transition-all duration-500 ease-out pointer-events-auto ${hasSearched ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
             <div className={`flex items-center justify-center gap-2 flex-wrap transition-all duration-300 ease-in-out ${suggestionsVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"}`}>
               {suggestions.map((s) => (
                 <button key={s} onClick={() => { setSearchQuery(s); performSearch(s, sourceFilter, selectedFolder, selectedBoard); }}
