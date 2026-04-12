@@ -36,9 +36,15 @@ function getFaviconUrl(url: string): string {
   }
 }
 
+function cleanPinterestTitle(title: string): string {
+  // Strip the auto-generated "This may contain: an image of ..." prefix Pinterest adds
+  return title.replace(/^this may contain:?\s*/i, "").trim();
+}
+
 export default function SearchResultCard({ result }: SearchResultCardProps) {
   const isPinterest = result.source === "pinterest";
   const domain = getDomainFromUrl(result.url);
+  const displayTitle = isPinterest ? cleanPinterestTitle(result.title) : result.title;
   const [screenshotLoaded, setScreenshotLoaded] = useState(false);
   const [screenshotError, setScreenshotError] = useState(false);
 
@@ -138,9 +144,11 @@ export default function SearchResultCard({ result }: SearchResultCardProps) {
       {/* Title */}
       <div className="px-3 pb-3 flex flex-col gap-0.5">
         <h3 className="text-[12px] sm:text-[13px] font-semibold text-gray-700 leading-snug line-clamp-2">
-          {result.title}
+          {displayTitle}
         </h3>
-        <span className="text-[10px] text-gray-400 truncate">{domain}</span>
+        {!isPinterest && (
+          <span className="text-[10px] text-gray-400 truncate">{domain}</span>
+        )}
       </div>
     </a>
   );
