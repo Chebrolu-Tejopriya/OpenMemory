@@ -87,9 +87,9 @@ export default function SearchResultCard({ result, revealDelay = 0 }: SearchResu
       onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 12px 40px rgba(0,0,0,0.08), 0 3px 10px rgba(0,0,0,0.04)")}
       onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 0 0 rgba(0,0,0,0)")}
     >
-      {/* Image container — landscape ratio matches opengraph screenshots */}
+      {/* Image container — landscape for screenshots, portrait for Pinterest pins */}
       <div className="px-2.5 pt-2.5 pb-0">
-        <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-gray-200">
+        <div className={`relative w-full rounded-xl overflow-hidden bg-gray-200 ${hasPinterestImage ? "aspect-[3/4]" : "aspect-video"}`}>
 
           {/* Image */}
           {hasPinterestImage ? (
