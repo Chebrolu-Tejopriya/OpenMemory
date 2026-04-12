@@ -158,7 +158,7 @@ export default function SearchResultCard({ result, revealDelay = 0 }: SearchResu
 
       {/* Title + meta */}
       <div className="px-3 pt-2.5 pb-3 flex flex-col gap-1">
-        <h3 className="text-[12px] sm:text-[13px] font-semibold text-gray-700 leading-snug line-clamp-2">
+        <h3 className="text-[12px] sm:text-[13px] font-semibold text-gray-700 leading-snug truncate">
           {displayTitle}
         </h3>
         <div className="flex items-center justify-between gap-1">
