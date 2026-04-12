@@ -41,6 +41,9 @@ function Card({ result, style }: { result: SearchResult; style: React.CSSPropert
   const [shotErr, setShotErr] = useState(false);
   const [pinErr, setPinErr] = useState(false);
   const isPin = result.source === "pinterest";
+  const displayTitle = isPin
+    ? result.title.replace(/^this may contain:?\s*/i, "").trim()
+    : result.title;
   const pinImg = isPin && result.imageUrl && !result.imageUrl.includes("favicon") && !pinErr;
   // Screenshot service only for bookmarks — Pinterest URLs are login-gated and return junk
   const shot = !isPin ? screenshotUrl(result.url) : null;
@@ -96,8 +99,8 @@ function Card({ result, style }: { result: SearchResult; style: React.CSSPropert
         </div>
       </div>
       <div className="px-3 pb-2.5 flex-shrink-0">
-        <p className="text-[11px] font-semibold text-gray-700 leading-snug line-clamp-2">{result.title}</p>
-        <p className="text-[9px] text-gray-400 mt-0.5 truncate">{dom}</p>
+        <p className="text-[11px] font-semibold text-gray-700 leading-snug line-clamp-2">{displayTitle}</p>
+        {!isPin && <p className="text-[9px] text-gray-400 mt-0.5 truncate">{dom}</p>}
       </div>
     </a>
   );
