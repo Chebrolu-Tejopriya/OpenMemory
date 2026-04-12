@@ -463,30 +463,101 @@ export default function Home() {
         <CanvasView folders={folders} boards={boards} active={activeView === "canvas"} />
       </div>
 
-      {/* ── Bottom dock — Search / Collections / Canvas tab switch ── */}
-      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 pointer-events-auto">
-        <div className="flex items-center gap-1 p-1 bg-black/20 backdrop-blur-xl border border-white/20 rounded-2xl shadow-xl shadow-black/20">
-          {(["search", "browse", "canvas"] as ActiveView[]).map((view) => {
-            const isActive = activeView === view;
-            const Icon = view === "search" ? Search : view === "browse" ? LayoutGrid : Waypoints;
-            const label = view === "search" ? "Search" : view === "browse" ? "Collections" : "Canvas";
-            return (
-              <button
-                key={view}
-                onClick={() => handleViewSwitch(view)}
-                aria-label={label}
-                className={`p-3 rounded-xl transition-all duration-200 ${
-                  isActive
-                    ? "bg-[#2d6b55] text-white shadow-lg shadow-[#2d6b55]/40"
-                    : "text-white/55 hover:text-white/85 hover:bg-white/10"
-                }`}
-              >
-                <Icon className="w-5 h-5" />
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      {/* ── Bottom dock — liquid glass pill ── */}
+      {(() => {
+        const VIEWS: ActiveView[] = ["search", "browse", "canvas"];
+        const ICONS = { search: Search, browse: LayoutGrid, canvas: Waypoints };
+        const LABELS = { search: "Search", browse: "Collections", canvas: "Canvas" };
+        const BTN = 44;   // button width & height px
+        const PAD = 6;    // container padding px
+        const GAP = 4;    // gap between buttons px
+        const activeIdx = VIEWS.indexOf(activeView);
+        // Indicator left = pad + index*(btn+gap)
+        const indicatorLeft = PAD + activeIdx * (BTN + GAP);
+        return (
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 pointer-events-auto select-none">
+            {/* Outer glass container */}
+            <div
+              className="relative flex items-center"
+              style={{
+                padding: PAD,
+                gap: GAP,
+                borderRadius: 22,
+                background: "linear-gradient(160deg, rgba(255,255,255,0.13) 0%, rgba(255,255,255,0.06) 100%)",
+                backdropFilter: "blur(40px) saturate(180%)",
+                WebkitBackdropFilter: "blur(40px) saturate(180%)",
+                border: "1px solid rgba(255,255,255,0.28)",
+                boxShadow: [
+                  "inset 0 1.5px 0 rgba(255,255,255,0.55)",   // top specular — light catching glass edge
+                  "inset 0 -1px 0 rgba(0,0,0,0.12)",          // bottom rim shadow
+                  "inset 1px 0 0 rgba(255,255,255,0.1)",       // left edge glint
+                  "0 8px 32px rgba(0,0,0,0.22)",               // lift shadow
+                  "0 2px 8px rgba(0,0,0,0.14)",                // close shadow
+                ].join(","),
+              }}
+            >
+              {/* Sliding glass indicator — spring animation */}
+              <div
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  top: PAD,
+                  left: indicatorLeft,
+                  width: BTN,
+                  height: BTN,
+                  borderRadius: 14,
+                  background: "linear-gradient(160deg, rgba(255,255,255,0.26) 0%, rgba(255,255,255,0.10) 100%)",
+                  backdropFilter: "blur(8px)",
+                  WebkitBackdropFilter: "blur(8px)",
+                  border: "1px solid rgba(255,255,255,0.35)",
+                  boxShadow: [
+                    "inset 0 1.5px 0 rgba(255,255,255,0.7)",   // strong specular on the chip
+                    "inset 0 -1px 0 rgba(0,0,0,0.08)",
+                    "0 4px 16px rgba(0,0,0,0.15)",
+                  ].join(","),
+                  // Spring: cubic-bezier with slight overshoot gives the "liquid" feel
+                  transition: "left 0.42s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                  pointerEvents: "none",
+                }}
+              />
+
+              {/* Buttons */}
+              {VIEWS.map((view) => {
+                const Icon = ICONS[view];
+                const isActive = activeView === view;
+                return (
+                  <button
+                    key={view}
+                    onClick={() => handleViewSwitch(view)}
+                    aria-label={LABELS[view]}
+                    style={{
+                      position: "relative",
+                      zIndex: 1,
+                      width: BTN,
+                      height: BTN,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 14,
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      color: isActive ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.45)",
+                      transition: "color 0.25s ease, transform 0.12s ease",
+                      WebkitTapHighlightColor: "transparent",
+                    }}
+                    onMouseDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.88)"; }}
+                    onMouseUp={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
+                  >
+                    <Icon size={20} strokeWidth={isActive ? 2.2 : 1.8} />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );
