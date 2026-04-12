@@ -61,7 +61,10 @@ export default function SearchResultCard({ result }: SearchResultCardProps) {
       href={result.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="group flex flex-col bg-[#f4f4f4] rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-md hover:-translate-y-0.5"
+      className="group flex flex-col bg-[#f4f4f4] rounded-2xl overflow-hidden transition-[box-shadow,transform] duration-500 ease-out hover:-translate-y-0.5"
+      style={{ boxShadow: "0 0 0 rgba(0,0,0,0)" }}
+      onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 12px 40px rgba(0,0,0,0.08), 0 3px 10px rgba(0,0,0,0.04)")}
+      onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 0 0 rgba(0,0,0,0)")}
     >
       {/* Top row — category + source dot */}
       <div className="flex items-center justify-between px-3 pt-3 pb-1 min-h-[28px]">
