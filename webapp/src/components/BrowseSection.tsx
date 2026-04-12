@@ -121,12 +121,14 @@ export default function BrowseSection({ folders, boards, constrained = false }: 
       </div>
 
       {/* ── MOBILE layout (< md) ── */}
-      <div className="flex flex-col gap-3 md:hidden">
-        {/* Tab switch */}
-        {tabSwitch}
+      <div className="md:hidden">
+        {/* Sticky tab switch — stays visible while scrolling */}
+        <div className="sticky top-0 z-10 -mx-4 px-4 pt-1 pb-3 bg-[#ebfdff]/95 backdrop-blur-sm">
+          {tabSwitch}
+        </div>
 
-        {/* Horizontally scrollable folder/board chips */}
-        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+        {/* Horizontally scrollable folder/board chips — scrolls naturally */}
+        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar mt-1">
           {list.length === 0 ? (
             <p className="text-xs text-[#3a3a3a]/30 px-2 py-2">No {activeTab === "bookmarks" ? "folders" : "boards"} found</p>
           ) : list.map((item) => (
@@ -146,13 +148,15 @@ export default function BrowseSection({ folders, boards, constrained = false }: 
         </div>
 
         {/* Cards */}
-        {isLoading ? skeletonCards : cards.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-sm text-[#3a3a3a]/30">No items found</div>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 pb-2">
-            {cards.map((card) => <SearchResultCard key={card.id} result={card} />)}
-          </div>
-        )}
+        <div className="mt-3">
+          {isLoading ? skeletonCards : cards.length === 0 ? (
+            <div className="flex items-center justify-center h-32 text-sm text-[#3a3a3a]/30">No items found</div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 pb-24">
+              {cards.map((card) => <SearchResultCard key={card.id} result={card} />)}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── DESKTOP layout (≥ md) ── */}

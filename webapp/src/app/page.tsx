@@ -445,7 +445,7 @@ export default function Home() {
         <div className="absolute inset-0 bg-[#ebfdff]/80 backdrop-blur-sm" />
 
         {/* Collections content */}
-        <div className="relative z-10 h-full flex flex-col pt-14 sm:pt-16 pb-4 px-4 sm:px-6 md:px-8 overflow-hidden">
+        <div className="relative z-10 h-full flex flex-col pt-4 sm:pt-16 pb-4 px-4 sm:px-6 md:px-8 overflow-hidden">
           <div className="flex-1 min-h-0 w-full max-w-[1200px] mx-auto overflow-y-auto custom-scrollbar">
             <BrowseSection folders={folders} boards={boards} constrained />
           </div>
