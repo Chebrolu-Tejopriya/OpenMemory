@@ -88,7 +88,7 @@ function Card({ result, style }: { result: SearchResult; style: React.CSSPropert
               {shot && !shotErr && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={shot} alt={result.title}
-                  className={`absolute inset-0 w-full h-full object-cover group-hover:scale-[1.03] transition-all duration-500 ${shotLoaded ? "opacity-100" : "opacity-0"}`}
+                  className={`absolute inset-0 w-full h-full object-contain group-hover:scale-[1.03] transition-all duration-500 ${shotLoaded ? "opacity-100" : "opacity-0"}`}
                   onLoad={() => setShotLoaded(true)} onError={() => setShotErr(true)} />
               )}
             </>
