@@ -14,24 +14,36 @@ A personal inspiration memory system — search your Chrome bookmarks and Pinter
 - **# mention** — type `#` to scope search to a Pinterest board
 - **Scope chip** — selected folder/board shown inside the bar with one-click clear
 - **LRU embedding cache** — repeated queries return instantly; smart skip if keyword score is strong enough
+- **AND logic** — multi-word Pinterest searches require all terms to match (prevents "web page" false positives)
+- **Clean card titles** — Pinterest "This may contain:" prefix stripped; Pinterest domain hidden
 
 ### Collections
 - Browse all items organized by folder (bookmarks) or board (Pinterest)
 - Frosted glass panel with sidebar folder/board list and scrollable card grid
 - Full pagination — fetches all rows (1000/page loop, no 40-item cap)
+- **Alphabetical sort** — folders and boards sorted case-insensitively
+- **Hidden boards** — specified boards excluded from search results, browse, and the board list
+- **Mobile:** sticky Bookmarks/Pinterest tab switch; chips and cards scroll naturally below it
 
 ### Canvas
 - Infinite drag-to-explore grid of your saved items
 - Native `overflow: auto` scroll — compositor-thread smooth on touch/trackpad
 - Mouse drag via direct `scrollLeft`/`scrollTop` manipulation + pointer-history inertia
 - Infinite loop: 5×5 tiled grid with seamless scroll-event wrap
-- Top-right filter bar: Bookmarks / Pinterest tab switch + folder/board dropdown
+- **5 columns, 240×280px cards**, eager parallel fetch on mount (data ready before tab switch)
+- Pinterest card titles truncated to one line; image fills remaining card height
+
+### Chrome Extension
+- Sync Chrome bookmarks and Pinterest pins to Supabase
+- **Delete board** — remove all pins for a board from Supabase + local SQLite in one click
+- Board list persists locally (SQLite) and syncs state with Supabase
 
 ### Visual
-- Card design: `#f4f4f4` background, square aspect-ratio image, hover blur + "Open" pill
+- **Liquid glass bottom dock** — dark-neutral glass pill with smooth sliding indicator between tabs
+- Card design: `#f4f4f4` background, square aspect-ratio image, hover shadow (slow 500ms fade)
 - Screenshot thumbnails via `screenshot.11ty.dev` (bookmarks); direct CDN image (Pinterest pins)
+- Broken Pinterest image fallback to favicon placeholder
 - Animated video background (`leaf-animation.mp4`)
-- Bottom-center floating dock: Search · Collections · Canvas icons
 
 ---
 
@@ -71,11 +83,12 @@ A personal inspiration memory system — search your Chrome bookmarks and Pinter
 ```
 User types query
     ↓
-Webapp POST /search → Render backend
+Webapp GET /search → Render backend
     ↓
 Backend generates embedding (FastEmbed Python server)
     ↓
-Supabase RPC: hybrid keyword + vector scoring
+Supabase: hybrid keyword + vector scoring
+Hidden boards filtered from all results
     ↓
 Results ranked by: 0.55×keyword + 0.10×semantic + 0.15×recency + 0.20×source
     ↓
@@ -154,16 +167,21 @@ All endpoints served by the Express backend (Render in prod, `localhost:3001` lo
 
 ### `GET /search?q=<query>`
 Hybrid keyword + vector search across bookmarks and Pinterest pins.
+Hidden boards are excluded from all results.
 
 ### `GET /browse?source=chrome&folder=<name>`
 ### `GET /browse?source=pinterest&board=<name>`
 Returns all items in a folder or board (paginated internally, no cap).
+Hidden boards excluded from Pinterest results.
 
 ### `GET /folders`
 Returns all unique bookmark folder names.
 
 ### `GET /boards`
-Returns all unique Pinterest board names.
+Returns all unique Pinterest board names (hidden boards excluded).
+
+### `DELETE /board?board_name=<name>`
+Removes a board entry from local SQLite (caller responsible for Supabase pin deletion).
 
 ### `POST /embed`
 ```json
@@ -197,6 +215,9 @@ Bookmarks always ranked before Pinterest pins within the same relevance tier.
 | 0.4 | Folder/board contains query |
 | 0.3 | Description contains query |
 | 0.15 | Any term found anywhere |
+
+### Multi-term Pinterest search
+Each term must match at least one of `title`, `description`, or `board_name` (AND between terms, OR across columns). Prevents vague single-column matches (e.g. "page" matching every pin description).
 
 ### Smart vector skip
 If keyword score ≥ 0.5 with 5+ results, vector search is skipped entirely — reduces latency to ~150ms for common queries like `"figma"` or `"dashboard"`.

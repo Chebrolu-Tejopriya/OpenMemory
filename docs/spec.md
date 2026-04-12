@@ -233,23 +233,32 @@ GREATEST(0, 1 - (EXTRACT(EPOCH FROM now() - created_at) / 2592000))
 -- Decays to 0 over 30 days
 ```
 
-## 6.5 Supabase RPC
+## 6.5 Pinterest Text Search
 
-```sql
-search_all_items(
-  query_embedding  vector(384),
-  search_query     TEXT,
-  use_vector_only  BOOLEAN DEFAULT false,
-  match_count      INTEGER DEFAULT 30,
-  filter_source    TEXT DEFAULT NULL,
-  filter_folder    TEXT DEFAULT NULL,
-  filter_board     TEXT DEFAULT NULL
-)
+Direct PostgREST GET query (NOT an RPC). For each query term, requires it to appear in `title` OR `description` OR `board_name`:
+
+```
+Single term:  ?or=(title.ilike.*x*,description.ilike.*x*,board_name.ilike.*x*)
+Multi-term:   ?and=(or(title.ilike.*x*,...),or(title.ilike.*y*,...))
 ```
 
-All RPC calls and browse queries use `?select=` to **exclude the embedding column** from API responses — prevents Supabase egress from being exhausted by ~1.5KB per row of vector data.
+AND between terms prevents vague matches (e.g. "page" in every pin description).
 
-## 6.6 Browse (Collections + Canvas)
+## 6.6 Hidden Boards
+
+Certain boards are excluded from ALL surfaces (search results, board list, browse/canvas):
+
+```typescript
+const HIDDEN_BOARDS = new Set([
+  'book art drawings',
+  'your profile',
+  'test board',
+]);
+```
+
+Filter is case-insensitive. Applied in `getSupabaseBoards()`, `browseSupabase()`, and `searchSupabase()` (both text and vector result paths).
+
+## 6.7 Browse (Collections + Canvas)
 
 ```
 GET /browse?source=chrome&folder=<name>
@@ -259,6 +268,7 @@ GET /browse?source=pinterest&board=<name>
 - Paginates internally at 1000 rows/page — no item cap
 - Returns full `SearchResult[]` with camelCase fields (`imageUrl`, `url`, `folder`)
 - Does NOT include `embedding` column
+- Hidden boards excluded from Pinterest results
 
 ---
 
@@ -268,7 +278,7 @@ GET /browse?source=pinterest&board=<name>
 ```
 GET  /search?q=<query>
 ```
-Hybrid keyword + vector search. Returns ranked `SearchResult[]`.
+Hybrid keyword + vector search. Hidden boards excluded. Returns ranked `SearchResult[]`.
 
 ## Browse
 ```
@@ -280,7 +290,14 @@ All items in folder/board. No limit. Returns `{ results: SearchResult[], total: 
 ## Metadata
 ```
 GET  /folders       → { folders: string[] }
-GET  /boards        → { boards: string[] }
+GET  /boards        → { boards: string[] }   // hidden boards excluded
+```
+
+## Board management (extension → backend)
+```
+POST   /resync-board    Body: { board_url, pins[], board_name?, total_pins? }
+GET    /pinterest-boards → { boards: PinterestBoardRow[] }
+DELETE /board?board_name=<name>   // removes from local SQLite
 ```
 
 ## Embedding
@@ -325,22 +342,43 @@ Single-viewport, `h-screen overflow-hidden`. Three views toggled by bottom dock.
 └─────────────────────────────────────────────────────┘
 ```
 
-## 8.2 Search View
+## 8.2 Bottom Dock
+
+Liquid glass pill, dark-neutral base (visible on any background):
+- `background: linear-gradient(160deg, rgba(10,10,10,0.35) 0%, rgba(10,10,10,0.28) 100%)`
+- `backdropFilter: blur(40px) saturate(160%)`
+- Multi-layer `inset box-shadow` for specular highlights
+- Absolutely-positioned sliding glass indicator that transitions `left` using `cubic-bezier(0.65, 0, 0.35, 1)` (no bounce)
+- Button size: 44×44px, padding: 6px, gap: 4px, border-radius: 22px
+
+## 8.3 Search View
 
 - Search bar with scope chip (@ folder, # board)
 - `@` mention → folder dropdown to scope search
 - `#` mention → Pinterest board dropdown
 - Scope chip shown inside bar with X to clear
 - Results: 3-column grid (`SearchResultCard`)
+- Search bar container: `z-30 pointer-events-none`; form, dropdown, chips: `pointer-events-auto`
 
-## 8.3 Collections View (BrowseSection)
+## 8.4 Collections View (BrowseSection)
 
-- Left sidebar: folder list (bookmarks) or board list (Pinterest)
+**Desktop (≥ md):**
+- Left sidebar: folder/board list, sticky within viewport
 - Right: card grid of all items in selected folder/board
-- Tab switch between Bookmarks and Pinterest at top
-- Fully scrollable within viewport (`constrained` prop)
+- Tab switch (Bookmarks/Pinterest) at top of sidebar
 
-## 8.4 Canvas View (CanvasView)
+**Mobile (< md):**
+- Tab switch: `sticky top-0 z-10` with `bg-[#ebfdff]/95 backdrop-blur-sm` — stays visible while scrolling
+- Folder/board chips: horizontal scroll row, scrolls away naturally
+- Cards: 2-column grid below chips, `pb-24` for dock clearance
+- Top padding: `pt-4` (not `pt-14`) — no blank space above Collections header
+
+**Both:**
+- Folders and boards sorted **case-insensitively alphabetically** (`.sort((a,b) => a.toLowerCase().localeCompare(b.toLowerCase()))`)
+- First item in sorted list auto-selected on tab switch
+- Full pagination (1000/page loop)
+
+## 8.5 Canvas View (CanvasView)
 
 - Infinite drag-to-explore grid
 - **Scrolling**: native `overflow: auto` — compositor thread, smooth on touch/trackpad
@@ -348,9 +386,9 @@ Single-viewport, `h-screen overflow-hidden`. Three views toggled by bottom dock.
 - **Inertia**: RAF with `Math.pow(0.998, dt_ms)` time-based friction after mouse release
 - **Velocity**: computed from 80ms pointer history on release
 - **Infinite loop**: 5×5 tiled grid; scroll event snaps back by one tile when near edge
-- **Filter bar** (top-right): Bookmarks/Pinterest tab + folder/board dropdown
-- **Cards**: 300×340px, 4 columns, gap 28px
-- **Fetch**: bookmarks and pins fetched into separate arrays (each capped at 180) to prevent one source starving the other
+- **No filter bar** — source is selected via tab switch only; no folder/board dropdown
+- **Cards**: 240×280px, **5 columns**, gap 24px, title truncated to single line, image fills remaining height (`flex-1`)
+- **Fetch**: eager parallel fetch on mount (`Promise.allSettled`), not gated by `active` prop; separate arrays per source capped at 180 items each
 
 ---
 
@@ -360,19 +398,25 @@ Single-viewport, `h-screen overflow-hidden`. Three views toggled by bottom dock.
 - `#f4f4f4` background, square aspect-ratio image area
 - Pinterest pins: red dot indicator, direct `image_url` thumbnail
 - Bookmarks: `screenshot.11ty.dev` opengraph screenshot
-- Hover: blur overlay + "Open" pill button
-- Fallback: favicon + domain if screenshot/image fails
+- Hover: blur overlay + "Open" pill button; soft shadow fades in over 500ms
+- **Pinterest title cleanup**: strip `"This may contain:?"` prefix (case-insensitive)
+- **Pinterest domain hidden**: footer domain not shown for Pinterest cards
+- **Broken image fallback**: `onError` state → falls back to favicon placeholder
 
 ## BrowseSection
-- Props: `source`, `folders`, `boards`, `constrained`
+- Props: `folders`, `boards`, `constrained`
 - Fetches via `GET /browse` with full pagination (1000/page loop)
-- 3-column grid
+- Alphabetical sort applied client-side (case-insensitive)
+- Desktop: 3-column grid; Mobile: 2-column grid
+- Mobile: sticky tab switch, natural chip/card scroll
 
 ## CanvasView
 - Props: `folders: string[]`, `boards: string[]`, `active: boolean`
-- Fetches lazily (only on first `active=true`)
+- Fetches eagerly on mount (not gated by `active`)
 - Separate fetch loops for bookmarks and pins (independent 180-item caps)
 - `imageUrl` field: uses camelCase from API response — do NOT use `image_url`
+- Pinterest titles cleaned (strip "This may contain:" prefix)
+- Pinterest domain hidden from card footer
 
 ---
 
@@ -386,13 +430,21 @@ Single-viewport, `h-screen overflow-hidden`. Three views toggled by bottom dock.
 4. Extract: `pin_id`, `pin_url`, `image_url`, `title`, `description`, `board_name`
 5. Batch upsert to Supabase → trigger embedding generation
 
-## 10.2 image_url
+## 10.2 Board Management (Extension)
+
+- **Resync**: POST `/resync-board` with new pins; deduplicates against existing `pin_url`s
+- **Delete**: 
+  1. DELETE `pinterest_pins?board_name=eq.<name>` on Supabase
+  2. DELETE `/board?board_name=<name>` on backend (removes SQLite entry)
+  3. Update board list UI
+
+## 10.3 image_url
 
 - Stored as direct Pinterest CDN URL: `https://i.pinimg.com/736x/...`
 - If null (old pins synced without image): card shows favicon placeholder
 - Re-sync the board from the extension to populate missing `image_url`
 
-## 10.3 Data Extraction Methods
+## 10.4 Data Extraction Methods
 
 1. **API Interception**: XHR/Fetch to `api.pinterest.com` (primary)
 2. **DOM Scraping**: HTML parsing fallback
@@ -444,6 +496,7 @@ chrome.bookmarks.onMoved    → updateBookmark()
 ❌ Add features not explicitly requested  
 ❌ Use Float32Array for embeddings  
 ❌ Skip reading files before editing  
+❌ Use `search_pinterest_pins_text` RPC — it is not deployed; use direct PostgREST GET query instead
 
 ---
 
