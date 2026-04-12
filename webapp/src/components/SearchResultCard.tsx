@@ -24,10 +24,6 @@ function getDomainFromUrl(url: string): string {
   }
 }
 
-function getScreenshotUrl(url: string): string {
-  return `https://v1.screenshot.11ty.dev/${encodeURIComponent(url)}/opengraph/`;
-}
-
 function getFaviconUrl(url: string): string {
   try {
     const domain = new URL(url).hostname;
@@ -46,8 +42,6 @@ export default function SearchResultCard({ result, revealDelay = 0 }: SearchResu
   const isPinterest = result.source === "pinterest";
   const domain = getDomainFromUrl(result.url);
   const displayTitle = isPinterest ? cleanPinterestTitle(result.title) : result.title;
-  const [screenshotLoaded, setScreenshotLoaded] = useState(false);
-  const [screenshotError, setScreenshotError] = useState(false);
   const [pinImgError, setPinImgError] = useState(false);
 
   // Scroll reveal
@@ -64,7 +58,6 @@ export default function SearchResultCard({ result, revealDelay = 0 }: SearchResu
     return () => observer.disconnect();
   }, []);
   const hasPinterestImage = isPinterest && result.imageUrl && !result.imageUrl.includes("favicon") && !pinImgError;
-  const screenshotUrl = !isPinterest ? getScreenshotUrl(result.url) : null;
   const faviconUrl = getFaviconUrl(result.url);
 
   const categoryLabel = result.folder && result.folder !== "Bookmarks"
@@ -102,49 +95,27 @@ export default function SearchResultCard({ result, revealDelay = 0 }: SearchResu
               onError={() => setPinImgError(true)}
             />
           ) : (
-            <>
-              {/* Favicon placeholder */}
-              <div
-                className={`absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#f8fffe] to-[#eef7f4] transition-opacity duration-300 ${
-                  screenshotLoaded && !screenshotError ? "opacity-0" : "opacity-100"
-                }`}
-              >
-                {faviconUrl ? (
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="w-12 h-12 rounded-xl bg-white shadow-sm flex items-center justify-center p-2.5">
-                      <Image
-                        src={faviconUrl}
-                        alt=""
-                        width={40}
-                        height={40}
-                        className="object-contain w-auto h-auto max-w-full max-h-full"
-                        unoptimized
-                      />
-                    </div>
-                    {domain && (
-                      <span className="text-[10px] text-gray-400 font-medium">{domain}</span>
-                    )}
+            <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#f8fffe] to-[#eef7f4]">
+              {faviconUrl ? (
+                <div className="flex flex-col items-center gap-2">
+                  <div className="w-12 h-12 rounded-xl bg-white shadow-sm flex items-center justify-center p-2.5">
+                    <Image
+                      src={faviconUrl}
+                      alt=""
+                      width={40}
+                      height={40}
+                      className="object-contain w-auto h-auto max-w-full max-h-full"
+                      unoptimized
+                    />
                   </div>
-                ) : (
-                  <span className="text-[10px] text-gray-300 font-medium">{domain}</span>
-                )}
-              </div>
-
-              {/* Screenshot */}
-              {screenshotUrl && !screenshotError && (
-                <Image
-                  src={screenshotUrl}
-                  alt={result.title}
-                  fill
-                  className={`object-cover transition-all duration-500 group-hover:scale-[1.02] ${
-                    screenshotLoaded ? "opacity-100" : "opacity-0"
-                  }`}
-                  unoptimized
-                  onLoad={() => setScreenshotLoaded(true)}
-                  onError={() => setScreenshotError(true)}
-                />
+                  {domain && (
+                    <span className="text-[10px] text-gray-400 font-medium">{domain}</span>
+                  )}
+                </div>
+              ) : (
+                <span className="text-[10px] text-gray-300 font-medium">{domain}</span>
               )}
-            </>
+            </div>
           )}
 
           {/* Hover overlay — blur + Open button */}
