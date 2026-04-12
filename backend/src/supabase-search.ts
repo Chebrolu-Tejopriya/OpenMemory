@@ -769,12 +769,15 @@ export async function browseSupabase(
       }));
       return { results, total: results.length };
     } else {
-      const encoded = encodeURIComponent(folderOrBoard);
+      // Empty folderOrBoard → fetch all pins (no board filter), same as Chrome bookmarks handling
+      const boardFilter = folderOrBoard
+        ? `&board_name=eq.${encodeURIComponent(folderOrBoard)}`
+        : '';
       const all: Array<{ pin_id?: string; id?: string; pin_url: string; title: string | null; board_name: string | null; image_url: string | null; synced_at?: string | null }> = [];
       let offset = 0;
       while (true) {
         const response = await fetch(
-          `${SUPABASE_URL}/rest/v1/pinterest_pins?select=id,pin_id,pin_url,title,board_name,image_url,synced_at&board_name=eq.${encoded}&limit=${PAGE_SIZE}&offset=${offset}&order=synced_at.desc`,
+          `${SUPABASE_URL}/rest/v1/pinterest_pins?select=id,pin_id,pin_url,title,board_name,image_url,synced_at${boardFilter}&limit=${PAGE_SIZE}&offset=${offset}&order=synced_at.desc`,
           { method: 'GET', headers: requestHeaders }
         );
         if (!response.ok) break;
