@@ -48,7 +48,8 @@ export default function SearchResultCard({ result }: SearchResultCardProps) {
   const [screenshotLoaded, setScreenshotLoaded] = useState(false);
   const [screenshotError, setScreenshotError] = useState(false);
 
-  const hasPinterestImage = isPinterest && result.imageUrl && !result.imageUrl.includes("favicon");
+  const [pinImgError, setPinImgError] = useState(false);
+  const hasPinterestImage = isPinterest && result.imageUrl && !result.imageUrl.includes("favicon") && !pinImgError;
   const screenshotUrl = !isPinterest ? getScreenshotUrl(result.url) : null;
   const faviconUrl = getFaviconUrl(result.url);
 
@@ -88,6 +89,7 @@ export default function SearchResultCard({ result }: SearchResultCardProps) {
               fill
               className="object-cover transition-all duration-300 group-hover:scale-[1.02]"
               unoptimized
+              onError={() => setPinImgError(true)}
             />
           ) : (
             <>
