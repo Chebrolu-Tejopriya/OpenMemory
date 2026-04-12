@@ -1,18 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bookmark, Pin, ChevronDown } from "lucide-react";
+import { Bookmark, Pin } from "lucide-react";
 import { SearchResult } from "./SearchResultCard";
 
 type CanvasSource = "chrome" | "pinterest";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
-const CARD_W = 300;
-const CARD_H = 340;
-const GAP_X = 28;
-const GAP_Y = 28;
-const COLS = 4;
+const CARD_W = 240;
+const CARD_H = 280;
+const GAP_X = 24;
+const GAP_Y = 24;
+const COLS = 5;
 
 // 5×5 tiling gives 4 full tile-widths of scroll range before needing to wrap
 const TILES_X = 5;
@@ -106,17 +106,13 @@ function Card({ result, style }: { result: SearchResult; style: React.CSSPropert
 // ── CanvasView ─────────────────────────────────────────────────────────────
 interface Props { folders: string[]; boards: string[]; active: boolean }
 
-export default function CanvasView({ folders, boards, active }: Props) {
+export default function CanvasView({ folders: _folders, boards: _boards, active: _active }: Props) {
   const [items, setItems] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const hasFetched = useRef(false);
 
   // ── Filter state ─────────────────────────────────────────────────────────
   const [source, setSource] = useState<CanvasSource>("chrome");
-  const [selectedFolder, setSelectedFolder] = useState<string>("");
-  const [selectedBoard, setSelectedBoard] = useState<string>("");
-  const [folderOpen, setFolderOpen] = useState(false);
-  const [boardOpen, setBoardOpen] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const tileWRef = useRef(0);
@@ -131,44 +127,42 @@ export default function CanvasView({ folders, boards, active }: Props) {
   const raf = useRef<number | null>(null);
   const ptrHistory = useRef<{ x: number; y: number; t: number }[]>([]);
 
-  // ── Fetch ────────────────────────────────────────────────────────────────
+  // ── Fetch eagerly on mount — so data is ready by the time user opens canvas ─
   useEffect(() => {
-    if (!active || hasFetched.current) return;
+    if (hasFetched.current) return;
     hasFetched.current = true;
     setLoading(true);
 
     (async () => {
+      // Both fetches in parallel for faster load
+      const [bmRes, pinRes] = await Promise.allSettled([
+        fetch(`${BACKEND_URL}/browse?source=chrome`),
+        fetch(`${BACKEND_URL}/browse?source=pinterest`),
+      ]);
+
       const bookmarks: SearchResult[] = [];
       const pins: SearchResult[] = [];
 
-      // Fetch ALL bookmarks in one request (no folder filter) so nothing is missed
-      try {
-        const r = await fetch(`${BACKEND_URL}/browse?source=chrome`);
-        if (r.ok) {
-          const d = await r.json();
-          (d.results || []).forEach((item: { title: string; url: string; folder: string | null; imageUrl?: string | null }, i: number) => {
-            bookmarks.push({ id: `bm-${i}`, title: item.title, folder: item.folder || "", url: item.url, source: "chrome", imageUrl: item.imageUrl || undefined });
-          });
-        }
-      } catch { /* skip */ }
+      if (bmRes.status === "fulfilled" && bmRes.value.ok) {
+        const d = await bmRes.value.json();
+        (d.results || []).slice(0, MAX_ITEMS).forEach((item: { title: string; url: string; folder: string | null; imageUrl?: string | null }, i: number) => {
+          bookmarks.push({ id: `bm-${i}`, title: item.title, folder: item.folder || "", url: item.url, source: "chrome", imageUrl: item.imageUrl || undefined });
+        });
+      }
 
-      // Fetch ALL pins in one request (no board filter)
-      try {
-        const r = await fetch(`${BACKEND_URL}/browse?source=pinterest`);
-        if (r.ok) {
-          const d = await r.json();
-          (d.results || []).forEach((item: { title: string | null; url: string; folder: string | null; imageUrl?: string | null }, i: number) => {
-            pins.push({ id: `pin-${i}`, title: item.title || "Untitled", folder: item.folder || "", url: item.url, source: "pinterest", imageUrl: item.imageUrl || undefined });
-          });
-        }
-      } catch { /* skip */ }
+      if (pinRes.status === "fulfilled" && pinRes.value.ok) {
+        const d = await pinRes.value.json();
+        (d.results || []).slice(0, MAX_ITEMS).forEach((item: { title: string | null; url: string; folder: string | null; imageUrl?: string | null }, i: number) => {
+          pins.push({ id: `pin-${i}`, title: item.title || "Untitled", folder: item.folder || "", url: item.url, source: "pinterest", imageUrl: item.imageUrl || undefined });
+        });
+      }
 
-      // Combine and shuffle within each source group
-      const all = [...bookmarks, ...pins].sort(() => Math.random() - 0.5);
+      const all = [...bookmarks, ...pins];
       setItems(all);
       setLoading(false);
     })();
-  }, [active, folders, boards]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Scroll to center tile when content mounts ────────────────────────────
   useEffect(() => {
@@ -178,7 +172,7 @@ export default function CanvasView({ folders, boards, active }: Props) {
     el.scrollLeft = tileWRef.current * 2;
     el.scrollTop = tileHRef.current * 2;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, source, selectedFolder, selectedBoard]);
+  }, [items, source]);
 
   // ── Infinite wrap: reset scroll to equivalent center-tile position ───────
   useEffect(() => {
@@ -305,19 +299,8 @@ export default function CanvasView({ folders, boards, active }: Props) {
     };
   }, []);
 
-  // ── Filter items ─────────────────────────────────────────────────────────
-  const filteredItems = items.filter((item) => {
-    if (item.source !== source) return false;
-    if (source === "chrome" && selectedFolder) {
-      const itemFolder = item.folder?.split("/").pop() || item.folder || "";
-      const filterFolder = selectedFolder.split("/").pop() || selectedFolder;
-      return itemFolder === filterFolder;
-    }
-    if (source === "pinterest" && selectedBoard) {
-      return item.folder === selectedBoard;
-    }
-    return true;
-  });
+  // ── Filter items by source tab only (no folder/board dropdown) ──────────
+  const filteredItems = items.filter((item) => item.source === source);
 
   // ── Build tiled grid ──────────────────────────────────────────────────────
   const rows = Math.ceil(filteredItems.length / COLS);
@@ -343,15 +326,6 @@ export default function CanvasView({ folders, boards, active }: Props) {
         });
       });
     }
-  }
-
-  const activeList = source === "chrome" ? folders : boards;
-  const activeSelected = source === "chrome" ? selectedFolder : selectedBoard;
-  const dropdownOpen = source === "chrome" ? folderOpen : boardOpen;
-  const setDropdownOpen = source === "chrome" ? setFolderOpen : setBoardOpen;
-
-  function displayName(path: string) {
-    return path.split("/").pop() || path;
   }
 
   return (
@@ -387,14 +361,14 @@ export default function CanvasView({ folders, boards, active }: Props) {
         </div>
       </div>
 
-      {/* ── Top-right filter bar — floats above scroll ── */}
+      {/* ── Top-right filter bar — Bookmarks / Pinterest tab switch only ── */}
       <div
-        className="absolute top-3 right-3 z-30 flex items-center gap-2"
+        className="absolute top-3 right-3 z-30"
         onPointerDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center bg-white/40 backdrop-blur-md border border-white/50 rounded-xl p-1 gap-0.5 shadow-sm">
           <button
-            onClick={() => { setSource("chrome"); setFolderOpen(false); setBoardOpen(false); }}
+            onClick={() => setSource("chrome")}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
               source === "chrome" ? "bg-white shadow-sm text-[#3d7a64]" : "text-[#3a3a3a]/50 hover:text-[#3a3a3a]/70"
             }`}
@@ -403,7 +377,7 @@ export default function CanvasView({ folders, boards, active }: Props) {
             Bookmarks
           </button>
           <button
-            onClick={() => { setSource("pinterest"); setFolderOpen(false); setBoardOpen(false); }}
+            onClick={() => setSource("pinterest")}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
               source === "pinterest" ? "bg-white shadow-sm text-[#3d7a64]" : "text-[#3a3a3a]/50 hover:text-[#3a3a3a]/70"
             }`}
@@ -412,38 +386,6 @@ export default function CanvasView({ folders, boards, active }: Props) {
             Pinterest
           </button>
         </div>
-
-        {activeList.length > 0 && (
-          <div className="relative">
-            <button
-              onClick={() => setDropdownOpen(!dropdownOpen)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-white/40 backdrop-blur-md border border-white/50 rounded-xl text-xs font-medium text-[#3a3a3a]/70 hover:bg-white/60 transition-all duration-200 shadow-sm max-w-[160px]"
-            >
-              <span className="truncate">{activeSelected ? displayName(activeSelected) : `All ${source === "chrome" ? "Folders" : "Boards"}`}</span>
-              <ChevronDown className={`w-3 h-3 flex-shrink-0 transition-transform duration-200 ${dropdownOpen ? "rotate-180" : ""}`} />
-            </button>
-
-            {dropdownOpen && (
-              <div className="absolute top-full right-0 mt-1.5 w-52 bg-white/90 backdrop-blur-md border border-[#5b9888]/15 rounded-xl shadow-lg overflow-hidden z-40 max-h-64 overflow-y-auto">
-                <button
-                  onClick={() => { source === "chrome" ? setSelectedFolder("") : setSelectedBoard(""); setDropdownOpen(false); }}
-                  className={`w-full text-left px-3 py-2 text-xs transition-colors ${!activeSelected ? "text-[#3d7a64] font-medium bg-[#5b9888]/8" : "text-[#3a3a3a]/60 hover:bg-[#5b9888]/5"}`}
-                >
-                  All {source === "chrome" ? "Folders" : "Boards"}
-                </button>
-                {activeList.map((item) => (
-                  <button
-                    key={item}
-                    onClick={() => { source === "chrome" ? setSelectedFolder(item) : setSelectedBoard(item); setDropdownOpen(false); }}
-                    className={`w-full text-left px-3 py-2 text-xs truncate transition-colors ${activeSelected === item ? "text-[#3d7a64] font-medium bg-[#5b9888]/8" : "text-[#3a3a3a]/60 hover:bg-[#5b9888]/5"}`}
-                  >
-                    {displayName(item)}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Loading */}

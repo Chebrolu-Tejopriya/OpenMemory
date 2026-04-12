@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Bookmark, Pin, FolderOpen, ChevronRight } from "lucide-react";
+import { Bookmark, Pin, FolderOpen } from "lucide-react";
 import SearchResultCard, { SearchResult } from "./SearchResultCard";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
@@ -169,14 +169,13 @@ export default function BrowseSection({ folders, boards, constrained = false }: 
                 key={item}
                 onClick={() => setSelectedItem(item)}
                 title={item}
-                className={`flex items-center justify-between gap-2 w-full text-left px-3 py-2 rounded-lg text-xs transition-all duration-150 ${
+                className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all duration-150 ${
                   selectedItem === item
                     ? "bg-white shadow-sm text-[#3d7a64] font-medium"
                     : "text-[#3a3a3a]/60 hover:bg-white/60 hover:text-[#3a3a3a]/80"
                 }`}
               >
-                <span className="truncate">{displayName(item)}</span>
-                {selectedItem === item && <ChevronRight className="w-3 h-3 shrink-0 text-[#5b9888]/60" />}
+                <span className="truncate block">{displayName(item)}</span>
               </button>
             ))}
           </div>

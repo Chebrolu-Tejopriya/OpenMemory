@@ -465,40 +465,26 @@ export default function Home() {
 
       {/* ── Bottom dock — Search / Collections / Canvas tab switch ── */}
       <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 pointer-events-auto">
-        <div className="flex items-center gap-2 p-1.5 bg-white/30 backdrop-blur-md border border-white/40 rounded-2xl shadow-lg shadow-black/10">
-          <button
-            onClick={() => handleViewSwitch("search")}
-            aria-label="Search"
-            className={`p-3 rounded-xl transition-all duration-200 ${
-              activeView === "search"
-                ? "bg-[#3d7a64] text-white shadow-md shadow-[#3d7a64]/30"
-                : "text-[#3a3a3a]/40 hover:text-[#3d7a64] hover:bg-white/60"
-            }`}
-          >
-            <Search className="w-5 h-5" />
-          </button>
-          <button
-            onClick={() => handleViewSwitch("browse")}
-            aria-label="Collections"
-            className={`p-3 rounded-xl transition-all duration-200 ${
-              activeView === "browse"
-                ? "bg-[#3d7a64] text-white shadow-md shadow-[#3d7a64]/30"
-                : "text-[#3a3a3a]/40 hover:text-[#3d7a64] hover:bg-white/60"
-            }`}
-          >
-            <LayoutGrid className="w-5 h-5" />
-          </button>
-          <button
-            onClick={() => handleViewSwitch("canvas")}
-            aria-label="Canvas"
-            className={`p-3 rounded-xl transition-all duration-200 ${
-              activeView === "canvas"
-                ? "bg-[#3d7a64] text-white shadow-md shadow-[#3d7a64]/30"
-                : "text-[#3a3a3a]/40 hover:text-[#3d7a64] hover:bg-white/60"
-            }`}
-          >
-            <Waypoints className="w-5 h-5" />
-          </button>
+        <div className="flex items-center gap-1 p-1 bg-black/20 backdrop-blur-xl border border-white/20 rounded-2xl shadow-xl shadow-black/20">
+          {(["search", "browse", "canvas"] as ActiveView[]).map((view) => {
+            const isActive = activeView === view;
+            const Icon = view === "search" ? Search : view === "browse" ? LayoutGrid : Waypoints;
+            const label = view === "search" ? "Search" : view === "browse" ? "Collections" : "Canvas";
+            return (
+              <button
+                key={view}
+                onClick={() => handleViewSwitch(view)}
+                aria-label={label}
+                className={`p-3 rounded-xl transition-all duration-200 ${
+                  isActive
+                    ? "bg-[#2d6b55] text-white shadow-lg shadow-[#2d6b55]/40"
+                    : "text-white/55 hover:text-white/85 hover:bg-white/10"
+                }`}
+              >
+                <Icon className="w-5 h-5" />
+              </button>
+            );
+          })}
         </div>
       </div>
 
