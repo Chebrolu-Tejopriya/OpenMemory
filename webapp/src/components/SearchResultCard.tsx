@@ -89,7 +89,7 @@ export default function SearchResultCard({ result, revealDelay = 0 }: SearchResu
     >
       {/* Image container — landscape for screenshots, portrait for Pinterest pins */}
       <div className="px-2.5 pt-2.5 pb-0">
-        <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-gray-200">
+        <div className={`relative w-full aspect-video rounded-xl overflow-hidden ${hasPinterestImage ? "bg-[#e8e8e8]" : "bg-gray-200"}`}>
 
           {/* Image */}
           {hasPinterestImage ? (
@@ -97,7 +97,7 @@ export default function SearchResultCard({ result, revealDelay = 0 }: SearchResu
               src={result.imageUrl!}
               alt={result.title}
               fill
-              className="object-cover transition-all duration-300 group-hover:scale-[1.02]"
+              className="object-contain transition-all duration-300 group-hover:scale-[1.02]"
               unoptimized
               onError={() => setPinImgError(true)}
             />
