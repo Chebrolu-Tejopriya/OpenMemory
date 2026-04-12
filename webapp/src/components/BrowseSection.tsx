@@ -22,8 +22,9 @@ export default function BrowseSection({ folders, boards, constrained = false }: 
   const chipRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   useEffect(() => {
-    const list = activeTab === "bookmarks" ? folders : boards;
-    if (list.length > 0) setSelectedItem(list[0]);
+    const raw = activeTab === "bookmarks" ? folders : boards;
+    const sorted = raw.slice().sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    if (sorted.length > 0) setSelectedItem(sorted[0]);
     else { setSelectedItem(""); setCards([]); }
   }, [activeTab, folders, boards]);
 
@@ -64,7 +65,9 @@ export default function BrowseSection({ folders, boards, constrained = false }: 
     if (selectedItem) fetchCards(selectedItem);
   }, [selectedItem, fetchCards]);
 
-  const list = activeTab === "bookmarks" ? folders : boards;
+  const list = (activeTab === "bookmarks" ? folders : boards)
+    .slice()
+    .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 
   function displayName(path: string) {
     const parts = path.split("/");
