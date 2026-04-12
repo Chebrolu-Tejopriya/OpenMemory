@@ -483,20 +483,20 @@ export default function Home() {
                 padding: PAD,
                 gap: GAP,
                 borderRadius: 22,
-                background: "linear-gradient(160deg, rgba(255,255,255,0.13) 0%, rgba(255,255,255,0.06) 100%)",
-                backdropFilter: "blur(40px) saturate(180%)",
-                WebkitBackdropFilter: "blur(40px) saturate(180%)",
-                border: "1px solid rgba(255,255,255,0.28)",
+                // Dark-neutral base — visible on ANY background (light or dark)
+                background: "linear-gradient(160deg, rgba(10,10,10,0.35) 0%, rgba(10,10,10,0.28) 100%)",
+                backdropFilter: "blur(40px) saturate(160%)",
+                WebkitBackdropFilter: "blur(40px) saturate(160%)",
+                border: "1px solid rgba(255,255,255,0.18)",
                 boxShadow: [
-                  "inset 0 1.5px 0 rgba(255,255,255,0.55)",   // top specular — light catching glass edge
-                  "inset 0 -1px 0 rgba(0,0,0,0.12)",          // bottom rim shadow
-                  "inset 1px 0 0 rgba(255,255,255,0.1)",       // left edge glint
-                  "0 8px 32px rgba(0,0,0,0.22)",               // lift shadow
-                  "0 2px 8px rgba(0,0,0,0.14)",                // close shadow
+                  "inset 0 1.5px 0 rgba(255,255,255,0.22)",  // top specular — light catching glass edge
+                  "inset 0 -1px 0 rgba(0,0,0,0.3)",          // bottom rim shadow
+                  "0 8px 32px rgba(0,0,0,0.28)",              // lift shadow
+                  "0 2px 8px rgba(0,0,0,0.18)",               // close shadow
                 ].join(","),
               }}
             >
-              {/* Sliding glass indicator — spring animation */}
+              {/* Sliding glass indicator — smooth ease, no bounce */}
               <div
                 aria-hidden
                 style={{
@@ -506,17 +506,17 @@ export default function Home() {
                   width: BTN,
                   height: BTN,
                   borderRadius: 14,
-                  background: "linear-gradient(160deg, rgba(255,255,255,0.26) 0%, rgba(255,255,255,0.10) 100%)",
+                  background: "linear-gradient(160deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.10) 100%)",
                   backdropFilter: "blur(8px)",
                   WebkitBackdropFilter: "blur(8px)",
-                  border: "1px solid rgba(255,255,255,0.35)",
+                  border: "1px solid rgba(255,255,255,0.28)",
                   boxShadow: [
-                    "inset 0 1.5px 0 rgba(255,255,255,0.7)",   // strong specular on the chip
-                    "inset 0 -1px 0 rgba(0,0,0,0.08)",
-                    "0 4px 16px rgba(0,0,0,0.15)",
+                    "inset 0 1.5px 0 rgba(255,255,255,0.55)",  // strong specular on the chip
+                    "inset 0 -1px 0 rgba(0,0,0,0.12)",
+                    "0 4px 16px rgba(0,0,0,0.2)",
                   ].join(","),
-                  // Spring: cubic-bezier with slight overshoot gives the "liquid" feel
-                  transition: "left 0.42s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                  // Smooth ease — no bounce, fluid slide
+                  transition: "left 0.38s cubic-bezier(0.65, 0, 0.35, 1)",
                   pointerEvents: "none",
                 }}
               />
