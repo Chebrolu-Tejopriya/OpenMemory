@@ -25,6 +25,9 @@ const MAX_ITEMS = 180;
 const FRICTION_PER_MS = 0.998; // time-based — frame-rate independent
 
 // ── helpers ────────────────────────────────────────────────────────────────
+function screenshotUrl(url: string) {
+  return `https://v1.screenshot.11ty.dev/${encodeURIComponent(url)}/opengraph/`;
+}
 function faviconUrl(url: string) {
   try { return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=64`; }
   catch { return ""; }
@@ -35,12 +38,15 @@ function domain(url: string) {
 
 // ── Card ───────────────────────────────────────────────────────────────────
 function Card({ result, style }: { result: SearchResult; style: React.CSSProperties }) {
+  const [shotLoaded, setShotLoaded] = useState(false);
+  const [shotErr, setShotErr] = useState(false);
   const [pinErr, setPinErr] = useState(false);
   const isPin = result.source === "pinterest";
   const displayTitle = isPin
     ? result.title.replace(/^this may contain:?\s*/i, "").trim()
     : result.title;
   const pinImg = isPin && result.imageUrl && !result.imageUrl.includes("favicon") && !pinErr;
+  const shot = !isPin ? screenshotUrl(result.url) : null;
   const fav = faviconUrl(result.url);
   const dom = domain(result.url);
   const label = result.folder && result.folder !== "Bookmarks"
@@ -66,15 +72,24 @@ function Card({ result, style }: { result: SearchResult; style: React.CSSPropert
               onError={() => setPinErr(true)}
             />
           ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2"
-              style={{ background: "linear-gradient(135deg,#f8fffe,#eef7f4)" }}
-            >
-              <div className="w-8 h-8 rounded-xl bg-white/70 shadow-sm flex items-center justify-center p-1.5">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={fav} alt="" className="w-full h-full object-contain" />
+            <>
+              {/* Favicon placeholder — stays if screenshot fails */}
+              <div className={`absolute inset-0 flex flex-col items-center justify-center gap-2 transition-opacity duration-300 ${shotLoaded && !shotErr ? "opacity-0" : "opacity-100"}`}
+                style={{ background: "linear-gradient(135deg,#f8fffe,#eef7f4)" }}
+              >
+                <div className="w-8 h-8 rounded-xl bg-white/70 shadow-sm flex items-center justify-center p-1.5">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={fav} alt="" className="w-full h-full object-contain" />
+                </div>
+                <span className="text-[9px] font-medium text-gray-400 max-w-[80%] text-center truncate">{dom}</span>
               </div>
-              <span className="text-[9px] font-medium text-gray-400 max-w-[80%] text-center truncate">{dom}</span>
-            </div>
+              {shot && !shotErr && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={shot} alt={result.title}
+                  className={`absolute inset-0 w-full h-full object-cover group-hover:scale-[1.03] transition-all duration-500 ${shotLoaded ? "opacity-100" : "opacity-0"}`}
+                  onLoad={() => setShotLoaded(true)} onError={() => setShotErr(true)} />
+              )}
+            </>
           )}
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 group-hover:backdrop-blur-[2px] transition-all duration-300 flex items-center justify-center">
             <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/90 text-gray-700 text-[11px] font-semibold px-4 py-1.5 rounded-full">Open</span>
