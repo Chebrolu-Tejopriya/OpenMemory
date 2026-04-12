@@ -22,6 +22,9 @@ const balooBhai2 = Baloo_Bhai_2({
 export const metadata: Metadata = {
   title: "OpenMemory - Find what inspires you",
   description: "Semantic search for your bookmarks and design inspirations",
+  other: {
+    viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
+  },
 };
 
 export default function RootLayout({

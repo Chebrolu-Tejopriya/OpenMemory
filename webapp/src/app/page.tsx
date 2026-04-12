@@ -235,7 +235,7 @@ export default function Home() {
   };
 
   return (
-    <div className="relative w-full h-screen overflow-hidden bg-[#ebfdff]">
+    <div className="relative w-full h-[100dvh] overflow-hidden bg-[#ebfdff]">
 
       {/* Background — video or image depending on active theme */}
       {THEMES[themeIndex].type === "video" ? (
@@ -465,7 +465,7 @@ export default function Home() {
         // Indicator left = pad + index*(btn+gap)
         const indicatorLeft = PAD + activeIdx * (BTN + GAP);
         return (
-          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 pointer-events-auto select-none">
+          <div className="absolute left-1/2 -translate-x-1/2 z-40 pointer-events-auto select-none" style={{ bottom: "calc(20px + env(safe-area-inset-bottom))" }}>
             {/* Outer glass container */}
             <div
               className="relative flex items-center"
