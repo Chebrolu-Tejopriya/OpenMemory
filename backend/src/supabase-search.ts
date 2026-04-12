@@ -347,31 +347,38 @@ async function searchSupabaseText(
 }
 
 /**
- * Text search for Pinterest pins
+ * Text search for Pinterest pins — direct PostgREST query, no RPC needed.
+ * Builds an OR filter across title, description, and board_name for each term.
  */
 async function searchSupabasePinsText(
   query: string,
   limit: number,
   board?: string | null
 ): Promise<SupabasePin[]> {
-  if (!query || query.trim().length === 0) {
-    return [];
-  }
+  if (!query || query.trim().length === 0) return [];
 
   try {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/search_pinterest_pins_text?select=id,pin_id,pin_url,title,board_name,image_url,similarity,description,synced_at`, {
-      method: 'POST',
-      headers: requestHeaders,
-      body: JSON.stringify({
-        search_query: query,
-        match_count: limit,
-        filter_board: board || null
-      })
-    });
+    const terms = query.trim().split(/\s+/).filter(w => w.length > 1);
+    if (terms.length === 0) return [];
 
-    if (!response.ok) return [];
+    // Build OR filter: title|description|board_name contains any search term
+    const orParts = terms.flatMap(term => [
+      `title.ilike.*${term}*`,
+      `description.ilike.*${term}*`,
+      `board_name.ilike.*${term}*`,
+    ]).join(',');
+
+    const boardFilter = board ? `&board_name=eq.${encodeURIComponent(board)}` : '';
+    const url = `${SUPABASE_URL}/rest/v1/pinterest_pins?select=id,pin_id,pin_url,title,board_name,image_url,description,synced_at&or=(${orParts})${boardFilter}&limit=${limit}&order=synced_at.desc`;
+
+    const response = await fetch(url, { method: 'GET', headers: requestHeaders });
+    if (!response.ok) {
+      console.error('[Search] Pinterest text search failed:', response.status, await response.text());
+      return [];
+    }
     return await response.json();
-  } catch {
+  } catch (err) {
+    console.error('[Search] Pinterest text search error:', err);
     return [];
   }
 }
