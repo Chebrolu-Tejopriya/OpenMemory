@@ -270,16 +270,6 @@ export default function Home() {
           activeView === "search" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
       >
-        {/* Greeting */}
-        <p
-          className={`absolute top-2 sm:top-[7px] left-1/2 -translate-x-1/2 font-semibold text-xl sm:text-[33px] tracking-[4px] sm:tracking-[6.27px] whitespace-nowrap text-center z-20 transition-all duration-500 ease-out ${
-            hasSearched ? "opacity-0 -translate-y-4 pointer-events-none" : "opacity-100 translate-y-0"
-          }`}
-          style={{ fontFamily: "var(--font-baloo-bhai-2), sans-serif", color: "rgba(44, 127, 87, 0.4)" }}
-        >
-          HI, {userName}
-        </p>
-
         {/* Headline */}
         <div
           className={`absolute left-1/2 -translate-x-1/2 top-[65px] sm:top-[130px] flex flex-col items-center justify-center p-2 sm:p-[10px] z-10 transition-all duration-500 ease-out ${
