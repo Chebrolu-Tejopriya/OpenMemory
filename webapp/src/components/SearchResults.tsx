@@ -46,7 +46,7 @@ export default function SearchResults({ results, isLoading }: SearchResultsProps
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-3 md:gap-4 items-start">
       {results.map((result, i) => (
         <SearchResultCard key={result.id} result={result} revealDelay={Math.min(i, 5) * 60} />
       ))}

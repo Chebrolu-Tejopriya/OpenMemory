@@ -152,7 +152,7 @@ export default function BrowseSection({ folders, boards, constrained = false }: 
           {isLoading ? skeletonCards : cards.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-sm text-[#3a3a3a]/30">No items found</div>
           ) : (
-            <div className="grid grid-cols-2 gap-3 pb-24">
+            <div className="grid grid-cols-2 gap-3 pb-24 items-start">
               {cards.map((card, i) => <SearchResultCard key={card.id} result={card} revealDelay={Math.min(i, 5) * 60} />)}
             </div>
           )}
@@ -193,7 +193,7 @@ export default function BrowseSection({ folders, boards, constrained = false }: 
           {isLoading ? skeletonCards : cards.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-sm text-[#3a3a3a]/30">No items found</div>
           ) : (
-            <div className="grid grid-cols-3 gap-3 pb-2">
+            <div className="grid grid-cols-3 gap-3 pb-2 items-start">
               {cards.map((card, i) => <SearchResultCard key={card.id} result={card} revealDelay={Math.min(i, 5) * 60} />)}
             </div>
           )}
