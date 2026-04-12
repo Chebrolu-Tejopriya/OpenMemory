@@ -99,7 +99,7 @@ function Card({ result, style }: { result: SearchResult; style: React.CSSPropert
         </div>
       </div>
       <div className="px-3 pb-2.5 flex-shrink-0">
-        <p className="text-[11px] font-semibold text-gray-700 leading-snug line-clamp-2">{displayTitle}</p>
+        <p className="text-[11px] font-semibold text-gray-700 leading-snug truncate">{displayTitle}</p>
         {!isPin && <p className="text-[9px] text-gray-400 mt-0.5 truncate">{dom}</p>}
       </div>
     </a>
