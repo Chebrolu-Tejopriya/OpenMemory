@@ -361,15 +361,24 @@ async function searchSupabasePinsText(
     const terms = query.trim().split(/\s+/).filter(w => w.length > 1);
     if (terms.length === 0) return [];
 
-    // Build OR filter: title|description|board_name contains any search term
-    const orParts = terms.flatMap(term => [
-      `title.ilike.*${term}*`,
-      `description.ilike.*${term}*`,
-      `board_name.ilike.*${term}*`,
-    ]).join(',');
+    // For each term, require it appears in title OR description OR board_name.
+    // With multiple terms, ALL must match somewhere (AND between terms, OR within columns).
+    // Single term:  ?or=(title.ilike.*x*,description.ilike.*x*,board_name.ilike.*x*)
+    // Multi-term:   ?and=(or(title.ilike.*x*,...),or(title.ilike.*y*,...))
+    // This prevents "page" matching every pin just because descriptions say "web page".
+    let filterParam: string;
+    if (terms.length === 1) {
+      const t = terms[0];
+      filterParam = `or=(title.ilike.*${t}*,description.ilike.*${t}*,board_name.ilike.*${t}*)`;
+    } else {
+      const andParts = terms
+        .map(t => `or(title.ilike.*${t}*,description.ilike.*${t}*,board_name.ilike.*${t}*)`)
+        .join(',');
+      filterParam = `and=(${andParts})`;
+    }
 
     const boardFilter = board ? `&board_name=eq.${encodeURIComponent(board)}` : '';
-    const url = `${SUPABASE_URL}/rest/v1/pinterest_pins?select=id,pin_id,pin_url,title,board_name,image_url,description,synced_at&or=(${orParts})${boardFilter}&limit=${limit}&order=synced_at.desc`;
+    const url = `${SUPABASE_URL}/rest/v1/pinterest_pins?select=id,pin_id,pin_url,title,board_name,image_url,description,synced_at&${filterParam}${boardFilter}&limit=${limit}&order=synced_at.desc`;
 
     const response = await fetch(url, { method: 'GET', headers: requestHeaders });
     if (!response.ok) {
