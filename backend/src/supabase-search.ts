@@ -764,12 +764,14 @@ export async function getSupabaseBoards(): Promise<string[]> {
 
 /**
  * Browse items by folder (bookmarks) or board (pinterest) without search scoring
+ * maxItems caps how many rows are fetched from Supabase to control egress.
  */
 export async function browseSupabase(
   source: 'chrome' | 'pinterest',
   folderOrBoard: string,
+  maxItems = 500,
 ): Promise<{ results: SearchResult[]; total: number }> {
-  const PAGE_SIZE = 1000;
+  const PAGE_SIZE = Math.min(500, maxItems);
   try {
     if (source === 'chrome') {
       const all: Array<{ id: string; url: string; title: string; folder: string | null; created_at: string | null }> = [];
@@ -786,7 +788,7 @@ export async function browseSupabase(
         if (!response.ok) break;
         const page = await response.json();
         all.push(...page);
-        if (page.length < PAGE_SIZE) break;
+        if (page.length < PAGE_SIZE || all.length >= maxItems) break;
         offset += PAGE_SIZE;
       }
       const results: SearchResult[] = all.map(b => ({
@@ -813,7 +815,7 @@ export async function browseSupabase(
         if (!response.ok) break;
         const page = await response.json();
         all.push(...page);
-        if (page.length < PAGE_SIZE) break;
+        if (page.length < PAGE_SIZE || all.length >= maxItems) break;
         offset += PAGE_SIZE;
       }
       const results: SearchResult[] = all

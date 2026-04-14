@@ -15,7 +15,7 @@ const GAP_Y = 20;
 const COLS = 6;
 const TILES_X = 5;
 const TILES_Y = 5;
-const MAX_ITEMS = 180;
+const CANVAS_LIMIT = 500; // max items per source — keeps Supabase egress safe
 const FRICTION_PER_MS = 0.998;
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -121,20 +121,20 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
     setLoading(true);
     (async () => {
       const [bmRes, pinRes] = await Promise.allSettled([
-        fetch(`${BACKEND_URL}/browse?source=chrome`),
-        fetch(`${BACKEND_URL}/browse?source=pinterest`),
+        fetch(`${BACKEND_URL}/browse?source=chrome&limit=${CANVAS_LIMIT}`),
+        fetch(`${BACKEND_URL}/browse?source=pinterest&limit=${CANVAS_LIMIT}`),
       ]);
       const bookmarks: SearchResult[] = [];
       const pins: SearchResult[] = [];
       if (bmRes.status === "fulfilled" && bmRes.value.ok) {
         const d = await bmRes.value.json();
-        (d.results || []).slice(0, MAX_ITEMS).forEach((item: { title: string; url: string; folder: string | null; imageUrl?: string | null }, i: number) => {
+        (d.results || []).forEach((item: { title: string; url: string; folder: string | null; imageUrl?: string | null }, i: number) => {
           bookmarks.push({ id: `bm-${i}`, title: item.title, folder: item.folder || "", url: item.url, source: "chrome", imageUrl: item.imageUrl || undefined });
         });
       }
       if (pinRes.status === "fulfilled" && pinRes.value.ok) {
         const d = await pinRes.value.json();
-        (d.results || []).slice(0, MAX_ITEMS).forEach((item: { title: string | null; url: string; folder: string | null; imageUrl?: string | null }, i: number) => {
+        (d.results || []).forEach((item: { title: string | null; url: string; folder: string | null; imageUrl?: string | null }, i: number) => {
           pins.push({ id: `pin-${i}`, title: item.title || "Untitled", folder: item.folder || "", url: item.url, source: "pinterest", imageUrl: item.imageUrl || undefined });
         });
       }

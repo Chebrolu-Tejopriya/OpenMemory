@@ -112,15 +112,16 @@ app.get('/boards', async (req, res) => {
 });
 
 /**
- * GET /browse?source=chrome&folder=NAME
- * GET /browse?source=pinterest&board=NAME
- * Browse all items in a specific folder or board (no limit — paginates internally).
+ * GET /browse?source=chrome&folder=NAME&limit=500
+ * GET /browse?source=pinterest&board=NAME&limit=500
+ * Browse items in a folder/board. limit caps Supabase egress (default 500).
  */
 app.get('/browse', async (req, res) => {
   try {
     const source = req.query.source as string;
     const folder = req.query.folder as string | undefined;
     const board = req.query.board as string | undefined;
+    const maxItems = Math.min(parseInt(req.query.limit as string) || 500, 1000);
 
     if (source !== 'chrome' && source !== 'pinterest') {
       return res.status(400).json({ error: 'source must be chrome or pinterest' });
@@ -129,7 +130,7 @@ app.get('/browse', async (req, res) => {
     // folder/board is optional — omitting it returns ALL items for that source
     const folderOrBoard = (source === 'chrome' ? folder : board) ?? '';
 
-    const result = await browseSupabase(source, folderOrBoard);
+    const result = await browseSupabase(source, folderOrBoard, maxItems);
     res.json(result);
   } catch (err) {
     console.error('Browse error:', err);
