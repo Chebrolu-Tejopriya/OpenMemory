@@ -36,8 +36,7 @@ function Card({ result, onImageError }: { result: SearchResult; onImageError: (i
       href={result.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="group flex flex-col bg-[#f4f4f4] rounded-2xl overflow-hidden hover:shadow-xl transition-shadow duration-200 shrink-0"
-      style={{ width: 220 }}
+      className="group flex flex-col bg-[#f4f4f4] rounded-2xl overflow-hidden hover:shadow-xl transition-shadow duration-200"
     >
       <div className="px-2.5 pt-2.5 pb-0 shrink-0">
         <div className={`relative w-full aspect-video rounded-xl overflow-hidden ${pinImg ? "bg-[#e8e8e8]" : "bg-gray-200"}`}>
@@ -231,16 +230,16 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
     <div className="absolute inset-0">
       <div className="absolute inset-0 bg-[#ebfdff]/85 backdrop-blur-sm pointer-events-none" />
 
-      {/* Scrollable canvas — flow grid, no tiling */}
+      {/* Scrollable canvas — responsive grid, no tiling */}
       <div
         ref={scrollRef}
-        className="absolute inset-0 overflow-auto"
+        className="absolute inset-0 overflow-y-auto overflow-x-hidden"
         style={{ cursor: "grab", scrollbarWidth: "none", overscrollBehavior: "none" }}
       >
         <style>{`div::-webkit-scrollbar{display:none}`}</style>
         <div
-          className="flex flex-wrap gap-5 p-6"
-          style={{ minWidth: "max-content" }}
+          className="grid gap-5 p-6"
+          style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}
         >
           {filteredItems.map((item) => (
             <Card key={item.id} result={item} onImageError={handleImageError} />
