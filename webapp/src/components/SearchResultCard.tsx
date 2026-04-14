@@ -24,6 +24,10 @@ function getDomainFromUrl(url: string): string {
   }
 }
 
+function upgradePinterestImageUrl(url: string): string {
+  return url.replace(/\/\d+x\//, "/736x/");
+}
+
 function getScreenshotUrl(url: string): string {
   return `https://v1.screenshot.11ty.dev/${encodeURIComponent(url)}/opengraph/`;
 }
@@ -94,7 +98,7 @@ export default function SearchResultCard({ result, revealDelay = 0 }: SearchResu
           {/* Image */}
           {hasPinterestImage ? (
             <Image
-              src={result.imageUrl!}
+              src={upgradePinterestImageUrl(result.imageUrl!)}
               alt={result.title}
               fill
               className="object-contain transition-all duration-300 group-hover:scale-[1.02]"

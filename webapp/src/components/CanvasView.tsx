@@ -28,6 +28,9 @@ const FRICTION_PER_MS = 0.998; // time-based — frame-rate independent
 function screenshotUrl(url: string) {
   return `https://v1.screenshot.11ty.dev/${encodeURIComponent(url)}/opengraph/`;
 }
+function upgradePinterestImageUrl(url: string) {
+  return url.replace(/\/\d+x\//, "/736x/");
+}
 function faviconUrl(url: string) {
   try { return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=64`; }
   catch { return ""; }
@@ -66,7 +69,7 @@ function Card({ result, style }: { result: SearchResult; style: React.CSSPropert
           {pinImg ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={result.imageUrl!}
+              src={upgradePinterestImageUrl(result.imageUrl!)}
               alt={result.title}
               className="absolute inset-0 w-full h-full object-contain group-hover:scale-[1.03] transition-transform duration-300"
               onError={() => setPinErr(true)}
