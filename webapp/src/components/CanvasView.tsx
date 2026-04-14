@@ -406,7 +406,7 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
       {/* Hint */}
       {!loading && filteredItems.length > 0 && (
         <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none select-none">
-          <p className="text-[10px] text-[#3a3a3a]/25 tracking-widest uppercase">Drag to explore</p>
+          <p className="text-[10px] text-[#3a3a3a]/25 tracking-widest uppercase">Scroll to explore</p>
         </div>
       )}
     </div>
