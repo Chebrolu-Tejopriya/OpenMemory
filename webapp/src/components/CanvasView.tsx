@@ -230,16 +230,16 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
     <div className="absolute inset-0">
       <div className="absolute inset-0 bg-[#ebfdff]/85 backdrop-blur-sm pointer-events-none" />
 
-      {/* Scrollable canvas — responsive grid, no tiling */}
+      {/* Scrollable canvas — fixed-column grid, scrolls in all directions */}
       <div
         ref={scrollRef}
-        className="absolute inset-0 overflow-y-auto overflow-x-hidden"
+        className="absolute inset-0 overflow-auto"
         style={{ cursor: "grab", scrollbarWidth: "none", overscrollBehavior: "none" }}
       >
         <style>{`div::-webkit-scrollbar{display:none}`}</style>
         <div
           className="grid gap-5 p-6"
-          style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}
+          style={{ gridTemplateColumns: "repeat(8, 220px)" }}
         >
           {filteredItems.map((item) => (
             <Card key={item.id} result={item} onImageError={handleImageError} />
