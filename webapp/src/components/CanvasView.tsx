@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Bookmark, Pin } from "lucide-react";
 import { SearchResult } from "./SearchResultCard";
 
@@ -37,29 +37,24 @@ function domain(url: string) {
 }
 
 // ── Card ───────────────────────────────────────────────────────────────────
-function Card({ result, style }: { result: SearchResult; style: React.CSSProperties }) {
+function Card({ result, style, onImageError }: { result: SearchResult; style: React.CSSProperties; onImageError: (id: string) => void }) {
   const [shotLoaded, setShotLoaded] = useState(false);
-  const [shotErr, setShotErr] = useState(false);
-  const [pinErr, setPinErr] = useState(false);
   const isPin = result.source === "pinterest";
   const displayTitle = isPin
     ? result.title.replace(/^this may contain:?\s*/i, "").trim()
     : result.title;
-  const pinImg = isPin && result.imageUrl && !result.imageUrl.includes("favicon") && !pinErr;
+  const pinImg = isPin && result.imageUrl && !result.imageUrl.includes("favicon");
   const shot = !isPin ? screenshotUrl(result.url) : null;
   const dom = domain(result.url);
   const label = result.folder && result.folder !== "Bookmarks"
     ? result.folder.split("/").pop() || result.folder : dom;
-
-  // Hide card if image fails to load — no favicon fallback in canvas
-  const hidden = isPin ? pinErr : shotErr;
 
   return (
     <a
       href={result.url}
       target="_blank"
       rel="noopener noreferrer"
-      style={{ ...style, display: hidden ? "none" : undefined }}
+      style={style}
       className="absolute group flex flex-col bg-[#f4f4f4] rounded-2xl overflow-hidden hover:shadow-xl transition-shadow duration-200"
     >
       {/* Image — aspect-video inset */}
@@ -71,14 +66,14 @@ function Card({ result, style }: { result: SearchResult; style: React.CSSPropert
               src={result.imageUrl!}
               alt={result.title}
               className="absolute inset-0 w-full h-full object-contain group-hover:scale-[1.03] transition-transform duration-300"
-              onError={() => setPinErr(true)}
+              onError={() => onImageError(result.id)}
             />
           ) : (
             shot && (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={shot} alt={result.title}
                 className={`absolute inset-0 w-full h-full object-cover group-hover:scale-[1.03] transition-all duration-500 ${shotLoaded ? "opacity-100" : "opacity-0"}`}
-                onLoad={() => setShotLoaded(true)} onError={() => setShotErr(true)} />
+                onLoad={() => setShotLoaded(true)} onError={() => onImageError(result.id)} />
             )
           )}
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 group-hover:backdrop-blur-[2px] transition-all duration-300 flex items-center justify-center">
@@ -106,7 +101,12 @@ interface Props { folders: string[]; boards: string[]; active: boolean }
 export default function CanvasView({ folders: _folders, boards: _boards, active: _active }: Props) {
   const [items, setItems] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
   const hasFetched = useRef(false);
+
+  const handleImageError = useCallback((id: string) => {
+    setFailedIds(prev => new Set(prev).add(id));
+  }, []);
 
   // ── Filter state ─────────────────────────────────────────────────────────
   const [source, setSource] = useState<CanvasSource>("chrome");
@@ -299,8 +299,8 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
   // ── Filter items by source tab only (no folder/board dropdown) ──────────
   const filteredItems = items.filter((item) => {
     if (item.source !== source) return false;
-    // Pre-filter Pinterest pins with no image — they'd show nothing useful
     if (item.source === "pinterest" && !item.imageUrl) return false;
+    if (failedIds.has(item.id)) return false;
     return true;
   });
 
@@ -358,6 +358,7 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
               key={key}
               result={item}
               style={{ width: CARD_W, height: CARD_H, left: x, top: y }}
+              onImageError={handleImageError}
             />
           ))}
         </div>
