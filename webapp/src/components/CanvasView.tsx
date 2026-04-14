@@ -7,6 +7,7 @@ import { SearchResult } from "./SearchResultCard";
 type CanvasSource = "chrome" | "pinterest";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+const CANVAS_LIMIT = 500;
 
 const CARD_W = 220;
 const CARD_H = 180;
@@ -15,7 +16,6 @@ const GAP_Y = 20;
 const COLS = 6;
 const TILES_X = 5;
 const TILES_Y = 5;
-const CANVAS_LIMIT = 500; // max items per source — keeps Supabase egress safe
 const FRICTION_PER_MS = 0.998;
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -25,20 +25,20 @@ function screenshotUrl(url: string) {
 function domain(url: string) {
   try { return new URL(url).hostname.replace("www.", ""); } catch { return ""; }
 }
+function getImageUrl(item: SearchResult): string | null {
+  if (item.source === "pinterest") {
+    return item.imageUrl && !item.imageUrl.includes("favicon") ? item.imageUrl : null;
+  }
+  return screenshotUrl(item.url);
+}
 
-// ── Card ───────────────────────────────────────────────────────────────────
-function Card({ result, style, onImageError }: {
-  result: SearchResult;
-  style: React.CSSProperties;
-  onImageError: (id: string) => void;
-}) {
-  const [shotLoaded, setShotLoaded] = useState(false);
+// ── Card — only rendered once image is confirmed loaded ────────────────────
+function Card({ result, style }: { result: SearchResult; style: React.CSSProperties }) {
   const isPin = result.source === "pinterest";
   const displayTitle = isPin
     ? result.title.replace(/^this may contain:?\s*/i, "").trim()
     : result.title;
-  const pinImg = isPin && result.imageUrl && !result.imageUrl.includes("favicon");
-  const shot = !isPin ? screenshotUrl(result.url) : null;
+  const imgSrc = getImageUrl(result);
   const dom = domain(result.url);
   const label = result.folder && result.folder !== "Bookmarks"
     ? result.folder.split("/").pop() || result.folder : dom;
@@ -52,23 +52,14 @@ function Card({ result, style, onImageError }: {
       className="absolute group flex flex-col bg-[#f4f4f4] rounded-2xl overflow-hidden hover:shadow-xl transition-shadow duration-200"
     >
       <div className="px-2.5 pt-2.5 pb-0 shrink-0">
-        <div className={`relative w-full aspect-video rounded-xl overflow-hidden ${pinImg ? "bg-[#e8e8e8]" : "bg-gray-200"}`}>
-          {pinImg ? (
+        <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-[#e8e8e8]">
+          {imgSrc && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={result.imageUrl!}
+              src={imgSrc}
               alt={result.title}
-              className="absolute inset-0 w-full h-full object-contain group-hover:scale-[1.03] transition-transform duration-300"
-              onError={() => onImageError(result.id)}
+              className={`absolute inset-0 w-full h-full group-hover:scale-[1.03] transition-transform duration-300 ${isPin ? "object-contain" : "object-cover"}`}
             />
-          ) : (
-            shot && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={shot} alt={result.title}
-                className={`absolute inset-0 w-full h-full object-cover group-hover:scale-[1.03] transition-all duration-500 ${shotLoaded ? "opacity-100" : "opacity-0"}`}
-                onLoad={() => setShotLoaded(true)}
-                onError={() => onImageError(result.id)} />
-            )
           )}
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 group-hover:backdrop-blur-[2px] transition-all duration-300 flex items-center justify-center">
             <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/90 text-gray-700 text-[11px] font-semibold px-4 py-1.5 rounded-full">Open</span>
@@ -93,11 +84,17 @@ interface Props { folders: string[]; boards: string[]; active: boolean }
 export default function CanvasView({ folders: _folders, boards: _boards, active: _active }: Props) {
   const [items, setItems] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  // preloadedIds: images confirmed loaded — only these show in the canvas
+  const [preloadedIds, setPreloadedIds] = useState<Set<string>>(new Set());
+  // failedIds: images that errored — excluded permanently
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
   const hasFetched = useRef(false);
   const [source, setSource] = useState<CanvasSource>("chrome");
 
-  const handleImageError = useCallback((id: string) => {
+  const handleLoad = useCallback((id: string) => {
+    setPreloadedIds(prev => new Set(prev).add(id));
+  }, []);
+  const handleError = useCallback((id: string) => {
     setFailedIds(prev => new Set(prev).add(id));
   }, []);
 
@@ -105,7 +102,6 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
   const tileWRef = useRef(0);
   const tileHRef = useRef(0);
 
-  // Mouse drag refs
   const dragging = useRef(false);
   const didDrag = useRef(false);
   const dragStart = useRef({ x: 0, y: 0 });
@@ -114,7 +110,7 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
   const raf = useRef<number | null>(null);
   const ptrHistory = useRef<{ x: number; y: number; t: number }[]>([]);
 
-  // ── Fetch on mount ────────────────────────────────────────────────────────
+  // ── Fetch ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (hasFetched.current) return;
     hasFetched.current = true;
@@ -144,14 +140,14 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Scroll to center tile on load ─────────────────────────────────────────
+  // ── Scroll to center tile ─────────────────────────────────────────────────
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || !tileWRef.current || !tileHRef.current) return;
     el.scrollLeft = tileWRef.current * 2;
     el.scrollTop = tileHRef.current * 2;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, source]);
+  }, [source]);
 
   // ── Infinite wrap ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -176,8 +172,7 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
     if (!el) return;
     const onDown = (e: PointerEvent) => {
       if (e.pointerType !== "mouse" || e.button !== 0) return;
-      dragging.current = true;
-      didDrag.current = false;
+      dragging.current = true; didDrag.current = false;
       dragStart.current = { x: e.clientX, y: e.clientY };
       lastPtr.current = { x: e.clientX, y: e.clientY };
       vel.current = { x: 0, y: 0 };
@@ -192,14 +187,13 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
         const dx = ev.clientX - lastPtr.current.x;
         const dy = ev.clientY - lastPtr.current.y;
         lastPtr.current = { x: ev.clientX, y: ev.clientY };
-        el.scrollLeft -= dx;
-        el.scrollTop -= dy;
+        el.scrollLeft -= dx; el.scrollTop -= dy;
         ptrHistory.current.push({ x: ev.clientX, y: ev.clientY, t: ev.timeStamp });
       }
       if (!didDrag.current) {
-        const mx = e.clientX - dragStart.current.x;
-        const my = e.clientY - dragStart.current.y;
-        if (Math.abs(mx) > 4 || Math.abs(my) > 4) { didDrag.current = true; el.style.cursor = "grabbing"; }
+        if (Math.abs(e.clientX - dragStart.current.x) > 4 || Math.abs(e.clientY - dragStart.current.y) > 4) {
+          didDrag.current = true; el.style.cursor = "grabbing";
+        }
       }
       ptrHistory.current = ptrHistory.current.filter(p => e.timeStamp - p.t < 80);
     };
@@ -208,8 +202,7 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
     };
     const onUp = (e: PointerEvent) => {
       if (!dragging.current || e.pointerType !== "mouse") return;
-      dragging.current = false;
-      el.style.cursor = "grab";
+      dragging.current = false; el.style.cursor = "grab";
       const h = ptrHistory.current;
       if (h.length >= 2) {
         const oldest = h[0], latest = h[h.length - 1];
@@ -224,10 +217,8 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
         const dt = lastTime ? Math.min(now - lastTime, 64) : 16;
         lastTime = now;
         const decay = Math.pow(FRICTION_PER_MS, dt);
-        vel.current.x *= decay;
-        vel.current.y *= decay;
-        el.scrollLeft += vel.current.x;
-        el.scrollTop += vel.current.y;
+        vel.current.x *= decay; vel.current.y *= decay;
+        el.scrollLeft += vel.current.x; el.scrollTop += vel.current.y;
         if (Math.abs(vel.current.x) > 0.1 || Math.abs(vel.current.y) > 0.1) {
           raf.current = requestAnimationFrame(tick);
         } else { raf.current = null; }
@@ -249,15 +240,20 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
     };
   }, []);
 
-  // ── Filter: remove no-image Pinterest pins and failed cards ───────────────
-  const filteredItems = items.filter((item) => {
-    if (item.source !== source) return false;
-    if (item.source === "pinterest" && !item.imageUrl) return false;
-    if (failedIds.has(item.id)) return false;
-    return true;
-  });
+  // Items for current source that have an image URL and haven't been resolved yet
+  const pendingItems = items.filter(item =>
+    item.source === source &&
+    getImageUrl(item) !== null &&
+    !preloadedIds.has(item.id) &&
+    !failedIds.has(item.id)
+  );
 
-  // ── Build tiled grid (failedIds already excluded → no gaps) ──────────────
+  // Only confirmed-loaded items appear in the canvas — zero loading placeholders
+  const filteredItems = items.filter(item =>
+    item.source === source && preloadedIds.has(item.id)
+  );
+
+  // ── Build tiled grid ──────────────────────────────────────────────────────
   const rows = Math.ceil(filteredItems.length / COLS);
   const tileW = COLS * (CARD_W + GAP_X);
   const tileH = rows * (CARD_H + GAP_Y);
@@ -282,24 +278,37 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
     }
   }
 
+  const loadedCount = filteredItems.length;
+  const totalCount = items.filter(i => i.source === source && getImageUrl(i) !== null).length;
+
   return (
     <div className="absolute inset-0">
       <div className="absolute inset-0 bg-[#ebfdff]/85 backdrop-blur-sm pointer-events-none" />
 
+      {/* Hidden preloader — images load here first, canvas only shows confirmed ones */}
+      <div className="hidden">
+        {pendingItems.map(item => {
+          const src = getImageUrl(item)!;
+          return (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img key={item.id} src={src}
+              onLoad={() => handleLoad(item.id)}
+              onError={() => handleError(item.id)}
+            />
+          );
+        })}
+      </div>
+
+      {/* Infinite scroll canvas */}
       <div
         ref={scrollRef}
         className="absolute inset-0 overflow-auto"
         style={{ cursor: "grab", scrollbarWidth: "none", overscrollBehavior: "none" }}
       >
-        <style>{`.canvas-scroll::-webkit-scrollbar{display:none}`}</style>
-        <div className="canvas-scroll relative" style={{ width: totalW, height: totalH }}>
+        <style>{`.canvas-wrap::-webkit-scrollbar{display:none}`}</style>
+        <div className="canvas-wrap relative" style={{ width: totalW, height: totalH }}>
           {tiledCards.map(({ item, x, y, key }) => (
-            <Card
-              key={key}
-              result={item}
-              style={{ width: CARD_W, height: CARD_H, left: x, top: y }}
-              onImageError={handleImageError}
-            />
+            <Card key={key} result={item} style={{ width: CARD_W, height: CARD_H, left: x, top: y }} />
           ))}
         </div>
       </div>
@@ -318,6 +327,7 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
         </div>
       </div>
 
+      {/* Loading */}
       {loading && (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 pointer-events-none">
           <div className="w-8 h-8 border-2 border-[#5b9888]/30 border-t-[#5b9888] rounded-full animate-spin" />
@@ -325,7 +335,16 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
         </div>
       )}
 
-      {!loading && filteredItems.length > 0 && (
+      {/* Preloading progress */}
+      {!loading && loadedCount < totalCount && (
+        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none select-none">
+          <p className="text-[10px] text-[#3a3a3a]/25 tracking-widest uppercase">
+            Loading {loadedCount} / {totalCount}
+          </p>
+        </div>
+      )}
+
+      {!loading && loadedCount >= totalCount && loadedCount > 0 && (
         <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none select-none">
           <p className="text-[10px] text-[#3a3a3a]/25 tracking-widest uppercase">Scroll to explore</p>
         </div>
