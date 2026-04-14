@@ -239,7 +239,7 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
         <style>{`div::-webkit-scrollbar{display:none}`}</style>
         <div
           className="grid gap-5 p-6"
-          style={{ gridTemplateColumns: "repeat(8, 220px)" }}
+          style={{ gridTemplateColumns: "repeat(8, 220px)", width: "max-content" }}
         >
           {filteredItems.map((item) => (
             <Card key={item.id} result={item} onImageError={handleImageError} />
