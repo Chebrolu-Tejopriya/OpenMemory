@@ -127,7 +127,6 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
 
   // Mouse drag refs
   const dragging = useRef(false);
-  const didDrag = useRef(false);   // true once movement > threshold — suppresses link click
   const dragStart = useRef({ x: 0, y: 0 });
   const lastPtr = useRef({ x: 0, y: 0 });
   const vel = useRef({ x: 0, y: 0 });
@@ -210,7 +209,6 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
       // Only handle mouse — touch/pen get native scroll
       if (e.pointerType !== "mouse" || e.button !== 0) return;
       dragging.current = true;
-      didDrag.current = false;
       dragStart.current = { x: e.clientX, y: e.clientY };
       lastPtr.current = { x: e.clientX, y: e.clientY };
       vel.current = { x: 0, y: 0 };
@@ -244,20 +242,10 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
       ptrHistory.current = ptrHistory.current.filter(p => now - p.t < 80);
     };
 
-    // Swallow only the immediate click that follows a drag (accidental release click)
-    const onClickCapture = (e: MouseEvent) => {
-      if (didDrag.current) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    };
-
     const onUp = (e: PointerEvent) => {
       if (!dragging.current || e.pointerType !== "mouse") return;
       dragging.current = false;
       el.style.cursor = "grab";
-      // Clear didDrag after 300ms — blocks the accidental release click but allows intentional clicks
-      setTimeout(() => { didDrag.current = false; }, 300);
 
       // Derive release velocity from 80ms pointer history
       const h = ptrHistory.current;
@@ -295,14 +283,12 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
     el.addEventListener("pointermove", onMove, { passive: true });
     el.addEventListener("pointerup", onUp);
     el.addEventListener("pointercancel", onUp);
-    el.addEventListener("click", onClickCapture, { capture: true });
 
     return () => {
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onUp);
-      el.removeEventListener("click", onClickCapture, { capture: true });
       if (raf.current) cancelAnimationFrame(raf.current);
     };
   }, []);
