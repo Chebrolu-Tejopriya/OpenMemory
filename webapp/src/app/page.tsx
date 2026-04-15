@@ -110,19 +110,61 @@ export default function Home() {
     fetchFilters();
   }, []);
 
-  // Load sticky notes from localStorage on mount, backfill missing color field
+  // Load sticky notes from Supabase (via backend), fall back to localStorage
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem("om-sticky-notes");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        const migrated = parsed.map((n: { id: string; title: string; body: string; createdAt: string; color?: NoteColor }, i: number) => ({
-          ...n,
-          color: n.color ?? NOTE_COLORS[i % NOTE_COLORS.length],
-        }));
-        setNotes(migrated);
-      }
-    } catch {}
+    const init = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/notes`);
+        if (res.ok) {
+          const data = await res.json();
+          const fromServer = (data.notes || []).map((n: { id: string; title: string | null; body: string | null; created_at: string; color_bg: string; color_text: string }) => ({
+            id: n.id,
+            title: n.title ?? '',
+            body: n.body ?? '',
+            createdAt: n.created_at,
+            color: { bg: n.color_bg, text: n.color_text },
+          }));
+
+          // One-time migration: push any localStorage notes not yet in Supabase
+          const serverIds = new Set(fromServer.map((n: { id: string }) => n.id));
+          try {
+            const stored = localStorage.getItem("om-sticky-notes");
+            if (stored) {
+              const local = (JSON.parse(stored) as Array<{ id: string; title: string; body: string; createdAt: string; color?: NoteColor }>)
+                .filter(n => !serverIds.has(n.id));
+              for (let i = 0; i < local.length; i++) {
+                const note = local[i];
+                const color = note.color ?? NOTE_COLORS[i % NOTE_COLORS.length];
+                await fetch(`${BACKEND_URL}/notes`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ ...note, color }),
+                });
+                fromServer.unshift({ ...note, color });
+              }
+              if (local.length > 0) localStorage.removeItem("om-sticky-notes");
+            }
+          } catch {}
+
+          setNotes(fromServer);
+          return;
+        }
+      } catch {}
+
+      // Fallback: localStorage (offline / backend down)
+      try {
+        const stored = localStorage.getItem("om-sticky-notes");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          setNotes(parsed.map((n: { id: string; title: string; body: string; createdAt: string; color?: NoteColor }, i: number) => ({
+            ...n,
+            color: n.color ?? NOTE_COLORS[i % NOTE_COLORS.length],
+          })));
+        }
+      } catch {}
+    };
+    init();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Close mention dropdown on outside click
@@ -309,22 +351,31 @@ export default function Home() {
     if (view !== "save") { setSaveResult(null); setSavePopoverOpen(false); setSavePanelMode(null); }
   };
 
-  const handleSaveNote = () => {
+  const handleSaveNote = async () => {
     if (!noteBody.trim() && !noteTitle.trim()) return;
     const color = NOTE_COLORS[notes.length % NOTE_COLORS.length];
     const newNote = { id: Date.now().toString(), title: noteTitle.trim(), body: noteBody.trim(), createdAt: new Date().toISOString(), color };
-    const updated = [newNote, ...notes];
-    setNotes(updated);
-    localStorage.setItem("om-sticky-notes", JSON.stringify(updated));
+    setNotes(prev => [newNote, ...prev]);
     setNoteTitle("");
     setNoteBody("");
     setSavePanelMode(null);
+    try {
+      await fetch(`${BACKEND_URL}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newNote),
+      });
+    } catch {
+      // Fallback: persist locally if backend unreachable
+      localStorage.setItem("om-sticky-notes", JSON.stringify([newNote, ...notes]));
+    }
   };
 
-  const deleteNote = (id: string) => {
-    const updated = notes.filter(n => n.id !== id);
-    setNotes(updated);
-    localStorage.setItem("om-sticky-notes", JSON.stringify(updated));
+  const deleteNote = async (id: string) => {
+    setNotes(prev => prev.filter(n => n.id !== id));
+    try {
+      await fetch(`${BACKEND_URL}/notes/${id}`, { method: 'DELETE' });
+    } catch {}
   };
 
   const handleSaveLink = async () => {

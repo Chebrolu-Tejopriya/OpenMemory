@@ -398,6 +398,79 @@ app.get('/search-local', async (req, res) => {
   }
 });
 
+// ── Supabase helpers shared by note endpoints ──────────────────────────────
+const SB_URL = process.env.SUPABASE_URL || 'https://ghfybenvdenuupiqgouf.supabase.co';
+const SB_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdoZnliZW52ZGVudXVwaXFnb3VmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NTgwNDIsImV4cCI6MjA5MDIzNDA0Mn0._ADsqO0uFMEwNJ1lTKc3_0sBuuN3Jvxa3-naDmdYK1k';
+const sbHeaders = {
+  'apikey': SB_KEY,
+  'Authorization': `Bearer ${SB_KEY}`,
+  'Content-Type': 'application/json',
+};
+
+/**
+ * GET /notes
+ * Returns all sticky notes ordered newest-first.
+ * Response: { notes: StickyNote[] }
+ */
+app.get('/notes', async (req, res) => {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/sticky_notes?select=*&order=created_at.desc`, { headers: sbHeaders });
+    if (!r.ok) return res.status(500).json({ error: await r.text() });
+    res.json({ notes: await r.json() });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
+ * POST /notes
+ * Body: { id, title, body, color: { bg, text }, createdAt }
+ * Upserts a sticky note. Response: { success: true }
+ */
+app.post('/notes', async (req, res) => {
+  try {
+    const { id, title, body, color, createdAt } = req.body as {
+      id: string; title?: string; body?: string;
+      color: { bg: string; text: string }; createdAt?: string;
+    };
+    if (!id) return res.status(400).json({ error: 'id is required' });
+    const r = await fetch(`${SB_URL}/rest/v1/sticky_notes`, {
+      method: 'POST',
+      headers: { ...sbHeaders, 'Prefer': 'resolution=merge-duplicates' },
+      body: JSON.stringify({
+        id,
+        title: title ?? '',
+        body: body ?? '',
+        color_bg: color?.bg ?? '#fde68a',
+        color_text: color?.text ?? '#78350f',
+        created_at: createdAt ?? new Date().toISOString(),
+      }),
+    });
+    if (!r.ok) return res.status(500).json({ error: await r.text() });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
+ * DELETE /notes/:id
+ * Deletes a sticky note by id. Response: { success: true }
+ */
+app.delete('/notes/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const r = await fetch(`${SB_URL}/rest/v1/sticky_notes?id=eq.${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: sbHeaders,
+    });
+    if (!r.ok) return res.status(500).json({ error: await r.text() });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
