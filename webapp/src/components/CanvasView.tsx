@@ -205,18 +205,6 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
     const el = scrollRef.current;
     if (!el) return;
 
-    const onDown = (e: PointerEvent) => {
-      // Only handle mouse — touch/pen get native scroll
-      if (e.pointerType !== "mouse" || e.button !== 0) return;
-      dragging.current = true;
-      dragStart.current = { x: e.clientX, y: e.clientY };
-      lastPtr.current = { x: e.clientX, y: e.clientY };
-      vel.current = { x: 0, y: 0 };
-      ptrHistory.current = [{ x: e.clientX, y: e.clientY, t: e.timeStamp }];
-      if (raf.current) { cancelAnimationFrame(raf.current); raf.current = null; }
-      el.setPointerCapture(e.pointerId);
-    };
-
     const onMove = (e: PointerEvent) => {
       if (!dragging.current || e.pointerType !== "mouse") return;
       // Process all coalesced events for sub-frame accuracy
@@ -229,15 +217,9 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
         el.scrollTop -= dy;
         ptrHistory.current.push({ x: ev.clientX, y: ev.clientY, t: ev.timeStamp });
       }
-      // Crossed threshold → this is a real drag
-      if (!didDrag.current) {
-        const mx = e.clientX - dragStart.current.x;
-        const my = e.clientY - dragStart.current.y;
-        if (Math.abs(mx) > 4 || Math.abs(my) > 4) {
-          didDrag.current = true;
-          el.style.cursor = "grabbing";
-        }
-      }
+      const mx = e.clientX - dragStart.current.x;
+      const my = e.clientY - dragStart.current.y;
+      if (Math.abs(mx) > 4 || Math.abs(my) > 4) el.style.cursor = "grabbing";
       const now = e.timeStamp;
       ptrHistory.current = ptrHistory.current.filter(p => now - p.t < 80);
     };
@@ -246,6 +228,21 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
       if (!dragging.current || e.pointerType !== "mouse") return;
       dragging.current = false;
       el.style.cursor = "grab";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+
+      // If pointer moved more than 5px total, swallow the immediate post-drag click
+      const dx = e.clientX - dragStart.current.x;
+      const dy = e.clientY - dragStart.current.y;
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+        const suppress = (ev: MouseEvent) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          window.removeEventListener("click", suppress, { capture: true });
+        };
+        window.addEventListener("click", suppress, { capture: true });
+        setTimeout(() => window.removeEventListener("click", suppress, { capture: true }), 300);
+      }
 
       // Derive release velocity from 80ms pointer history
       const h = ptrHistory.current;
@@ -279,16 +276,28 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
       raf.current = requestAnimationFrame(tick);
     };
 
+    const onDown = (e: PointerEvent) => {
+      // Only handle mouse — touch/pen get native scroll
+      if (e.pointerType !== "mouse" || e.button !== 0) return;
+      dragging.current = true;
+      dragStart.current = { x: e.clientX, y: e.clientY };
+      lastPtr.current = { x: e.clientX, y: e.clientY };
+      vel.current = { x: 0, y: 0 };
+      ptrHistory.current = [{ x: e.clientX, y: e.clientY, t: e.timeStamp }];
+      if (raf.current) { cancelAnimationFrame(raf.current); raf.current = null; }
+      // Attach move/up to window so drag continues if pointer leaves the element
+      // NOTE: do NOT call setPointerCapture — it redirects click events to the
+      // container and breaks <a> link navigation on desktop.
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    };
+
     el.addEventListener("pointerdown", onDown);
-    el.addEventListener("pointermove", onMove, { passive: true });
-    el.addEventListener("pointerup", onUp);
-    el.addEventListener("pointercancel", onUp);
 
     return () => {
       el.removeEventListener("pointerdown", onDown);
-      el.removeEventListener("pointermove", onMove);
-      el.removeEventListener("pointerup", onUp);
-      el.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
       if (raf.current) cancelAnimationFrame(raf.current);
     };
   }, []);
