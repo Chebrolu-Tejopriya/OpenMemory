@@ -244,12 +244,11 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
       ptrHistory.current = ptrHistory.current.filter(p => now - p.t < 80);
     };
 
-    // Swallow link/button clicks that followed a drag
+    // Swallow only the immediate click that follows a drag (accidental release click)
     const onClickCapture = (e: MouseEvent) => {
       if (didDrag.current) {
         e.preventDefault();
         e.stopPropagation();
-        didDrag.current = false;
       }
     };
 
@@ -257,6 +256,8 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
       if (!dragging.current || e.pointerType !== "mouse") return;
       dragging.current = false;
       el.style.cursor = "grab";
+      // Clear didDrag after 300ms — blocks the accidental release click but allows intentional clicks
+      setTimeout(() => { didDrag.current = false; }, 300);
 
       // Derive release velocity from 80ms pointer history
       const h = ptrHistory.current;
