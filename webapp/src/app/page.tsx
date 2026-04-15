@@ -101,7 +101,6 @@ export default function Home() {
       setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.load();
-          videoRef.current.play();
         }
       }, 0);
     }
@@ -242,7 +241,8 @@ export default function Home() {
         <video
           ref={videoRef}
           className="absolute inset-0 w-full h-full object-cover md:object-fill"
-          autoPlay loop muted playsInline
+          muted playsInline
+          onLoadedMetadata={(e) => { e.currentTarget.currentTime = 4; }}
         >
           <source src={THEMES[themeIndex].src} type="video/mp4" />
         </video>
