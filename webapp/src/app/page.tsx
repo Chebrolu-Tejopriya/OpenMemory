@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote } from "lucide-react";
+import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Pencil } from "lucide-react";
 import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
@@ -80,6 +80,7 @@ export default function Home() {
   const [noteTitle, setNoteTitle] = useState("");
   const [noteBody, setNoteBody] = useState("");
   const [notes, setNotes] = useState<Array<{ id: string; title: string; body: string; createdAt: string; color: NoteColor }>>([]);
+  const [editingNote, setEditingNote] = useState<{ id: string; title: string; body: string; createdAt: string; color: NoteColor } | null>(null);
 
   // Mention / scope state
   const [mentionType, setMentionType] = useState<MentionType>(null);
@@ -353,21 +354,39 @@ export default function Home() {
 
   const handleSaveNote = async () => {
     if (!noteBody.trim() && !noteTitle.trim()) return;
-    const color = NOTE_COLORS[notes.length % NOTE_COLORS.length];
-    const newNote = { id: Date.now().toString(), title: noteTitle.trim(), body: noteBody.trim(), createdAt: new Date().toISOString(), color };
-    setNotes(prev => [newNote, ...prev]);
-    setNoteTitle("");
-    setNoteBody("");
-    setSavePanelMode(null);
-    try {
-      await fetch(`${BACKEND_URL}/notes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newNote),
-      });
-    } catch {
-      // Fallback: persist locally if backend unreachable
-      localStorage.setItem("om-sticky-notes", JSON.stringify([newNote, ...notes]));
+
+    if (editingNote) {
+      // ── Edit existing note ──
+      const updated = { ...editingNote, title: noteTitle.trim(), body: noteBody.trim() };
+      setNotes(prev => prev.map(n => n.id === editingNote.id ? updated : n));
+      setEditingNote(null);
+      setNoteTitle("");
+      setNoteBody("");
+      setSavePanelMode(null);
+      try {
+        await fetch(`${BACKEND_URL}/notes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updated),
+        });
+      } catch {}
+    } else {
+      // ── Create new note ──
+      const color = NOTE_COLORS[notes.length % NOTE_COLORS.length];
+      const newNote = { id: Date.now().toString(), title: noteTitle.trim(), body: noteBody.trim(), createdAt: new Date().toISOString(), color };
+      setNotes(prev => [newNote, ...prev]);
+      setNoteTitle("");
+      setNoteBody("");
+      setSavePanelMode(null);
+      try {
+        await fetch(`${BACKEND_URL}/notes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newNote),
+        });
+      } catch {
+        localStorage.setItem("om-sticky-notes", JSON.stringify([newNote, ...notes]));
+      }
     }
   };
 
@@ -666,13 +685,28 @@ export default function Home() {
                   className="relative group flex flex-col gap-2 rounded-lg p-4 shadow-md"
                   style={{ background: note.color?.bg ?? '#fde68a', minHeight: 160 }}
                 >
-                  <button
-                    onClick={() => deleteNote(note.id)}
-                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
-                    style={{ color: note.color?.text ?? '#78350f' }}
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                  {/* Edit + Delete buttons — visible on hover */}
+                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => {
+                        setEditingNote(note);
+                        setNoteTitle(note.title);
+                        setNoteBody(note.body);
+                        setSavePanelMode("note");
+                      }}
+                      className="opacity-50 hover:opacity-100 transition-opacity"
+                      style={{ color: note.color?.text ?? '#78350f' }}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => deleteNote(note.id)}
+                      className="opacity-50 hover:opacity-100 transition-opacity"
+                      style={{ color: note.color?.text ?? '#78350f' }}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                   {note.title && (
                     <p className="text-sm font-semibold pr-5 leading-snug" style={{ color: note.color?.text ?? '#78350f' }}>{note.title}</p>
                   )}
@@ -737,16 +771,17 @@ export default function Home() {
 
         {/* ── Note compose modal ── */}
         {savePanelMode === "note" && (() => {
-          const noteColor = NOTE_COLORS[notes.length % NOTE_COLORS.length];
+          const noteColor = editingNote?.color ?? NOTE_COLORS[notes.length % NOTE_COLORS.length];
+          const closeModal = () => { setSavePanelMode(null); setEditingNote(null); setNoteTitle(""); setNoteBody(""); };
           return (
-            <div className="absolute inset-0 z-20 flex items-center justify-center p-6" onClick={(e) => { if (e.target === e.currentTarget) setSavePanelMode(null); }}>
+            <div className="absolute inset-0 z-20 flex items-center justify-center p-6" onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}>
               <div
                 className="w-full max-w-[420px] rounded-2xl shadow-2xl p-6 flex flex-col gap-4"
                 style={{ background: noteColor.bg }}
               >
                 <div className="flex items-center justify-between">
                   <StickyNote className="w-4 h-4 opacity-50" style={{ color: noteColor.text }} />
-                  <button onClick={() => setSavePanelMode(null)} style={{ color: noteColor.text }} className="opacity-40 hover:opacity-70 transition-opacity">
+                  <button onClick={closeModal} style={{ color: noteColor.text }} className="opacity-40 hover:opacity-70 transition-opacity">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
@@ -762,14 +797,14 @@ export default function Home() {
                 <textarea
                   value={noteBody}
                   onChange={(e) => setNoteBody(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) handleSaveNote(); if (e.key === "Escape") setSavePanelMode(null); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) handleSaveNote(); if (e.key === "Escape") closeModal(); }}
                   placeholder="Type anything..."
                   rows={6}
                   className="w-full bg-transparent outline-none text-sm resize-none placeholder:opacity-40 leading-relaxed"
                   style={{ color: noteColor.text, fontFamily: "var(--font-geist), sans-serif" }}
                 />
                 <div className="flex gap-2 pt-1">
-                  <button onClick={() => setSavePanelMode(null)} className="flex-1 py-2.5 rounded-xl text-sm opacity-50 hover:opacity-80 transition-opacity border border-current" style={{ color: noteColor.text, fontFamily: "var(--font-geist), sans-serif" }}>
+                  <button onClick={closeModal} className="flex-1 py-2.5 rounded-xl text-sm opacity-50 hover:opacity-80 transition-opacity border border-current" style={{ color: noteColor.text, fontFamily: "var(--font-geist), sans-serif" }}>
                     Cancel
                   </button>
                   <button
@@ -778,7 +813,7 @@ export default function Home() {
                     className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-opacity disabled:opacity-30"
                     style={{ background: noteColor.text, color: noteColor.bg, fontFamily: "var(--font-geist), sans-serif" }}
                   >
-                    Done
+                    {editingNote ? "Save" : "Done"}
                   </button>
                 </div>
               </div>
