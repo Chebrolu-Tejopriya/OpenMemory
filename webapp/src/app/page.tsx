@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, BookmarkPlus } from "lucide-react";
+import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Plus } from "lucide-react";
 import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
@@ -41,6 +41,16 @@ const THEMES: ThemeMedia[] = [
 
 const CROSSFADE_SECS = 1.5;
 
+const NOTE_COLORS = [
+  { bg: '#a8f0c6', text: '#1a5c3a' },
+  { bg: '#fde68a', text: '#78350f' },
+  { bg: '#bfdbfe', text: '#1e3a8a' },
+  { bg: '#fecaca', text: '#7f1d1d' },
+  { bg: '#e9d5ff', text: '#4c1d95' },
+  { bg: '#fed7aa', text: '#7c2d12' },
+];
+
+type NoteColor = typeof NOTE_COLORS[number];
 type ActiveView = "search" | "browse" | "canvas" | "save";
 type MentionType = "folder" | "board" | null;
 interface ActiveScope { type: "folder" | "board"; value: string }
@@ -62,13 +72,14 @@ export default function Home() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Save tab state
-  const [saveMode, setSaveMode] = useState<"link" | "note">("link");
+  const [savePopoverOpen, setSavePopoverOpen] = useState(false);
+  const [savePanelMode, setSavePanelMode] = useState<"link" | "note" | null>(null);
   const [saveUrl, setSaveUrl] = useState("");
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveResult, setSaveResult] = useState<{ success: boolean; title?: string; error?: string } | null>(null);
   const [noteTitle, setNoteTitle] = useState("");
   const [noteBody, setNoteBody] = useState("");
-  const [notes, setNotes] = useState<Array<{ id: string; title: string; body: string; createdAt: string }>>([]);
+  const [notes, setNotes] = useState<Array<{ id: string; title: string; body: string; createdAt: string; color: NoteColor }>>([]);
 
   // Mention / scope state
   const [mentionType, setMentionType] = useState<MentionType>(null);
@@ -288,17 +299,19 @@ export default function Home() {
       setHasSearched(false);
       setMentionOpen(false);
     }
-    if (view !== "save") setSaveResult(null);
+    if (view !== "save") { setSaveResult(null); setSavePopoverOpen(false); setSavePanelMode(null); }
   };
 
   const handleSaveNote = () => {
     if (!noteBody.trim() && !noteTitle.trim()) return;
-    const newNote = { id: Date.now().toString(), title: noteTitle.trim(), body: noteBody.trim(), createdAt: new Date().toISOString() };
+    const color = NOTE_COLORS[notes.length % NOTE_COLORS.length];
+    const newNote = { id: Date.now().toString(), title: noteTitle.trim(), body: noteBody.trim(), createdAt: new Date().toISOString(), color };
     const updated = [newNote, ...notes];
     setNotes(updated);
     localStorage.setItem("om-sticky-notes", JSON.stringify(updated));
     setNoteTitle("");
     setNoteBody("");
+    setSavePanelMode(null);
   };
 
   const deleteNote = (id: string) => {
@@ -321,6 +334,7 @@ export default function Home() {
       if (res.ok) {
         setSaveResult({ success: true, title: data.title });
         setSaveUrl("");
+        setTimeout(() => { setSavePanelMode(null); setSaveResult(null); }, 1800);
       } else {
         setSaveResult({ success: false, error: data.error || "Failed to save" });
       }
@@ -562,135 +576,221 @@ export default function Home() {
       </div>
 
       {/* ══════════════════════════════════════════
-          SAVE VIEW
+          SAVE VIEW — dotted canvas + sticky notes
           ══════════════════════════════════════════ */}
       <div
         className={`absolute inset-0 z-10 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
           activeView === "save" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
       >
-        <div className="absolute inset-0 bg-[#ebfdff]/80 backdrop-blur-sm" />
-        <div className="relative z-10 h-full flex flex-col pt-6 sm:pt-12 pb-24 px-4 overflow-hidden">
+        {/* Dotted grid background */}
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundColor: '#f2f9f7',
+            backgroundImage: 'radial-gradient(circle, rgba(91,152,136,0.25) 1px, transparent 1px)',
+            backgroundSize: '24px 24px',
+          }}
+        />
 
-          {/* Form area */}
-          <div className="w-full max-w-[500px] mx-auto flex flex-col gap-3 flex-shrink-0">
-
-            {/* Mode toggle */}
-            <div className="flex items-center self-center bg-white/40 backdrop-blur-sm rounded-full p-1 gap-1 border border-[#5b9888]/20">
-              {(["link", "note"] as const).map(mode => (
-                <button
-                  key={mode}
-                  onClick={() => { setSaveMode(mode); setSaveResult(null); }}
-                  className="px-5 py-1.5 rounded-full text-sm font-medium transition-all duration-200"
-                  style={{
-                    background: saveMode === mode ? "#5b9888" : "transparent",
-                    color: saveMode === mode ? "#fff" : "rgba(58,58,58,0.5)",
-                    fontFamily: "var(--font-geist), sans-serif",
-                  }}
+        {/* Notes canvas — scrollable */}
+        <div className="relative z-10 h-full overflow-y-auto custom-scrollbar pb-32 pt-6 px-5">
+          {notes.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center select-none pointer-events-none">
+              <StickyNote className="w-10 h-10 text-[#5b9888]/20 mb-3" />
+              <p className="text-sm text-[#3a3a3a]/25 font-medium">Hit + to add a link or note</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 max-w-[1200px] mx-auto">
+              {notes.map((note) => (
+                <div
+                  key={note.id}
+                  className="relative group flex flex-col gap-2 rounded-lg p-4 shadow-md"
+                  style={{ background: note.color.bg, minHeight: 160 }}
                 >
-                  {mode === "link" ? "Link" : "Note"}
-                </button>
+                  <button
+                    onClick={() => deleteNote(note.id)}
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
+                    style={{ color: note.color.text }}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                  {note.title && (
+                    <p className="text-sm font-semibold pr-5 leading-snug" style={{ color: note.color.text }}>{note.title}</p>
+                  )}
+                  {note.body && (
+                    <p className="text-xs whitespace-pre-wrap leading-relaxed flex-1 opacity-80" style={{ color: note.color.text }}>{note.body}</p>
+                  )}
+                  <p className="text-[10px] opacity-40 mt-auto" style={{ color: note.color.text }}>
+                    {new Date(note.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                  </p>
+                </div>
               ))}
             </div>
+          )}
+        </div>
 
-            {/* ── Link form ── */}
-            {saveMode === "link" && (
-              <>
-                <div className="w-full flex items-center bg-white/[0.38] border-4 border-solid border-[#5b9888] rounded-[13px] px-3 sm:px-3.5 py-2 sm:py-2 gap-2">
-                  <BookmarkPlus className="w-4 h-4 text-[#646464] flex-shrink-0" />
-                  <input
-                    type="url"
-                    value={saveUrl}
-                    onChange={(e) => { setSaveUrl(e.target.value); setSaveResult(null); }}
-                    onKeyDown={(e) => { if (e.key === "Enter") handleSaveLink(); }}
-                    placeholder="https://..."
-                    className="flex-1 min-w-0 bg-transparent outline-none placeholder:text-[#3a3a3a]/40 text-[#3a3a3a] text-base leading-6"
-                    style={{ fontFamily: "var(--font-geist), sans-serif" }}
-                  />
+        {/* ── FAB + Popover ── */}
+        <div className="absolute z-30" style={{ bottom: "calc(88px + env(safe-area-inset-bottom))", right: 20 }}>
+          {/* Popover menu */}
+          {savePopoverOpen && (
+            <>
+              {/* Backdrop to close */}
+              <div className="fixed inset-0 z-0" onClick={() => setSavePopoverOpen(false)} />
+              <div
+                className="absolute bottom-full right-0 mb-3 z-10 overflow-hidden"
+                style={{
+                  background: 'rgba(22,22,22,0.92)',
+                  backdropFilter: 'blur(20px)',
+                  WebkitBackdropFilter: 'blur(20px)',
+                  borderRadius: 14,
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                  minWidth: 172,
+                }}
+              >
+                <button
+                  onClick={() => { setSavePopoverOpen(false); setSavePanelMode("link"); setSaveResult(null); setSaveUrl(""); }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-white/80 hover:text-white hover:bg-white/8 transition-colors text-sm"
+                  style={{ fontFamily: "var(--font-geist), sans-serif" }}
+                >
+                  <Link2 className="w-4 h-4 opacity-70" />
+                  <span>Link</span>
+                  <span className="ml-auto text-white/25 text-xs">L</span>
+                </button>
+                <div className="h-px bg-white/8" />
+                <button
+                  onClick={() => { setSavePopoverOpen(false); setSavePanelMode("note"); setNoteTitle(""); setNoteBody(""); }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-white/80 hover:text-white hover:bg-white/8 transition-colors text-sm"
+                  style={{ fontFamily: "var(--font-geist), sans-serif" }}
+                >
+                  <StickyNote className="w-4 h-4 opacity-70" />
+                  <span>Note</span>
+                  <span className="ml-auto text-white/25 text-xs">N</span>
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* FAB button */}
+          <button
+            onClick={() => setSavePopoverOpen(prev => !prev)}
+            className="w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all duration-200 active:scale-90"
+            style={{
+              background: savePopoverOpen ? '#3d7a64' : '#5b9888',
+              color: '#fff',
+              boxShadow: '0 4px 20px rgba(91,152,136,0.45)',
+              transform: savePopoverOpen ? 'rotate(45deg)' : 'rotate(0deg)',
+              transition: 'transform 0.2s ease, background 0.2s ease',
+            }}
+          >
+            <Plus className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* ── Link modal ── */}
+        {savePanelMode === "link" && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center p-6" onClick={(e) => { if (e.target === e.currentTarget) setSavePanelMode(null); }}>
+            <div className="w-full max-w-[420px] bg-white rounded-2xl shadow-2xl p-6 flex flex-col gap-4" style={{ border: '1px solid rgba(91,152,136,0.2)' }}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Link2 className="w-4 h-4 text-[#5b9888]" />
+                  <h3 className="font-semibold text-[#1a1a1a] text-sm" style={{ fontFamily: "var(--font-geist), sans-serif" }}>Add a Link</h3>
                 </div>
+                <button onClick={() => setSavePanelMode(null)} className="text-[#3a3a3a]/30 hover:text-[#3a3a3a] transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <input
+                autoFocus
+                type="url"
+                value={saveUrl}
+                onChange={(e) => { setSaveUrl(e.target.value); setSaveResult(null); }}
+                onKeyDown={(e) => { if (e.key === "Enter") handleSaveLink(); if (e.key === "Escape") setSavePanelMode(null); }}
+                placeholder="https://..."
+                className="w-full border-2 border-[#5b9888]/30 focus:border-[#5b9888] rounded-xl px-4 py-3 text-sm text-[#1a1a1a] placeholder:text-[#3a3a3a]/30 outline-none transition-colors"
+                style={{ fontFamily: "var(--font-geist), sans-serif" }}
+              />
+              {saveResult && (
+                <p className={`text-xs px-1 ${saveResult.success ? "text-[#3d7a64]" : "text-red-500"}`}>
+                  {saveResult.success ? `Saved: "${saveResult.title}"` : saveResult.error}
+                </p>
+              )}
+              <div className="flex gap-2">
+                <button onClick={() => setSavePanelMode(null)} className="flex-1 py-2.5 rounded-xl border border-[#3a3a3a]/10 text-sm text-[#3a3a3a]/50 hover:text-[#3a3a3a] hover:border-[#3a3a3a]/20 transition-colors" style={{ fontFamily: "var(--font-geist), sans-serif" }}>
+                  Cancel
+                </button>
                 <button
                   onClick={handleSaveLink}
                   disabled={!saveUrl.trim() || saveLoading}
-                  className="w-full py-3 rounded-[13px] bg-[#5b9888] text-white font-medium text-sm tracking-wide hover:bg-[#4a8070] active:bg-[#3d7a64] transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="flex-1 py-2.5 rounded-xl bg-[#5b9888] text-white text-sm font-medium hover:bg-[#4a8070] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
                   style={{ fontFamily: "var(--font-geist), sans-serif" }}
                 >
-                  {saveLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <BookmarkPlus className="w-4 h-4" />}
-                  {saveLoading ? "Saving..." : "Save Link"}
+                  {saveLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
+                  {saveLoading ? "Saving..." : "Save"}
                 </button>
-                {saveResult && (
-                  <div className={`w-full rounded-[10px] px-4 py-3 text-sm ${saveResult.success ? "bg-[#5b9888]/15 border border-[#5b9888]/30 text-[#3d7a64]" : "bg-red-50/80 border border-red-200 text-red-600"}`}>
-                    {saveResult.success ? `Saved: "${saveResult.title}"` : saveResult.error}
-                  </div>
-                )}
-              </>
-            )}
+              </div>
+            </div>
+          </div>
+        )}
 
-            {/* ── Note form ── */}
-            {saveMode === "note" && (
-              <>
+        {/* ── Note compose modal ── */}
+        {savePanelMode === "note" && (() => {
+          const noteColor = NOTE_COLORS[notes.length % NOTE_COLORS.length];
+          return (
+            <div className="absolute inset-0 z-20 flex items-center justify-center p-6" onClick={(e) => { if (e.target === e.currentTarget) setSavePanelMode(null); }}>
+              <div
+                className="w-full max-w-[420px] rounded-2xl shadow-2xl p-6 flex flex-col gap-4"
+                style={{ background: noteColor.bg }}
+              >
+                <div className="flex items-center justify-between">
+                  <StickyNote className="w-4 h-4 opacity-50" style={{ color: noteColor.text }} />
+                  <button onClick={() => setSavePanelMode(null)} style={{ color: noteColor.text }} className="opacity-40 hover:opacity-70 transition-opacity">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
                 <input
+                  autoFocus
                   type="text"
                   value={noteTitle}
                   onChange={(e) => setNoteTitle(e.target.value)}
                   placeholder="Title"
-                  className="w-full bg-white/[0.38] border-4 border-solid border-[#5b9888] rounded-[13px] px-3.5 py-2 text-base text-[#3a3a3a] placeholder:text-[#3a3a3a]/40 outline-none"
-                  style={{ fontFamily: "var(--font-geist), sans-serif" }}
+                  className="w-full bg-transparent outline-none text-base font-semibold placeholder:opacity-40"
+                  style={{ color: noteColor.text, fontFamily: "var(--font-geist), sans-serif" }}
                 />
                 <textarea
                   value={noteBody}
                   onChange={(e) => setNoteBody(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) handleSaveNote(); }}
-                  placeholder="Write your note..."
-                  rows={4}
-                  className="w-full bg-white/20 border border-[#5b9888]/30 rounded-[13px] px-3.5 py-3 text-sm text-[#3a3a3a] placeholder:text-[#3a3a3a]/30 outline-none resize-none"
-                  style={{ fontFamily: "var(--font-geist), sans-serif" }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) handleSaveNote(); if (e.key === "Escape") setSavePanelMode(null); }}
+                  placeholder="Type anything..."
+                  rows={6}
+                  className="w-full bg-transparent outline-none text-sm resize-none placeholder:opacity-40 leading-relaxed"
+                  style={{ color: noteColor.text, fontFamily: "var(--font-geist), sans-serif" }}
                 />
-                <button
-                  onClick={handleSaveNote}
-                  disabled={!noteBody.trim() && !noteTitle.trim()}
-                  className="w-full py-3 rounded-[13px] bg-[#5b9888] text-white font-medium text-sm tracking-wide hover:bg-[#4a8070] active:bg-[#3d7a64] transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
-                  style={{ fontFamily: "var(--font-geist), sans-serif" }}
-                >
-                  Save Note
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* ── Sticky notes grid ── */}
-          {notes.length > 0 && (
-            <div className="flex-1 min-h-0 w-full max-w-[960px] mx-auto mt-6 overflow-y-auto custom-scrollbar">
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 pb-2">
-                {notes.map(note => (
-                  <div key={note.id} className="relative group bg-[#fefce8] border border-amber-200/60 rounded-xl p-3.5 shadow-sm flex flex-col gap-1.5">
-                    <button
-                      onClick={() => deleteNote(note.id)}
-                      className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-[#3a3a3a]/30 hover:text-red-400"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                    {note.title && (
-                      <p className="text-sm font-semibold text-[#3a3a3a] pr-4 leading-snug">{note.title}</p>
-                    )}
-                    {note.body && (
-                      <p className="text-xs text-[#3a3a3a]/70 whitespace-pre-wrap leading-relaxed flex-1">{note.body}</p>
-                    )}
-                    <p className="text-[10px] text-[#3a3a3a]/30 mt-1">
-                      {new Date(note.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                    </p>
-                  </div>
-                ))}
+                <div className="flex gap-2 pt-1">
+                  <button onClick={() => setSavePanelMode(null)} className="flex-1 py-2.5 rounded-xl text-sm opacity-50 hover:opacity-80 transition-opacity border border-current" style={{ color: noteColor.text, fontFamily: "var(--font-geist), sans-serif" }}>
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveNote}
+                    disabled={!noteBody.trim() && !noteTitle.trim()}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-opacity disabled:opacity-30"
+                    style={{ background: noteColor.text, color: noteColor.bg, fontFamily: "var(--font-geist), sans-serif" }}
+                  >
+                    Done
+                  </button>
+                </div>
               </div>
             </div>
-          )}
+          );
+        })()}
 
-        </div>
       </div>
 
       {/* ── Bottom dock — liquid glass pill ── */}
       {(() => {
         const VIEWS: ActiveView[] = ["search", "browse", "canvas", "save"];
-        const ICONS = { search: Search, browse: LayoutGrid, canvas: Waypoints, save: BookmarkPlus };
+        const ICONS = { search: Search, browse: LayoutGrid, canvas: Waypoints, save: StickyNote };
         const LABELS = { search: "Search", browse: "Collections", canvas: "Canvas", save: "Save" };
         const BTN = 44;   // button width & height px
         const PAD = 6;    // container padding px
