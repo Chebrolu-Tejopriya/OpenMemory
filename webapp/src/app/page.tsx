@@ -39,7 +39,7 @@ const THEMES: ThemeMedia[] = [
   { type: "video", src: "/videos/leaf-animation.mp4" },
 ];
 
-const CROSSFADE_SECS = 3;
+const CROSSFADE_SECS = 1.5;
 
 type ActiveView = "search" | "browse" | "canvas";
 type MentionType = "folder" | "board" | null;
@@ -283,7 +283,7 @@ export default function Home() {
             ref={videoRef}
             className="absolute inset-0 w-full h-full object-cover md:object-fill"
             muted playsInline
-            style={{ opacity: videoOpacity.a, transition: `opacity ${CROSSFADE_SECS}s linear` }}
+            style={{ opacity: videoOpacity.a, transition: `opacity ${CROSSFADE_SECS}s ease-in-out` }}
           >
             <source src={THEMES[themeIndex].src} type="video/mp4" />
           </video>
@@ -291,7 +291,7 @@ export default function Home() {
             ref={videoBRef}
             className="absolute inset-0 w-full h-full object-cover md:object-fill"
             muted playsInline
-            style={{ opacity: videoOpacity.b, transition: `opacity ${CROSSFADE_SECS}s linear` }}
+            style={{ opacity: videoOpacity.b, transition: `opacity ${CROSSFADE_SECS}s ease-in-out` }}
           >
             <source src={THEMES[themeIndex].src} type="video/mp4" />
           </video>
