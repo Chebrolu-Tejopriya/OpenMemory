@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Plus } from "lucide-react";
+import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote } from "lucide-react";
 import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
@@ -637,63 +637,6 @@ export default function Home() {
           )}
         </div>
 
-        {/* ── FAB + Popover ── */}
-        <div className="absolute z-30" style={{ bottom: "calc(88px + env(safe-area-inset-bottom))", right: 20 }}>
-          {/* Popover menu */}
-          {savePopoverOpen && (
-            <>
-              {/* Backdrop to close */}
-              <div className="fixed inset-0 z-0" onClick={() => setSavePopoverOpen(false)} />
-              <div
-                className="absolute bottom-full right-0 mb-3 z-10 overflow-hidden"
-                style={{
-                  background: 'rgba(22,22,22,0.92)',
-                  backdropFilter: 'blur(20px)',
-                  WebkitBackdropFilter: 'blur(20px)',
-                  borderRadius: 14,
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-                  minWidth: 172,
-                }}
-              >
-                <button
-                  onClick={() => { setSavePopoverOpen(false); setSavePanelMode("link"); setSaveResult(null); setSaveUrl(""); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-white/80 hover:text-white hover:bg-white/8 transition-colors text-sm"
-                  style={{ fontFamily: "var(--font-geist), sans-serif" }}
-                >
-                  <Link2 className="w-4 h-4 opacity-70" />
-                  <span>Link</span>
-                  <span className="ml-auto text-white/25 text-xs">L</span>
-                </button>
-                <div className="h-px bg-white/8" />
-                <button
-                  onClick={() => { setSavePopoverOpen(false); setSavePanelMode("note"); setNoteTitle(""); setNoteBody(""); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-white/80 hover:text-white hover:bg-white/8 transition-colors text-sm"
-                  style={{ fontFamily: "var(--font-geist), sans-serif" }}
-                >
-                  <StickyNote className="w-4 h-4 opacity-70" />
-                  <span>Note</span>
-                  <span className="ml-auto text-white/25 text-xs">N</span>
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* FAB button */}
-          <button
-            onClick={() => setSavePopoverOpen(prev => !prev)}
-            className="w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all duration-200 active:scale-90"
-            style={{
-              background: savePopoverOpen ? '#3d7a64' : '#5b9888',
-              color: '#fff',
-              boxShadow: '0 4px 20px rgba(91,152,136,0.45)',
-              transform: savePopoverOpen ? 'rotate(45deg)' : 'rotate(0deg)',
-              transition: 'transform 0.2s ease, background 0.2s ease',
-            }}
-          >
-            <Plus className="w-5 h-5" />
-          </button>
-        </div>
 
         {/* ── Link modal ── */}
         {savePanelMode === "link" && (
@@ -807,6 +750,48 @@ export default function Home() {
         const indicatorLeft = PAD + activeIdx * (BTN + GAP);
         return (
           <div className="absolute left-1/2 -translate-x-1/2 z-40 pointer-events-auto select-none" style={{ bottom: "calc(20px + env(safe-area-inset-bottom))" }}>
+
+            {/* Save popover — floats above the dock, centered */}
+            {savePopoverOpen && (
+              <>
+                <div className="fixed inset-0 z-0" onClick={() => setSavePopoverOpen(false)} />
+                <div
+                  className="absolute z-10 overflow-hidden"
+                  style={{
+                    bottom: 'calc(100% + 10px)',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    background: 'rgba(22,22,22,0.92)',
+                    backdropFilter: 'blur(20px)',
+                    WebkitBackdropFilter: 'blur(20px)',
+                    borderRadius: 14,
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                    minWidth: 172,
+                  }}
+                >
+                  <button
+                    onClick={() => { setSavePopoverOpen(false); setSavePanelMode("link"); setSaveResult(null); setSaveUrl(""); }}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-white/80 hover:text-white transition-colors text-sm"
+                    style={{ fontFamily: "var(--font-geist), sans-serif" }}
+                  >
+                    <Link2 className="w-4 h-4 opacity-70" />
+                    <span>Link</span>
+                    <span className="ml-auto text-white/25 text-xs">L</span>
+                  </button>
+                  <div className="h-px" style={{ background: 'rgba(255,255,255,0.08)' }} />
+                  <button
+                    onClick={() => { setSavePopoverOpen(false); setSavePanelMode("note"); setNoteTitle(""); setNoteBody(""); }}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-white/80 hover:text-white transition-colors text-sm"
+                    style={{ fontFamily: "var(--font-geist), sans-serif" }}
+                  >
+                    <StickyNote className="w-4 h-4 opacity-70" />
+                    <span>Note</span>
+                    <span className="ml-auto text-white/25 text-xs">N</span>
+                  </button>
+                </div>
+              </>
+            )}
             {/* Outer glass container */}
             <div
               className="relative flex items-center"
@@ -859,7 +844,15 @@ export default function Home() {
                 return (
                   <button
                     key={view}
-                    onClick={() => handleViewSwitch(view)}
+                    onClick={() => {
+                      if (view === "save") {
+                        if (activeView !== "save") setActiveView("save");
+                        setSavePopoverOpen(prev => !prev);
+                      } else {
+                        handleViewSwitch(view);
+                        setSavePopoverOpen(false);
+                      }
+                    }}
                     aria-label={LABELS[view]}
                     style={{
                       position: "relative",
