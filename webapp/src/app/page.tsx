@@ -256,7 +256,7 @@ export default function Home() {
       )}
 
       {/* Top Gradient */}
-      <div className="hidden sm:block absolute top-[-36px] left-[-35px] w-[1518px] h-[142px] z-10 pointer-events-none">
+      <div className="hidden sm:block absolute top-[-36px] left-0 right-0 h-[142px] z-10 pointer-events-none">
         <Image src="/images/top-gradient.png" alt="" fill className="object-cover" priority />
       </div>
       <div className="sm:hidden absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-[#ebfdff]/80 to-transparent z-10 pointer-events-none" />
