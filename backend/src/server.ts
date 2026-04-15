@@ -10,6 +10,7 @@ import { searchSupabase, getSupabaseFolders, getSupabaseBoards, browseSupabase }
 import { getAllFolders, getPinterestBoards, getPinterestPinsCountByBoard, upsertPinterestBoard, upsertPinterestPins, getExistingPinterestPinUrls, deletePinterestBoard, PinterestPinRow, PinterestBoardRow } from './db.js';
 import { StandardizedItem } from './types.js';
 import { generateEmbeddings } from './embeddings.js';
+import { scrapePageMetadata, buildEmbeddingText } from './scraper.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -276,6 +277,71 @@ app.post('/run-embeddings', async (req, res) => {
     res.status(500).json({
       error: err instanceof Error ? err.message : 'Unknown error'
     });
+  }
+});
+
+/**
+ * POST /save-link
+ * Body: { url: string, folder?: string }
+ * Scrapes metadata, generates a 384-dim embedding, and upserts to Supabase bookmarks.
+ * Response: { success: true, title: string, url: string }
+ */
+app.post('/save-link', async (req, res) => {
+  try {
+    const { url, folder } = req.body as { url?: string; folder?: string };
+
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'url is required' });
+    }
+
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url.trim());
+    } catch {
+      return res.status(400).json({ error: 'Invalid URL' });
+    }
+
+    const cleanUrl = parsedUrl.toString();
+    const folderName = folder?.trim() || 'Saved Links';
+
+    // Scrape metadata
+    const metadata = await scrapePageMetadata(cleanUrl);
+    const title = metadata?.ogTitle || metadata?.pageTitle || parsedUrl.hostname;
+
+    // Generate embedding
+    const embeddingText = buildEmbeddingText({ title, folder: folderName, source: 'chrome', metadata });
+    const [embedding] = await generateEmbeddings([embeddingText]);
+
+    // Upsert to Supabase bookmarks (anon key has INSERT/UPDATE grants, RLS is off)
+    const supabaseUrl = process.env.SUPABASE_URL || 'https://ghfybenvdenuupiqgouf.supabase.co';
+    const supabaseKey = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdoZnliZW52ZGVudXVwaXFnb3VmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NTgwNDIsImV4cCI6MjA5MDIzNDA0Mn0._ADsqO0uFMEwNJ1lTKc3_0sBuuN3Jvxa3-naDmdYK1k';
+
+    const upsertRes = await fetch(`${supabaseUrl}/rest/v1/bookmarks`, {
+      method: 'POST',
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates',
+      },
+      body: JSON.stringify({
+        url: cleanUrl,
+        title,
+        folder: folderName,
+        ...(embedding ? { embedding: `[${embedding.join(',')}]` } : {}),
+      }),
+    });
+
+    if (!upsertRes.ok) {
+      const errText = await upsertRes.text();
+      console.error('Supabase upsert error:', errText);
+      return res.status(500).json({ error: 'Failed to save to Supabase' });
+    }
+
+    res.json({ success: true, title, url: cleanUrl });
+  } catch (err) {
+    console.error('Save link error:', err);
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }
 });
 

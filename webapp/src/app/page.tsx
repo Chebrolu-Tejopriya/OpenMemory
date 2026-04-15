@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints } from "lucide-react";
+import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, BookmarkPlus } from "lucide-react";
 import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
@@ -41,7 +41,7 @@ const THEMES: ThemeMedia[] = [
 
 const CROSSFADE_SECS = 1.5;
 
-type ActiveView = "search" | "browse" | "canvas";
+type ActiveView = "search" | "browse" | "canvas" | "save";
 type MentionType = "folder" | "board" | null;
 interface ActiveScope { type: "folder" | "board"; value: string }
 
@@ -60,6 +60,12 @@ export default function Home() {
   const [suggestions, setSuggestions] = useState<string[]>(() => getRandomSuggestions(4));
   const [suggestionsVisible, setSuggestionsVisible] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Save link state
+  const [saveUrl, setSaveUrl] = useState("");
+  const [saveFolder, setSaveFolder] = useState("");
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [saveResult, setSaveResult] = useState<{ success: boolean; title?: string; error?: string } | null>(null);
 
   // Mention / scope state
   const [mentionType, setMentionType] = useState<MentionType>(null);
@@ -270,6 +276,31 @@ export default function Home() {
       setResults([]);
       setHasSearched(false);
       setMentionOpen(false);
+    }
+    if (view !== "save") setSaveResult(null);
+  };
+
+  const handleSaveLink = async () => {
+    if (!saveUrl.trim() || saveLoading) return;
+    setSaveLoading(true);
+    setSaveResult(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/save-link`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: saveUrl.trim(), folder: saveFolder.trim() || undefined }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSaveResult({ success: true, title: data.title });
+        setSaveUrl("");
+      } else {
+        setSaveResult({ success: false, error: data.error || "Failed to save" });
+      }
+    } catch {
+      setSaveResult({ success: false, error: "Network error — is the backend running?" });
+    } finally {
+      setSaveLoading(false);
     }
   };
 
@@ -503,11 +534,85 @@ export default function Home() {
         <CanvasView folders={folders} boards={boards} active={activeView === "canvas"} />
       </div>
 
+      {/* ══════════════════════════════════════════
+          SAVE VIEW
+          ══════════════════════════════════════════ */}
+      <div
+        className={`absolute inset-0 z-10 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+          activeView === "save" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        }`}
+      >
+        <div className="absolute inset-0 bg-[#ebfdff]/80 backdrop-blur-sm" />
+        <div className="relative z-10 h-full flex flex-col items-center justify-center px-4 pb-24">
+          <div className="w-full max-w-[500px] flex flex-col gap-4">
+            {/* Heading */}
+            <div className="flex flex-col items-center gap-1 mb-2">
+              <h2 className="gradient-text font-semibold text-2xl sm:text-3xl" style={{ fontFamily: "var(--font-baloo-2), sans-serif" }}>
+                Save a Link
+              </h2>
+              <p className="text-sm text-[#3a3a3a]/50">Paste any URL to add it to your memory</p>
+            </div>
+
+            {/* URL input */}
+            <div className="w-full flex items-center bg-white/[0.38] border-4 border-solid border-[#5b9888] rounded-[13px] px-3 sm:px-[14px] py-2 sm:py-[8px] gap-2">
+              <BookmarkPlus className="w-4 h-4 text-[#646464] flex-shrink-0" />
+              <input
+                type="url"
+                value={saveUrl}
+                onChange={(e) => { setSaveUrl(e.target.value); setSaveResult(null); }}
+                onKeyDown={(e) => { if (e.key === "Enter") handleSaveLink(); }}
+                placeholder="https://..."
+                className="flex-1 min-w-0 bg-transparent outline-none placeholder:text-[#3a3a3a]/40 text-[#3a3a3a] text-base leading-6"
+                style={{ fontFamily: "var(--font-geist), sans-serif" }}
+              />
+            </div>
+
+            {/* Folder input */}
+            <div className="w-full flex items-center bg-white/20 border border-[#5b9888]/30 rounded-[10px] px-3 py-2 gap-2">
+              <Bookmark className="w-3.5 h-3.5 text-[#5b9888]/50 flex-shrink-0" />
+              <input
+                type="text"
+                value={saveFolder}
+                onChange={(e) => setSaveFolder(e.target.value)}
+                placeholder="Folder (optional — default: Saved Links)"
+                className="flex-1 min-w-0 bg-transparent outline-none placeholder:text-[#3a3a3a]/30 text-[#3a3a3a] text-sm"
+                style={{ fontFamily: "var(--font-geist), sans-serif" }}
+              />
+            </div>
+
+            {/* Save button */}
+            <button
+              onClick={handleSaveLink}
+              disabled={!saveUrl.trim() || saveLoading}
+              className="w-full py-3 rounded-[13px] bg-[#5b9888] text-white font-medium text-sm tracking-wide hover:bg-[#4a8070] active:bg-[#3d7a64] transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              style={{ fontFamily: "var(--font-geist), sans-serif" }}
+            >
+              {saveLoading
+                ? <RefreshCw className="w-4 h-4 animate-spin" />
+                : <BookmarkPlus className="w-4 h-4" />
+              }
+              {saveLoading ? "Saving..." : "Save Link"}
+            </button>
+
+            {/* Result feedback */}
+            {saveResult && (
+              <div className={`w-full rounded-[10px] px-4 py-3 text-sm ${
+                saveResult.success
+                  ? "bg-[#5b9888]/15 border border-[#5b9888]/30 text-[#3d7a64]"
+                  : "bg-red-50/80 border border-red-200 text-red-600"
+              }`}>
+                {saveResult.success ? `Saved: "${saveResult.title}"` : saveResult.error}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* ── Bottom dock — liquid glass pill ── */}
       {(() => {
-        const VIEWS: ActiveView[] = ["search", "browse", "canvas"];
-        const ICONS = { search: Search, browse: LayoutGrid, canvas: Waypoints };
-        const LABELS = { search: "Search", browse: "Collections", canvas: "Canvas" };
+        const VIEWS: ActiveView[] = ["search", "browse", "canvas", "save"];
+        const ICONS = { search: Search, browse: LayoutGrid, canvas: Waypoints, save: BookmarkPlus };
+        const LABELS = { search: "Search", browse: "Collections", canvas: "Canvas", save: "Save" };
         const BTN = 44;   // button width & height px
         const PAD = 6;    // container padding px
         const GAP = 4;    // gap between buttons px
