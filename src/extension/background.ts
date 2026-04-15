@@ -28,7 +28,8 @@ import {
   resyncPinterestBoard,
   bulkInsertPinterestPins,
   PinterestPinInsert,
-  backfillAllMissingEmbeddings
+  backfillAllMissingEmbeddings,
+  getAllSupabaseBookmarkUrls,
 } from './supabase';
 
 // ============== CONSTANTS ==============
@@ -84,6 +85,8 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
   // Auto-sync to Supabase after initialization if configured
   setTimeout(() => autoSyncToSupabase(), 5000);
+  // Reconcile any bookmarks deleted while the extension was not running
+  setTimeout(() => reconcileDeletedBookmarks(), 8000);
 });
 
 chrome.runtime.onStartup.addListener(async () => {
@@ -93,7 +96,66 @@ chrome.runtime.onStartup.addListener(async () => {
 
   // Auto-sync to Supabase on startup if configured
   setTimeout(() => autoSyncToSupabase(), 5000);
+  // Reconcile any bookmarks deleted while the browser was closed
+  setTimeout(() => reconcileDeletedBookmarks(), 8000);
 });
+
+// ============== RECONCILIATION ==============
+
+/** Collect every URL from Chrome's full bookmark tree */
+function getAllChromeBookmarkUrls(): Promise<Set<string>> {
+  return new Promise((resolve) => {
+    chrome.bookmarks.getTree((tree) => {
+      const urls = new Set<string>();
+      const traverse = (nodes: chrome.bookmarks.BookmarkTreeNode[]) => {
+        for (const node of nodes) {
+          if (node.url) urls.add(node.url);
+          if (node.children) traverse(node.children);
+        }
+      };
+      traverse(tree);
+      resolve(urls);
+    });
+  });
+}
+
+/**
+ * Compare Chrome bookmarks against Supabase and delete any rows whose
+ * URLs no longer exist in Chrome. Runs silently on startup/install.
+ */
+async function reconcileDeletedBookmarks() {
+  if (!(await isSupabaseConfigured())) return;
+
+  console.log('[OpenMemory] Reconciliation: checking for orphaned bookmarks...');
+
+  try {
+    const [supabaseUrls, chromeUrls] = await Promise.all([
+      getAllSupabaseBookmarkUrls(),
+      getAllChromeBookmarkUrls(),
+    ]);
+
+    if (supabaseUrls.length === 0) return;
+
+    const orphaned = supabaseUrls.filter((url) => !chromeUrls.has(url));
+
+    if (orphaned.length === 0) {
+      console.log('[OpenMemory] Reconciliation: all Supabase bookmarks accounted for');
+      return;
+    }
+
+    console.log(`[OpenMemory] Reconciliation: deleting ${orphaned.length} orphaned bookmark(s)...`);
+
+    let deleted = 0;
+    for (const url of orphaned) {
+      const result = await deleteBookmark(url, 'url');
+      if (result.success) deleted++;
+    }
+
+    console.log(`[OpenMemory] Reconciliation complete: ${deleted}/${orphaned.length} deleted`);
+  } catch (err) {
+    console.error('[OpenMemory] Reconciliation error:', err);
+  }
+}
 
 function setupAlarms() {
   chrome.alarms.create(ALARM_NAME, { periodInMinutes: ALARM_PERIOD_MINUTES });

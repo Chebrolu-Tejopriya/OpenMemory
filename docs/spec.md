@@ -328,6 +328,8 @@ Response: { "embedding": [0.123, ...] }   // 384 floats
 
 Single-viewport, `h-screen overflow-hidden`. Three views toggled by bottom dock.
 
+**Video background crossfade loop**: Two stacked `<video>` elements (refs `videoRef` / `videoBRef`). A `timeupdate` listener monitors the active video; when `duration - currentTime ≤ CROSSFADE_SECS (1.5)`, the inactive video seeks to `t=0`, starts playing, and both videos transition opacity simultaneously (`ease-in-out 1.5s`). A `crossfadingRef` flag prevents re-entrancy. The background container is `bg-[#ebfdff]`.
+
 ```
 ┌─────────────────────────────────────────────────────┐
 │  Video background (leaf-animation.mp4, looping)     │
@@ -383,6 +385,9 @@ Liquid glass pill, dark-neutral base (visible on any background):
 - Infinite drag-to-explore grid
 - **Scrolling**: native `overflow: auto` — compositor thread, smooth on touch/trackpad
 - **Mouse drag**: direct `scrollLeft`/`scrollTop` manipulation in `pointermove`, no RAF
+- **Drag listeners**: `pointermove`/`pointerup` attached to `window` on drag start (not the container element) so drag continues when pointer leaves the canvas boundary
+- **No `setPointerCapture`**: pointer capture is intentionally NOT used — it routes events away from `<a>` elements and breaks card link navigation on desktop
+- **Click suppression**: if drag distance > 5px, a one-shot `window.addEventListener("click", suppress, { capture: true })` swallows the post-drag click to prevent accidental link opens
 - **Inertia**: RAF with `Math.pow(0.998, dt_ms)` time-based friction after mouse release
 - **Velocity**: computed from 80ms pointer history on release
 - **Infinite loop**: 5×5 tiled grid; scroll event snaps back by one tile when near edge
@@ -454,14 +459,29 @@ Liquid glass pill, dark-neutral base (visible on any background):
 
 # 11. CHROME BOOKMARKS INTEGRATION
 
-Real-time sync via Chrome extension alarms:
+## 11.1 Real-time sync via Chrome extension events
 
 ```typescript
 chrome.bookmarks.onCreated  → upsertBookmark()
-chrome.bookmarks.onRemoved  → deleteBookmark()
+chrome.bookmarks.onRemoved  → deleteBookmark() from Dexie + Supabase
 chrome.bookmarks.onChanged  → updateBookmark()
 chrome.bookmarks.onMoved    → updateBookmark()
 ```
+
+## 11.2 Startup Reconciliation
+
+`onRemoved` is not always reliable — the Manifest V3 service worker can be dormant when a bookmark is deleted, causing the event to be missed. Folder deletions also only fire one `onRemoved` for the folder, not for each child.
+
+On every `onInstalled` and `onStartup`, `reconcileDeletedBookmarks()` runs after an 8-second delay:
+
+1. Fetch all URLs from Supabase `bookmarks` table (`select=url` only, paginated at 1000/page)
+2. Fetch all current Chrome bookmark URLs via `chrome.bookmarks.getTree()`
+3. Diff: any URL in Supabase not present in Chrome is an orphan
+4. Delete each orphan via `deleteBookmark(url, 'url')`
+
+This guarantees Supabase stays in sync even for deletions that happened while the browser was closed or the service worker was inactive.
+
+## 11.3 Alarms
 
 | Alarm | Interval | Purpose |
 |---|---|---|
@@ -497,6 +517,7 @@ chrome.bookmarks.onMoved    → updateBookmark()
 ❌ Use Float32Array for embeddings  
 ❌ Skip reading files before editing  
 ❌ Use `search_pinterest_pins_text` RPC — it is not deployed; use direct PostgREST GET query instead
+❌ Use `setPointerCapture` in CanvasView — it routes all pointer events to the container, breaking `<a>` link navigation on desktop; use window-level listeners during drag instead
 
 ---
 

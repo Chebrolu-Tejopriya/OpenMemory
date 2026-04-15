@@ -28,13 +28,16 @@ A personal inspiration memory system — search your Chrome bookmarks and Pinter
 ### Canvas
 - Infinite drag-to-explore grid of your saved items
 - Native `overflow: auto` scroll — compositor-thread smooth on touch/trackpad
-- Mouse drag via direct `scrollLeft`/`scrollTop` manipulation + pointer-history inertia
+- Mouse drag via direct `scrollLeft`/`scrollTop` manipulation + pointer-history inertia; window-level `pointermove`/`pointerup` listeners so drag continues if the pointer leaves the container
+- **Click through drag** — distance threshold (>5px) suppresses the post-drag click so card links open correctly on desktop
 - Infinite loop: 5×5 tiled grid with seamless scroll-event wrap
 - **5 columns, 240×280px cards**, eager parallel fetch on mount (data ready before tab switch)
 - Pinterest card titles truncated to one line; image fills remaining card height
 
 ### Chrome Extension
 - Sync Chrome bookmarks and Pinterest pins to Supabase
+- **Real-time delete sync** — removing a bookmark from Chrome instantly deletes it from Supabase via `onRemoved` listener
+- **Startup reconciliation** — on every browser start or extension reload, compares all Chrome bookmark URLs against Supabase and bulk-deletes any orphaned rows (covers bookmarks deleted while the extension was inactive or the service worker was dormant)
 - **Delete board** — remove all pins for a board from Supabase + local SQLite in one click
 - Board list persists locally (SQLite) and syncs state with Supabase
 
@@ -43,7 +46,7 @@ A personal inspiration memory system — search your Chrome bookmarks and Pinter
 - Card design: `#f4f4f4` background, square aspect-ratio image, hover shadow (slow 500ms fade)
 - Screenshot thumbnails via `screenshot.11ty.dev` (bookmarks); direct CDN image (Pinterest pins)
 - Broken Pinterest image fallback to favicon placeholder
-- Animated video background (`leaf-animation.mp4`)
+- **Crossfade video loop** — two stacked `<video>` elements; when the active video nears its end, the second video starts from t=0 and fades in over 1.5s (`ease-in-out`), hiding the loop cut
 
 ---
 

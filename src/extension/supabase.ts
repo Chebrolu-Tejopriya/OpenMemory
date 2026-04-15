@@ -319,6 +319,35 @@ export async function deleteBookmark(
 }
 
 /**
+ * Fetch all bookmark URLs stored in Supabase — URLs only, no embeddings.
+ * Paginated so it works for large collections.
+ */
+export async function getAllSupabaseBookmarkUrls(): Promise<string[]> {
+  const config = await getSupabaseConfig();
+  if (!config) return [];
+
+  try {
+    const urls: string[] = [];
+    let offset = 0;
+    const PAGE_SIZE = 1000;
+
+    while (true) {
+      const { data, error } = await supabaseRequest<{ url: string }[]>(
+        `bookmarks?select=url&limit=${PAGE_SIZE}&offset=${offset}`
+      );
+      if (error || !data || data.length === 0) break;
+      urls.push(...data.map((b) => b.url));
+      if (data.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
+    }
+
+    return urls;
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Update bookmark metadata (title, folder) and regenerate embedding if title changed
  */
 export async function updateBookmark(
