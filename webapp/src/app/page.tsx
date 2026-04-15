@@ -39,6 +39,8 @@ const THEMES: ThemeMedia[] = [
   { type: "video", src: "/videos/leaf-animation.mp4" },
 ];
 
+const CROSSFADE_SECS = 1.5;
+
 type ActiveView = "search" | "browse" | "canvas";
 type MentionType = "folder" | "board" | null;
 interface ActiveScope { type: "folder" | "board"; value: string }
@@ -66,6 +68,10 @@ export default function Home() {
   const [activeScope, setActiveScope] = useState<ActiveScope | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const videoBRef = useRef<HTMLVideoElement>(null);
+  const [videoOpacity, setVideoOpacity] = useState({ a: 1, b: 0 });
+  const activeVideoRef = useRef<"a" | "b">("a");
+  const crossfadingRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const mentionContainerRef = useRef<HTMLDivElement>(null);
   const userName = "TEJA";
@@ -97,14 +103,48 @@ export default function Home() {
 
   const switchTheme = (idx: number) => {
     setThemeIndex(idx);
-    if (THEMES[idx].type === "video") {
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.load();
-        }
-      }, 0);
-    }
   };
+
+  // Crossfade loop: when the active video nears its end, fade in the other one from the start
+  useEffect(() => {
+    const a = videoRef.current;
+    const b = videoBRef.current;
+    if (!a || !b || THEMES[themeIndex].type !== "video") return;
+
+    activeVideoRef.current = "a";
+    crossfadingRef.current = false;
+    setVideoOpacity({ a: 1, b: 0 });
+    a.load();
+    a.play().catch(() => {});
+
+    const check = () => {
+      if (crossfadingRef.current) return;
+      const curr = activeVideoRef.current === "a" ? a : b;
+      const next = activeVideoRef.current === "a" ? b : a;
+      if (!curr.duration || curr.duration - curr.currentTime > CROSSFADE_SECS) return;
+
+      crossfadingRef.current = true;
+      next.currentTime = 0;
+      next.play().catch(() => {});
+
+      const newActive = activeVideoRef.current === "a" ? "b" : "a";
+      activeVideoRef.current = newActive;
+      setVideoOpacity(newActive === "b" ? { a: 0, b: 1 } : { a: 1, b: 0 });
+
+      setTimeout(() => { crossfadingRef.current = false; }, CROSSFADE_SECS * 1000);
+    };
+
+    a.addEventListener("timeupdate", check);
+    b.addEventListener("timeupdate", check);
+
+    return () => {
+      a.removeEventListener("timeupdate", check);
+      b.removeEventListener("timeupdate", check);
+      a.pause();
+      b.pause();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [themeIndex]);
 
   // Detect @ or # trigger in current cursor word
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -238,14 +278,24 @@ export default function Home() {
 
       {/* Background — video or image depending on active theme */}
       {THEMES[themeIndex].type === "video" ? (
-        <video
-          ref={videoRef}
-          className="absolute inset-0 w-full h-full object-cover md:object-fill"
-          muted playsInline
-          onLoadedMetadata={(e) => { e.currentTarget.currentTime = 4; }}
-        >
-          <source src={THEMES[themeIndex].src} type="video/mp4" />
-        </video>
+        <>
+          <video
+            ref={videoRef}
+            className="absolute inset-0 w-full h-full object-cover md:object-fill"
+            muted playsInline
+            style={{ opacity: videoOpacity.a, transition: `opacity ${CROSSFADE_SECS}s ease-in-out` }}
+          >
+            <source src={THEMES[themeIndex].src} type="video/mp4" />
+          </video>
+          <video
+            ref={videoBRef}
+            className="absolute inset-0 w-full h-full object-cover md:object-fill"
+            muted playsInline
+            style={{ opacity: videoOpacity.b, transition: `opacity ${CROSSFADE_SECS}s ease-in-out` }}
+          >
+            <source src={THEMES[themeIndex].src} type="video/mp4" />
+          </video>
+        </>
       ) : (
         // eslint-disable-next-line @next/next/no-img-element
         <img
