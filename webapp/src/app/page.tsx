@@ -110,11 +110,18 @@ export default function Home() {
     fetchFilters();
   }, []);
 
-  // Load sticky notes from localStorage on mount
+  // Load sticky notes from localStorage on mount, backfill missing color field
   useEffect(() => {
     try {
       const stored = localStorage.getItem("om-sticky-notes");
-      if (stored) setNotes(JSON.parse(stored));
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const migrated = parsed.map((n: { id: string; title: string; body: string; createdAt: string; color?: NoteColor }, i: number) => ({
+          ...n,
+          color: n.color ?? NOTE_COLORS[i % NOTE_COLORS.length],
+        }));
+        setNotes(migrated);
+      }
     } catch {}
   }, []);
 
@@ -606,22 +613,22 @@ export default function Home() {
                 <div
                   key={note.id}
                   className="relative group flex flex-col gap-2 rounded-lg p-4 shadow-md"
-                  style={{ background: note.color.bg, minHeight: 160 }}
+                  style={{ background: note.color?.bg ?? '#fde68a', minHeight: 160 }}
                 >
                   <button
                     onClick={() => deleteNote(note.id)}
                     className="absolute top-2 right-2 opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
-                    style={{ color: note.color.text }}
+                    style={{ color: note.color?.text ?? '#78350f' }}
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
                   {note.title && (
-                    <p className="text-sm font-semibold pr-5 leading-snug" style={{ color: note.color.text }}>{note.title}</p>
+                    <p className="text-sm font-semibold pr-5 leading-snug" style={{ color: note.color?.text ?? '#78350f' }}>{note.title}</p>
                   )}
                   {note.body && (
-                    <p className="text-xs whitespace-pre-wrap leading-relaxed flex-1 opacity-80" style={{ color: note.color.text }}>{note.body}</p>
+                    <p className="text-xs whitespace-pre-wrap leading-relaxed flex-1 opacity-80" style={{ color: note.color?.text ?? '#78350f' }}>{note.body}</p>
                   )}
-                  <p className="text-[10px] opacity-40 mt-auto" style={{ color: note.color.text }}>
+                  <p className="text-[10px] opacity-40 mt-auto" style={{ color: note.color?.text ?? '#78350f' }}>
                     {new Date(note.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                   </p>
                 </div>
