@@ -302,7 +302,7 @@ app.post('/save-link', async (req, res) => {
     }
 
     const cleanUrl = parsedUrl.toString();
-    const folderName = folder?.trim() || 'Saved Links';
+    const folderName = folder?.trim() || 'OM';
 
     // Scrape metadata
     const metadata = await scrapePageMetadata(cleanUrl);

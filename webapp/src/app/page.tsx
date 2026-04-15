@@ -574,7 +574,7 @@ export default function Home() {
                 type="text"
                 value={saveFolder}
                 onChange={(e) => setSaveFolder(e.target.value)}
-                placeholder="Folder (optional — default: Saved Links)"
+                placeholder="Folder (optional — default: OM)"
                 className="flex-1 min-w-0 bg-transparent outline-none placeholder:text-[#3a3a3a]/30 text-[#3a3a3a] text-sm"
                 style={{ fontFamily: "var(--font-geist), sans-serif" }}
               />
