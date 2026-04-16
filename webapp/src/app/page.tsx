@@ -47,10 +47,16 @@ const NOTE_COLORS = [
   { bg: '#bfdbfe', text: '#1e3a8a' },
   { bg: '#fecaca', text: '#7f1d1d' },
   { bg: '#e9d5ff', text: '#4c1d95' },
-  { bg: '#fed7aa', text: '#7c2d12' },
 ];
 
 type NoteColor = typeof NOTE_COLORS[number];
+type Note = { id: string; title: string; body: string; createdAt: string; color: NoteColor; x: number; y: number };
+
+function getDefaultPosition(index: number): { x: number; y: number } {
+  const cols = 4;
+  return { x: 20 + (index % cols) * 222, y: 20 + Math.floor(index / cols) * 202 };
+}
+
 type ActiveView = "search" | "browse" | "canvas" | "save";
 type MentionType = "folder" | "board" | null;
 interface ActiveScope { type: "folder" | "board"; value: string }
@@ -79,8 +85,9 @@ export default function Home() {
   const [saveResult, setSaveResult] = useState<{ success: boolean; title?: string; error?: string } | null>(null);
   const [noteTitle, setNoteTitle] = useState("");
   const [noteBody, setNoteBody] = useState("");
-  const [notes, setNotes] = useState<Array<{ id: string; title: string; body: string; createdAt: string; color: NoteColor }>>([]);
-  const [editingNote, setEditingNote] = useState<{ id: string; title: string; body: string; createdAt: string; color: NoteColor } | null>(null);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [editingNote, setEditingNote] = useState<Note | null>(null);
+  const [selectedNoteColor, setSelectedNoteColor] = useState<NoteColor>(NOTE_COLORS[1]);
 
   // Mention / scope state
   const [mentionType, setMentionType] = useState<MentionType>(null);
@@ -95,6 +102,7 @@ export default function Home() {
   const crossfadingRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const mentionContainerRef = useRef<HTMLDivElement>(null);
+  const dragStateRef = useRef<{ id: string; startPX: number; startPY: number; origX: number; origY: number; currentX: number; currentY: number; hasDragged: boolean } | null>(null);
   const userName = "TEJA";
 
   useEffect(() => {
@@ -118,12 +126,14 @@ export default function Home() {
         const res = await fetch(`${BACKEND_URL}/notes`);
         if (res.ok) {
           const data = await res.json();
-          const fromServer = (data.notes || []).map((n: { id: string; title: string | null; body: string | null; created_at: string; color_bg: string; color_text: string }) => ({
+          const fromServer = (data.notes || []).map((n: { id: string; title: string | null; body: string | null; created_at: string; color_bg: string; color_text: string; pos_x: number | null; pos_y: number | null }, i: number) => ({
             id: n.id,
             title: n.title ?? '',
             body: n.body ?? '',
             createdAt: n.created_at,
             color: { bg: n.color_bg, text: n.color_text },
+            x: n.pos_x ?? getDefaultPosition(i).x,
+            y: n.pos_y ?? getDefaultPosition(i).y,
           }));
 
           // One-time migration: push any localStorage notes not yet in Supabase
@@ -136,12 +146,15 @@ export default function Home() {
               for (let i = 0; i < local.length; i++) {
                 const note = local[i];
                 const color = note.color ?? NOTE_COLORS[i % NOTE_COLORS.length];
+                const pos = getDefaultPosition(fromServer.length + i);
+                const x = (note as Note).x ?? pos.x;
+                const y = (note as Note).y ?? pos.y;
                 await fetch(`${BACKEND_URL}/notes`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ ...note, color }),
+                  body: JSON.stringify({ ...note, color, x, y }),
                 });
-                fromServer.unshift({ ...note, color });
+                fromServer.unshift({ ...note, color, x, y });
               }
               if (local.length > 0) localStorage.removeItem("om-sticky-notes");
             }
@@ -157,9 +170,11 @@ export default function Home() {
         const stored = localStorage.getItem("om-sticky-notes");
         if (stored) {
           const parsed = JSON.parse(stored);
-          setNotes(parsed.map((n: { id: string; title: string; body: string; createdAt: string; color?: NoteColor }, i: number) => ({
+          setNotes(parsed.map((n: Note & { color?: NoteColor }, i: number) => ({
             ...n,
             color: n.color ?? NOTE_COLORS[i % NOTE_COLORS.length],
+            x: n.x ?? getDefaultPosition(i).x,
+            y: n.y ?? getDefaultPosition(i).y,
           })));
         }
       } catch {}
@@ -357,7 +372,7 @@ export default function Home() {
 
     if (editingNote) {
       // ── Edit existing note ──
-      const updated = { ...editingNote, title: noteTitle.trim(), body: noteBody.trim() };
+      const updated: Note = { ...editingNote, title: noteTitle.trim(), body: noteBody.trim(), color: selectedNoteColor };
       setNotes(prev => prev.map(n => n.id === editingNote.id ? updated : n));
       setEditingNote(null);
       setNoteTitle("");
@@ -372,8 +387,16 @@ export default function Home() {
       } catch {}
     } else {
       // ── Create new note ──
-      const color = NOTE_COLORS[notes.length % NOTE_COLORS.length];
-      const newNote = { id: Date.now().toString(), title: noteTitle.trim(), body: noteBody.trim(), createdAt: new Date().toISOString(), color };
+      const pos = getDefaultPosition(notes.length);
+      const newNote: Note = {
+        id: Date.now().toString(),
+        title: noteTitle.trim(),
+        body: noteBody.trim(),
+        createdAt: new Date().toISOString(),
+        color: selectedNoteColor,
+        x: pos.x,
+        y: pos.y,
+      };
       setNotes(prev => [newNote, ...prev]);
       setNoteTitle("");
       setNoteBody("");
@@ -395,6 +418,45 @@ export default function Home() {
     try {
       await fetch(`${BACKEND_URL}/notes/${id}`, { method: 'DELETE' });
     } catch {}
+  };
+
+  const onNoteDragStart = (e: React.PointerEvent<HTMLDivElement>, note: Note) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    document.body.style.cursor = 'grabbing';
+    dragStateRef.current = { id: note.id, startPX: e.clientX, startPY: e.clientY, origX: note.x, origY: note.y, currentX: note.x, currentY: note.y, hasDragged: false };
+  };
+
+  const onNoteDragMove = (e: React.PointerEvent<HTMLDivElement>, noteId: string) => {
+    const d = dragStateRef.current;
+    if (!d || d.id !== noteId) return;
+    const dx = e.clientX - d.startPX;
+    const dy = e.clientY - d.startPY;
+    const newX = Math.max(0, d.origX + dx);
+    const newY = Math.max(0, d.origY + dy);
+    d.currentX = newX;
+    d.currentY = newY;
+    if (!d.hasDragged && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) d.hasDragged = true;
+    if (d.hasDragged) setNotes(prev => prev.map(n => n.id === noteId ? { ...n, x: newX, y: newY } : n));
+  };
+
+  const onNoteDragEnd = (e: React.PointerEvent<HTMLDivElement>, noteId: string) => {
+    const d = dragStateRef.current;
+    if (!d || d.id !== noteId) return;
+    const { hasDragged, currentX, currentY } = d;
+    dragStateRef.current = null;
+    document.body.style.cursor = '';
+    if (hasDragged) {
+      setNotes(prev => prev.map(n => n.id === noteId ? { ...n, x: currentX, y: currentY } : n));
+      const base = notes.find(n => n.id === noteId);
+      if (base) {
+        fetch(`${BACKEND_URL}/notes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...base, x: currentX, y: currentY }),
+        }).catch(() => {});
+      }
+    }
   };
 
   const handleSaveLink = async () => {
@@ -670,28 +732,50 @@ export default function Home() {
           }}
         />
 
-        {/* Notes canvas — scrollable */}
-        <div className="relative z-10 h-full overflow-y-auto custom-scrollbar pb-32 pt-6 px-5">
+        {/* Notes canvas — freely positionable */}
+        <div className="relative z-10 h-full overflow-auto custom-scrollbar">
           {notes.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center select-none pointer-events-none">
               <StickyNote className="w-10 h-10 text-[#5b9888]/20 mb-3" />
               <p className="text-sm text-[#3a3a3a]/25 font-medium">Hit + to add a link or note</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 max-w-[1200px] mx-auto">
+            <div className="relative" style={{ minWidth: '100%', minHeight: 'calc(100% + 200px)' }}>
               {notes.map((note) => (
                 <div
                   key={note.id}
-                  className="relative group flex flex-col gap-2 rounded-lg p-4 shadow-md"
-                  style={{ background: note.color?.bg ?? '#fde68a', minHeight: 160 }}
+                  className="absolute group select-none"
+                  style={{
+                    left: note.x,
+                    top: note.y,
+                    width: 200,
+                    background: note.color?.bg ?? '#fde68a',
+                    borderRadius: 10,
+                    padding: 14,
+                    boxShadow: '0 2px 12px rgba(0,0,0,0.10)',
+                    cursor: 'grab',
+                    touchAction: 'none',
+                  }}
+                  onPointerDown={(e) => onNoteDragStart(e, note)}
+                  onPointerMove={(e) => onNoteDragMove(e, note.id)}
+                  onPointerUp={(e) => onNoteDragEnd(e, note.id)}
+                  onDoubleClick={() => {
+                    setEditingNote(note);
+                    setNoteTitle(note.title);
+                    setNoteBody(note.body);
+                    setSelectedNoteColor(note.color);
+                    setSavePanelMode("note");
+                  }}
                 >
                   {/* Edit + Delete buttons — visible on hover */}
                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
+                      onPointerDown={(e) => e.stopPropagation()}
                       onClick={() => {
                         setEditingNote(note);
                         setNoteTitle(note.title);
                         setNoteBody(note.body);
+                        setSelectedNoteColor(note.color);
                         setSavePanelMode("note");
                       }}
                       className="opacity-50 hover:opacity-100 transition-opacity"
@@ -700,6 +784,7 @@ export default function Home() {
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button
+                      onPointerDown={(e) => e.stopPropagation()}
                       onClick={() => deleteNote(note.id)}
                       className="opacity-50 hover:opacity-100 transition-opacity"
                       style={{ color: note.color?.text ?? '#78350f' }}
@@ -711,9 +796,9 @@ export default function Home() {
                     <p className="text-sm font-semibold pr-5 leading-snug" style={{ color: note.color?.text ?? '#78350f' }}>{note.title}</p>
                   )}
                   {note.body && (
-                    <p className="text-xs whitespace-pre-wrap leading-relaxed flex-1 opacity-80" style={{ color: note.color?.text ?? '#78350f' }}>{note.body}</p>
+                    <p className="text-xs whitespace-pre-wrap leading-relaxed opacity-80 mt-1" style={{ color: note.color?.text ?? '#78350f' }}>{note.body}</p>
                   )}
-                  <p className="text-[10px] opacity-40 mt-auto" style={{ color: note.color?.text ?? '#78350f' }}>
+                  <p className="text-[10px] opacity-40 mt-3" style={{ color: note.color?.text ?? '#78350f' }}>
                     {new Date(note.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                   </p>
                 </div>
@@ -771,13 +856,13 @@ export default function Home() {
 
         {/* ── Note compose modal ── */}
         {savePanelMode === "note" && (() => {
-          const noteColor = editingNote?.color ?? NOTE_COLORS[notes.length % NOTE_COLORS.length];
+          const noteColor = selectedNoteColor;
           const closeModal = () => { setSavePanelMode(null); setEditingNote(null); setNoteTitle(""); setNoteBody(""); };
           return (
             <div className="absolute inset-0 z-20 flex items-center justify-center p-6" onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}>
               <div
                 className="w-full max-w-[420px] rounded-2xl shadow-2xl p-6 flex flex-col gap-4"
-                style={{ background: noteColor.bg }}
+                style={{ background: noteColor.bg, transition: 'background 0.2s ease' }}
               >
                 <div className="flex items-center justify-between">
                   <StickyNote className="w-4 h-4 opacity-50" style={{ color: noteColor.text }} />
@@ -799,10 +884,32 @@ export default function Home() {
                   onChange={(e) => setNoteBody(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) handleSaveNote(); if (e.key === "Escape") closeModal(); }}
                   placeholder="Type anything..."
-                  rows={6}
+                  rows={5}
                   className="w-full bg-transparent outline-none text-sm resize-none placeholder:opacity-40 leading-relaxed"
                   style={{ color: noteColor.text, fontFamily: "var(--font-geist), sans-serif" }}
                 />
+                {/* Color picker */}
+                <div className="flex items-center gap-2.5">
+                  {NOTE_COLORS.map((c, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setSelectedNoteColor(c)}
+                      style={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: '50%',
+                        background: c.bg,
+                        border: `2.5px solid ${selectedNoteColor.bg === c.bg ? noteColor.text : 'rgba(0,0,0,0.12)'}`,
+                        cursor: 'pointer',
+                        transform: selectedNoteColor.bg === c.bg ? 'scale(1.25)' : 'scale(1)',
+                        transition: 'transform 0.15s ease, border-color 0.15s ease',
+                        flexShrink: 0,
+                        outline: 'none',
+                      }}
+                    />
+                  ))}
+                </div>
                 <div className="flex gap-2 pt-1">
                   <button onClick={closeModal} className="flex-1 py-2.5 rounded-xl text-sm opacity-50 hover:opacity-80 transition-opacity border border-current" style={{ color: noteColor.text, fontFamily: "var(--font-geist), sans-serif" }}>
                     Cancel
@@ -867,7 +974,7 @@ export default function Home() {
                   </button>
                   <div className="h-px" style={{ background: 'rgba(255,255,255,0.08)' }} />
                   <button
-                    onClick={() => { setSavePopoverOpen(false); setSavePanelMode("note"); setNoteTitle(""); setNoteBody(""); }}
+                    onClick={() => { setSavePopoverOpen(false); setSavePanelMode("note"); setNoteTitle(""); setNoteBody(""); setSelectedNoteColor(NOTE_COLORS[notes.length % NOTE_COLORS.length]); }}
                     className="w-full flex items-center gap-3 px-4 py-3 text-white/80 hover:text-white transition-colors text-sm"
                     style={{ fontFamily: "var(--font-geist), sans-serif" }}
                   >

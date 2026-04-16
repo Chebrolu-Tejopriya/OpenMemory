@@ -429,9 +429,10 @@ app.get('/notes', async (req, res) => {
  */
 app.post('/notes', async (req, res) => {
   try {
-    const { id, title, body, color, createdAt } = req.body as {
+    const { id, title, body, color, createdAt, x, y } = req.body as {
       id: string; title?: string; body?: string;
       color: { bg: string; text: string }; createdAt?: string;
+      x?: number; y?: number;
     };
     if (!id) return res.status(400).json({ error: 'id is required' });
     const r = await fetch(`${SB_URL}/rest/v1/sticky_notes`, {
@@ -444,6 +445,8 @@ app.post('/notes', async (req, res) => {
         color_bg: color?.bg ?? '#fde68a',
         color_text: color?.text ?? '#78350f',
         created_at: createdAt ?? new Date().toISOString(),
+        ...(x !== undefined ? { pos_x: x } : {}),
+        ...(y !== undefined ? { pos_y: y } : {}),
       }),
     });
     if (!r.ok) return res.status(500).json({ error: await r.text() });
