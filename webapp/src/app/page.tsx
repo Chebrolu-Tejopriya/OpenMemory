@@ -855,25 +855,27 @@ export default function Home() {
         />
 
         {/* ── NOTES canvas ── */}
-        <div className={`relative z-10 h-full overflow-auto custom-scrollbar ${saveSubView !== 'notes' ? 'hidden' : ''}`}>
-          {/* Archive toggle */}
-          <button
-            onClick={() => setShowNotesArchive(v => !v)}
-            className="absolute top-4 right-4 z-20 flex items-center gap-1.5 text-xs font-medium transition-all"
-            style={{ color: showNotesArchive ? '#5b9888' : 'rgba(58,58,58,0.35)', fontFamily: "var(--font-geist), sans-serif" }}
-          >
-            <ArchiveRestore className="w-4 h-4" />
-            {archivedNotes.length > 0 && <span className="text-[10px] bg-[#5b9888] text-white rounded-full px-1.5 py-0.5 leading-none">{archivedNotes.length}</span>}
-          </button>
+        <div className={`relative z-10 h-full flex flex-col ${saveSubView !== 'notes' ? 'hidden' : ''}`}>
+          {/* Header bar */}
+          <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 z-20" style={{ borderBottom: '1px solid rgba(91,152,136,0.12)', background: 'rgba(242,249,247,0.85)', backdropFilter: 'blur(8px)' }}>
+            <p className="text-sm font-semibold text-[#1a1a1a]" style={{ fontFamily: "var(--font-geist), sans-serif" }}>Notes</p>
+            <button
+              onClick={() => setShowNotesArchive(v => !v)}
+              className="flex items-center gap-1.5 text-xs font-medium transition-all"
+              style={{ color: showNotesArchive ? '#5b9888' : 'rgba(58,58,58,0.4)', fontFamily: "var(--font-geist), sans-serif" }}
+            >
+              <ArchiveRestore className="w-4 h-4" />
+              <span>Archive</span>
+              {archivedNotes.length > 0 && <span className="text-[10px] bg-[#5b9888] text-white rounded-full px-1.5 py-0.5 leading-none">{archivedNotes.length}</span>}
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-auto custom-scrollbar relative">
 
           {/* Notes archive panel */}
           {showNotesArchive && (
             <div className="absolute inset-0 z-10 overflow-y-auto custom-scrollbar" style={{ background: 'rgba(242,249,247,0.97)', backdropFilter: 'blur(8px)' }}>
-              <div className="pt-14 pb-28 px-4 max-w-2xl mx-auto">
-                <div className="flex items-center justify-between mb-4">
-                  <p className="text-sm font-semibold text-[#1a1a1a]" style={{ fontFamily: "var(--font-geist), sans-serif" }}>Archived Notes</p>
-                  <button onClick={() => setShowNotesArchive(false)} className="text-[#3a3a3a]/40 hover:text-[#3a3a3a] transition-colors"><X className="w-4 h-4" /></button>
-                </div>
+              <div className="pt-4 pb-28 px-4 max-w-2xl mx-auto">
                 {archivedNotes.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-20 select-none pointer-events-none">
                     <ArchiveRestore className="w-8 h-8 text-[#5b9888]/20 mb-2" />
@@ -969,29 +971,31 @@ export default function Home() {
               ))}
             </div>
           )}
+          </div>{/* end inner scroll */}
         </div>
 
         {/* ── LINKS panel ── */}
         {saveSubView === 'links' && (
-          <div className="relative z-10 h-full overflow-y-auto custom-scrollbar pt-14 pb-28 px-5">
-            {/* Archive toggle */}
-            <button
-              onClick={() => setShowLinksArchive(v => !v)}
-              className="absolute top-4 right-4 z-20 flex items-center gap-1.5 text-xs font-medium transition-all"
-              style={{ color: showLinksArchive ? '#5b9888' : 'rgba(58,58,58,0.35)', fontFamily: "var(--font-geist), sans-serif" }}
-            >
-              <ArchiveRestore className="w-4 h-4" />
-              {archivedLinks.length > 0 && <span className="text-[10px] bg-[#5b9888] text-white rounded-full px-1.5 py-0.5 leading-none">{archivedLinks.length}</span>}
-            </button>
+          <div className="relative z-10 h-full flex flex-col">
+            {/* Header bar */}
+            <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 z-20" style={{ borderBottom: '1px solid rgba(91,152,136,0.12)', background: 'rgba(242,249,247,0.85)', backdropFilter: 'blur(8px)' }}>
+              <p className="text-sm font-semibold text-[#1a1a1a]" style={{ fontFamily: "var(--font-geist), sans-serif" }}>Saved Links</p>
+              <button
+                onClick={() => setShowLinksArchive(v => !v)}
+                className="flex items-center gap-1.5 text-xs font-medium transition-all"
+                style={{ color: showLinksArchive ? '#5b9888' : 'rgba(58,58,58,0.4)', fontFamily: "var(--font-geist), sans-serif" }}
+              >
+                <ArchiveRestore className="w-4 h-4" />
+                <span>Archive</span>
+                {archivedLinks.length > 0 && <span className="text-[10px] bg-[#5b9888] text-white rounded-full px-1.5 py-0.5 leading-none">{archivedLinks.length}</span>}
+              </button>
+            </div>
 
+            <div className="pt-4">
             {/* Links archive panel */}
             {showLinksArchive && (
               <div className="absolute inset-0 z-10 overflow-y-auto custom-scrollbar" style={{ background: 'rgba(242,249,247,0.97)', backdropFilter: 'blur(8px)' }}>
-                <div className="pt-14 pb-28 px-5 max-w-[600px] mx-auto">
-                  <div className="flex items-center justify-between mb-4">
-                    <p className="text-sm font-semibold text-[#1a1a1a]" style={{ fontFamily: "var(--font-geist), sans-serif" }}>Archived Links</p>
-                    <button onClick={() => setShowLinksArchive(false)} className="text-[#3a3a3a]/40 hover:text-[#3a3a3a] transition-colors"><X className="w-4 h-4" /></button>
-                  </div>
+                <div className="pt-4 pb-28 px-5 max-w-[600px] mx-auto">
                   {archivedLinks.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-20 select-none pointer-events-none">
                       <ArchiveRestore className="w-8 h-8 text-[#5b9888]/20 mb-2" />
@@ -1137,6 +1141,7 @@ export default function Home() {
                 })}
               </div>
             )}
+            </div>{/* end inner scroll */}
           </div>
         )}
 
