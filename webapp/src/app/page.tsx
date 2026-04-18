@@ -810,12 +810,12 @@ export default function Home() {
             </div>
           ) : isMobile ? (
             /* ── Mobile: 2-column grid, LIFO, no drag ── */
-            <div className="grid grid-cols-2 gap-3 p-4 pb-32">
+            <div style={{ columns: 2, columnGap: 12, padding: 16, paddingBottom: 128 }}>
               {notes.map((note) => (
                 <div
                   key={note.id}
                   className="relative group rounded-[10px]"
-                  style={{ background: note.color?.bg ?? '#fde68a', padding: 14, boxShadow: '0 2px 10px rgba(0,0,0,0.08)' }}
+                  style={{ breakInside: 'avoid', marginBottom: 12, background: note.color?.bg ?? '#fde68a', padding: 14, boxShadow: '0 2px 10px rgba(0,0,0,0.08)' }}
                   onDoubleClick={() => { setEditingNote(note); setNoteTitle(note.title); setNoteBody(note.body); setSelectedNoteColor(note.color); setNoteImage(note.image ?? null); setSavePanelMode("note"); }}
                 >
                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg" style={{ padding: '3px 5px', background: note.image ? 'rgba(0,0,0,0.32)' : 'transparent' }}>
