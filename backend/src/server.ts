@@ -458,6 +458,42 @@ app.post('/notes', async (req, res) => {
 });
 
 /**
+ * GET /om-links
+ * Returns all bookmarks saved under folder "OM" from the webapp Save tab.
+ */
+app.get('/om-links', async (req, res) => {
+  try {
+    const r = await fetch(
+      `${SB_URL}/rest/v1/bookmarks?folder=eq.OM&select=id,url,title,created_at&order=created_at.desc`,
+      { headers: sbHeaders }
+    );
+    if (!r.ok) return res.status(500).json({ error: await r.text() });
+    res.json({ links: await r.json() });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
+ * DELETE /om-link?url=URL
+ * Removes an OM bookmark by URL.
+ */
+app.delete('/om-link', async (req, res) => {
+  try {
+    const url = req.query.url as string;
+    if (!url) return res.status(400).json({ error: 'url is required' });
+    const r = await fetch(
+      `${SB_URL}/rest/v1/bookmarks?url=eq.${encodeURIComponent(url)}&folder=eq.OM`,
+      { method: 'DELETE', headers: sbHeaders }
+    );
+    if (!r.ok) return res.status(500).json({ error: await r.text() });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
  * DELETE /notes/:id
  * Deletes a sticky note by id. Response: { success: true }
  */

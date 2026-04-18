@@ -108,6 +108,9 @@ export default function Home() {
   const [selectedNoteColor, setSelectedNoteColor] = useState<NoteColor>(NOTE_COLORS[1]);
   const [noteImage, setNoteImage] = useState<string | null>(null);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [saveSubView, setSaveSubView] = useState<'notes' | 'links'>('notes');
+  const [omLinks, setOmLinks] = useState<Array<{ id: string; url: string; title: string; created_at: string }>>([]);
+  const [omLinksLoading, setOmLinksLoading] = useState(false);
 
   // Mention / scope state
   const [mentionType, setMentionType] = useState<MentionType>(null);
@@ -204,6 +207,17 @@ export default function Home() {
     init();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Fetch OM saved links when that sub-view is opened
+  useEffect(() => {
+    if (saveSubView !== 'links') return;
+    setOmLinksLoading(true);
+    fetch(`${BACKEND_URL}/om-links`)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => setOmLinks(data.links || []))
+      .catch(() => {})
+      .finally(() => setOmLinksLoading(false));
+  }, [saveSubView]);
 
   // Paste image when note modal is open
   useEffect(() => {
@@ -773,12 +787,30 @@ export default function Home() {
           }}
         />
 
-        {/* Notes canvas — freely positionable */}
-        <div className="relative z-10 h-full overflow-auto custom-scrollbar">
+        {/* Sub-view toggle — Notes | Links */}
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex rounded-full overflow-hidden select-none" style={{ background: 'rgba(0,0,0,0.10)', padding: 3, gap: 2 }}>
+          {(['notes', 'links'] as const).map(v => (
+            <button
+              key={v}
+              onClick={() => setSaveSubView(v)}
+              className="text-xs font-medium px-4 py-1 rounded-full transition-all"
+              style={{
+                background: saveSubView === v ? 'rgba(91,152,136,0.85)' : 'transparent',
+                color: saveSubView === v ? 'white' : 'rgba(58,58,58,0.5)',
+                fontFamily: "var(--font-geist), sans-serif",
+              }}
+            >
+              {v === 'notes' ? 'Notes' : 'Links'}
+            </button>
+          ))}
+        </div>
+
+        {/* ── NOTES canvas — freely positionable ── */}
+        <div className={`relative z-10 h-full overflow-auto custom-scrollbar ${saveSubView !== 'notes' ? 'hidden' : ''}`}>
           {notes.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center select-none pointer-events-none">
               <StickyNote className="w-10 h-10 text-[#5b9888]/20 mb-3" />
-              <p className="text-sm text-[#3a3a3a]/25 font-medium">Hit + to add a link or note</p>
+              <p className="text-sm text-[#3a3a3a]/25 font-medium">Hit + to add a note or link</p>
             </div>
           ) : (
             <div className="relative" style={{ minWidth: '100%', minHeight: 'calc(100% + 200px)' }}>
@@ -810,7 +842,10 @@ export default function Home() {
                   }}
                 >
                   {/* Edit + Delete buttons — visible on hover */}
-                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div
+                    className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg"
+                    style={{ padding: '3px 5px', background: note.image ? 'rgba(0,0,0,0.32)' : 'transparent' }}
+                  >
                     <button
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={() => {
@@ -821,16 +856,16 @@ export default function Home() {
                         setNoteImage(note.image ?? null);
                         setSavePanelMode("note");
                       }}
-                      className="opacity-50 hover:opacity-100 transition-opacity"
-                      style={{ color: note.color?.text ?? '#78350f' }}
+                      className="opacity-70 hover:opacity-100 transition-opacity"
+                      style={{ color: note.image ? 'white' : (note.color?.text ?? '#78350f') }}
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={() => deleteNote(note.id)}
-                      className="opacity-50 hover:opacity-100 transition-opacity"
-                      style={{ color: note.color?.text ?? '#78350f' }}
+                      className="opacity-70 hover:opacity-100 transition-opacity"
+                      style={{ color: note.image ? 'white' : (note.color?.text ?? '#78350f') }}
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -861,6 +896,66 @@ export default function Home() {
           )}
         </div>
 
+        {/* ── LINKS panel ── */}
+        {saveSubView === 'links' && (
+          <div className="relative z-10 h-full overflow-y-auto custom-scrollbar pt-14 pb-28 px-5">
+            {omLinksLoading ? (
+              <div className="h-full flex items-center justify-center">
+                <RefreshCw className="w-5 h-5 text-[#5b9888]/40 animate-spin" />
+              </div>
+            ) : omLinks.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center select-none pointer-events-none">
+                <Link2 className="w-10 h-10 text-[#5b9888]/20 mb-3" />
+                <p className="text-sm text-[#3a3a3a]/25 font-medium">No saved links yet</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2 max-w-[600px] mx-auto">
+                {omLinks.map(link => {
+                  let domain = '';
+                  try { domain = new URL(link.url).hostname.replace('www.', ''); } catch {}
+                  return (
+                    <div
+                      key={link.id}
+                      className="flex items-center gap-3 bg-white/70 backdrop-blur-sm rounded-xl px-4 py-3 shadow-sm"
+                      style={{ border: '1px solid rgba(91,152,136,0.15)' }}
+                    >
+                      {/* Favicon */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`https://www.google.com/s2/favicons?domain=${domain}&sz=32`}
+                        alt=""
+                        className="w-5 h-5 rounded flex-shrink-0"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-[#1a1a1a] truncate">{link.title || domain}</p>
+                        <a
+                          href={link.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs text-[#5b9888] truncate block hover:underline"
+                        >
+                          {domain}
+                        </a>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          setOmLinks(prev => prev.filter(l => l.id !== link.id));
+                          try {
+                            await fetch(`${BACKEND_URL}/om-link?url=${encodeURIComponent(link.url)}`, { method: 'DELETE' });
+                          } catch {}
+                        }}
+                        className="flex-shrink-0 opacity-30 hover:opacity-70 transition-opacity text-[#1a1a1a]"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── Link modal ── */}
         {savePanelMode === "link" && (
