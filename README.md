@@ -34,6 +34,20 @@ A personal inspiration memory system — search your Chrome bookmarks and Pinter
 - **5 columns, 240×280px cards**, eager parallel fetch on mount (data ready before tab switch)
 - Pinterest card titles truncated to one line; image fills remaining card height
 
+### Sticky Notes
+- Create color-coded notes on an infinite canvas (desktop: drag to reposition; mobile: 2-column masonry LIFO grid)
+- 5 color themes with a color picker
+- Double-click to edit, click backdrop to auto-save
+- Image upload via paste or file picker (client-side compressed, stored as base64)
+- Lightbox image viewer
+- Synced to Supabase across devices; localStorage fallback when offline
+- Positions persisted per note (`pos_x`, `pos_y`)
+
+### Save Tab
+- **Link saving** — paste any URL to scrape metadata, generate embedding, and save to Supabase bookmarks (folder = OM)
+- **Saved Links view** — list of all OM bookmarks with favicon, title, and delete button
+- Popover dock button for quick navigation between Notes and Links
+
 ### Chrome Extension
 - Sync Chrome bookmarks and Pinterest pins to Supabase
 - **Real-time delete sync** — removing a bookmark from Chrome instantly deletes it from Supabase via `onRemoved` listener
@@ -64,20 +78,28 @@ A personal inspiration memory system — search your Chrome bookmarks and Pinter
 ├─────────────────────────────────────────────────────────────┤
 │  Next.js Webapp  →  Vercel (open-memory-nine.vercel.app)    │
 │  ├── app/page.tsx                Search / Collections /     │
-│  │                               Canvas tab layout          │
+│  │                               Canvas / Save tab layout   │
 │  ├── components/SearchResultCard  card with screenshot      │
 │  ├── components/BrowseSection     collections grid          │
 │  └── components/CanvasView        infinite drag canvas      │
 ├─────────────────────────────────────────────────────────────┤
-│  Express API  →  Render free tier                           │
+│  Express API  →  Render                                     │
 │  ├── server.ts                   REST endpoints             │
+│  ├── redis.ts                    Upstash Redis cache layer  │
 │  ├── supabase-search.ts          unified search + browse    │
 │  ├── embeddings.ts               FastEmbed HTTP server      │
 │  └── Python FastEmbed (port 3002) bge-small-en-v1.5 model  │
 ├─────────────────────────────────────────────────────────────┤
+│  Upstash Redis                                              │
+│  ├── search:{query}:{source}     5 min TTL                  │
+│  ├── folders / boards            30 min TTL                 │
+│  ├── notes:all                   5 min TTL                  │
+│  └── om-links                    10 min TTL                 │
+├─────────────────────────────────────────────────────────────┤
 │  Supabase                                                   │
 │  ├── bookmarks                   Chrome bookmarks + vectors │
 │  ├── pinterest_pins              pins + vectors             │
+│  ├── sticky_notes                notes with pos + image     │
 │  └── pgvector HNSW indexes       fast similarity search     │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -88,10 +110,14 @@ User types query
     ↓
 Webapp GET /search → Render backend
     ↓
+Check Upstash Redis cache (key: search:{query}:{source})
+    ↓ cache miss
 Backend generates embedding (FastEmbed Python server)
     ↓
 Supabase: hybrid keyword + vector scoring
 Hidden boards filtered from all results
+    ↓
+Results cached in Redis for 5 min
     ↓
 Results ranked by: 0.55×keyword + 0.10×semantic + 0.15×recency + 0.20×source
     ↓
@@ -107,6 +133,7 @@ Results ranked by: 0.55×keyword + 0.10×semantic + 0.15×recency + 0.20×source
 | Webapp | Next.js 14, React, Tailwind CSS |
 | Hosting | Vercel (webapp), Render (backend) |
 | Database | Supabase (PostgreSQL + pgvector) |
+| Cache | Upstash Redis (search, notes, links, folders/boards) |
 | Embeddings | FastEmbed `bge-small-en-v1.5` (384-dim) |
 | Extension | TypeScript, Manifest V3, Dexie.js |
 | Icons | lucide-react |
@@ -138,7 +165,11 @@ cd ..
 
 # Create .env
 cp .env.example .env
-# Fill in SUPABASE_URL and SUPABASE_ANON_KEY
+# Fill in:
+#   SUPABASE_URL
+#   SUPABASE_ANON_KEY
+#   UPSTASH_REDIS_REST_URL
+#   UPSTASH_REDIS_REST_TOKEN
 
 npm run dev   # starts on port 3001
 ```
@@ -178,10 +209,28 @@ Returns all items in a folder or board (paginated internally, no cap).
 Hidden boards excluded from Pinterest results.
 
 ### `GET /folders`
-Returns all unique bookmark folder names.
+Returns all unique bookmark folder names. Cached in Redis for 30 min; invalidated when a new link is saved.
 
 ### `GET /boards`
-Returns all unique Pinterest board names (hidden boards excluded).
+Returns all unique Pinterest board names (hidden boards excluded). Cached in Redis for 30 min.
+
+### `GET /notes`
+Returns all sticky notes ordered newest-first. Cached in Redis for 5 min; invalidated on create/edit/delete.
+
+### `POST /notes`
+Upserts a sticky note. Invalidates `notes:all` cache on success.
+
+### `DELETE /notes/:id`
+Deletes a sticky note. Invalidates `notes:all` cache on success.
+
+### `GET /om-links`
+Returns all bookmarks saved via the webapp Save tab (folder = OM). Cached in Redis for 10 min; invalidated on save/delete.
+
+### `POST /save-link`
+Scrapes metadata, generates embedding, saves to Supabase. Invalidates `om-links` and `folders` cache.
+
+### `DELETE /om-link?url=<url>`
+Removes a saved link. Invalidates `om-links` cache.
 
 ### `DELETE /board?board_name=<name>`
 Removes a board entry from local SQLite (caller responsible for Supabase pin deletion).
@@ -261,7 +310,21 @@ CREATE TABLE pinterest_pins (
 );
 ```
 
-Both tables have HNSW indexes on the `embedding` column for fast cosine similarity search.
+-- sticky_notes
+CREATE TABLE sticky_notes (
+  id TEXT PRIMARY KEY,
+  title TEXT,
+  body TEXT,
+  color_bg TEXT NOT NULL DEFAULT '#fde68a',
+  color_text TEXT NOT NULL DEFAULT '#78350f',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  pos_x FLOAT,
+  pos_y FLOAT,
+  image_data TEXT
+);
+```
+
+Both `bookmarks` and `pinterest_pins` have HNSW indexes on the `embedding` column for fast cosine similarity search.
 
 ---
 

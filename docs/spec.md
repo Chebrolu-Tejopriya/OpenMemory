@@ -71,8 +71,9 @@ Users can:
 | Component | Platform | URL |
 |---|---|---|
 | Webapp | Vercel | `open-memory-nine.vercel.app` |
-| Backend | Render free tier | (set in `NEXT_PUBLIC_BACKEND_URL`) |
+| Backend | Render | (set in `NEXT_PUBLIC_BACKEND_URL`) |
 | Database | Supabase | pgvector, free tier |
+| Cache | Upstash Redis | REST API, serverless |
 
 ## 3.3 Architecture Rules
 
@@ -82,7 +83,8 @@ Users can:
 ❌ NO per-user database instances  
 ✅ Single Supabase project for all data  
 ✅ Render backend handles both search API and embedding generation  
-✅ Render free tier memory limit: ~512MB — keep FastEmbed model loaded once at startup
+✅ Upstash Redis as the caching layer between backend and Supabase  
+✅ Render memory limit: ~512MB — keep FastEmbed model loaded once at startup
 
 ---
 
@@ -135,7 +137,26 @@ CREATE INDEX idx_pinterest_pins_embedding ON pinterest_pins
   USING hnsw (embedding vector_cosine_ops);
 ```
 
-## 4.3 Schema Rules
+## 4.3 sticky_notes
+
+```sql
+CREATE TABLE sticky_notes (
+  id TEXT PRIMARY KEY,
+  title TEXT,
+  body TEXT,
+  color_bg TEXT NOT NULL DEFAULT '#fde68a',
+  color_text TEXT NOT NULL DEFAULT '#78350f',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  pos_x FLOAT,     -- desktop drag position X
+  pos_y FLOAT,     -- desktop drag position Y
+  image_data TEXT  -- base64-compressed JPEG, max 560px
+);
+
+CREATE INDEX idx_sticky_notes_created_at ON sticky_notes(created_at);
+GRANT SELECT, INSERT, UPDATE, DELETE ON sticky_notes TO anon;
+```
+
+## 4.4 Schema Rules
 
 - URLs are UNIQUE — prevents duplicates
 - Embeddings: **384 dimensions** (STRICT — never change)
@@ -272,7 +293,37 @@ GET /browse?source=pinterest&board=<name>
 
 ---
 
-# 7. API ENDPOINTS (Backend)
+# 7. CACHING (Upstash Redis)
+
+## 7.1 Cache Keys and TTLs
+
+| Key | TTL | Invalidated by |
+|---|---|---|
+| `search:{query}:{source}:{limit}` | 5 min | Never (stale-ok) |
+| `folders` | 30 min | `POST /save-link` |
+| `boards` | 30 min | `POST /resync-board` (future) |
+| `notes:all` | 5 min | `POST /notes`, `DELETE /notes/:id` |
+| `om-links` | 10 min | `POST /save-link`, `DELETE /om-link` |
+
+## 7.2 Rules
+
+✅ Cache reads are always tried first — Supabase is only hit on cache miss  
+✅ Cache errors are silently swallowed — Supabase is always the source of truth  
+✅ Writes always invalidate the relevant cache key immediately after DB write  
+❌ NEVER cache per-user data (there is no auth — all data is shared)  
+❌ NEVER cache Pinterest pin data (browse results are too large and board-specific)
+
+## 7.3 Redis Helper (`backend/src/redis.ts`)
+
+```typescript
+getCache<T>(key)           // returns T | null (null = miss or error)
+setCache<T>(key, data, ttl) // fire-and-forget, silently fails
+invalidate(...keys)         // deletes one or more keys atomically
+```
+
+---
+
+# 8. API ENDPOINTS (Backend)
 
 ## Search
 ```
@@ -291,6 +342,20 @@ All items in folder/board. No limit. Returns `{ results: SearchResult[], total: 
 ```
 GET  /folders       → { folders: string[] }
 GET  /boards        → { boards: string[] }   // hidden boards excluded
+```
+
+## Sticky Notes
+```
+GET    /notes                             → { notes: StickyNote[] }           // cached 5 min
+POST   /notes   Body: { id, title, body, color, createdAt, x, y, image }      // invalidates notes:all
+DELETE /notes/:id                                                              // invalidates notes:all
+```
+
+## Saved Links (OM bookmarks)
+```
+GET    /om-links                          → { links: OmLink[] }               // cached 10 min
+POST   /save-link  Body: { url, folder? } → { success, title, url }           // invalidates om-links + folders
+DELETE /om-link?url=<url>                                                      // invalidates om-links
 ```
 
 ## Board management (extension → backend)
@@ -335,11 +400,11 @@ Single-viewport, `h-screen overflow-hidden`. Three views toggled by bottom dock.
 │  Video background (leaf-animation.mp4, looping)     │
 │                                                     │
 │  ┌──── Active view (fills viewport) ───────────┐   │
-│  │  Search  /  Collections  /  Canvas          │   │
+│  │  Search / Collections / Canvas / Save       │   │
 │  └─────────────────────────────────────────────┘   │
 │                                                     │
-│  ┌── Bottom dock (floating, center) ─────────┐     │
-│  │  🔍  Search  │  ⊞  Collections  │  ⊹ Canvas│     │
+│  ┌── Bottom dock (floating, center) ──────────┐    │
+│  │  🔍 Search │ ⊞ Collections │ ⊹ Canvas │ + Save│  │
 │  └────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────┘
 ```
@@ -394,6 +459,57 @@ Liquid glass pill, dark-neutral base (visible on any background):
 - **No filter bar** — source is selected via tab switch only; no folder/board dropdown
 - **Cards**: 240×280px, **5 columns**, gap 24px, title truncated to single line, image fills remaining height (`flex-1`)
 - **Fetch**: eager parallel fetch on mount (`Promise.allSettled`), not gated by `active` prop; separate arrays per source capped at 180 items each
+
+## 8.6 Sticky Notes (Save View — Notes sub-view)
+
+**Desktop:**
+- Infinite canvas with absolute-positioned note cards
+- Drag to reposition via `setPointerCapture` + `pointerDown/Move/Up`
+- `hasDragged` flag (threshold > 5px) suppresses post-drag click events
+- Positions persisted to Supabase (`pos_x`, `pos_y`) on drag end
+
+**Mobile:**
+- 2-column masonry layout (`columns: 2`, `break-inside: avoid`)
+- LIFO order (newest first), no drag
+- Cards are only as tall as their content (not equal-height rows)
+
+**Both:**
+- 5 color themes via color picker swatches (bottom of note compose area)
+- Double-click to edit; backdrop click auto-saves if content exists, else closes
+- Image upload: paste from clipboard or file picker (Upload icon in color row)
+- Images compressed client-side via canvas (max 560px, JPEG 78%) before storing as base64
+- Lightbox: clicking image opens full-size overlay
+- Edit/delete icons use dark pill background on image notes for contrast
+- Notes synced to Supabase on create/edit/delete; localStorage fallback when offline
+- One-time migration: localStorage notes pushed to Supabase on first successful load
+
+**Note type:**
+```typescript
+type Note = {
+  id: string;
+  title: string;
+  body: string;
+  createdAt: string;
+  color: NoteColor;  // { bg: string; text: string }
+  x: number;
+  y: number;
+  image?: string;    // base64 JPEG
+}
+```
+
+## 8.7 Save View — Links Sub-view
+
+- Paste any URL → `POST /save-link` → scrapes metadata + embedding → saves to Supabase (folder = OM)
+- 40s AbortController timeout with clear error message if backend times out
+- On success: optimistically prepend to local `omLinks` state (no refetch)
+- Saved Links list: favicon, title, domain, delete button
+- Delete: optimistic local remove + `DELETE /om-link` (invalidates Redis cache)
+
+## 8.8 Save Popover (4th dock tab)
+
+- Clicking the 4th dock tab toggles a popover over the current view (does NOT switch view)
+- Popover has two options: **Notes** and **Links**
+- Clicking either navigates to the Save view with the correct sub-view active
 
 ---
 
@@ -495,19 +611,30 @@ This guarantees Supabase stays in sync even for deletions that happened while th
 
 | Metric | Target |
 |---|---|
-| Supabase vector search | < 500ms |
+| Supabase vector search (cold) | < 500ms |
 | Strong keyword match | ~150-500ms (vector skipped) |
-| Cached query | ~100-200ms |
-| Semantic search | ~5-8s (first call) |
+| Redis cache hit (search) | ~10-30ms |
+| Redis cache hit (notes/links) | ~10-30ms |
+| Semantic search (first call) | ~5-8s |
+| Folders/boards (cached) | ~10ms |
 | UI render | < 100ms |
 | Canvas drag | Native compositor speed (touch/trackpad) |
+
+## Cache Strategy Summary
+
+| Endpoint | First load | Subsequent loads (within TTL) |
+|---|---|---|
+| `/search` | ~500ms–8s | ~10-30ms (Redis) |
+| `/folders` `/boards` | ~200ms | ~10ms (Redis, 30 min) |
+| `/notes` | ~150ms | ~10ms (Redis, 5 min) |
+| `/om-links` | ~150ms | ~10ms (Redis, 10 min) |
 
 ---
 
 # 13. WHAT CLAUDE MUST NEVER DO
 
 ❌ Change database schema unnecessarily  
-❌ Introduce new services or dependencies  
+❌ Introduce new services or dependencies beyond what is already in use (Supabase, Upstash Redis, Render, Vercel)  
 ❌ Modify embedding dimensions (always 384)  
 ❌ Use `image_url` (snake_case) when reading from the browse API — the response uses `imageUrl` (camelCase)  
 ❌ Call `screenshotUrl()` on Pinterest pin URLs — Pinterest blocks scrapers, returns junk  
