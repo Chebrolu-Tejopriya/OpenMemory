@@ -12,6 +12,7 @@
     "export": "tsx src/export.ts"
   },
   "dependencies": {
+    "@upstash/redis": "^1.37.0",
     "better-sqlite3": "^11.0.0",
     "cheerio": "^1.2.0",
     "cors": "^2.8.5",

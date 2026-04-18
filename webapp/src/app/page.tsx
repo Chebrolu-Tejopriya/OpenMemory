@@ -545,11 +545,15 @@ export default function Home() {
       const data = await res.json();
       if (res.ok) {
         setSaveResult({ success: true, title: data.title });
+        const savedUrl = saveUrl.trim();
         setSaveUrl("");
-        fetch(`${BACKEND_URL}/om-links`)
-          .then(r => r.ok ? r.json() : Promise.reject())
-          .then(d => setOmLinks(d.links || []))
-          .catch(() => {});
+        // Optimistically prepend to local list — no refetch needed
+        setOmLinks(prev => [{
+          id: Date.now().toString(),
+          url: data.url || savedUrl,
+          title: data.title || savedUrl,
+          created_at: new Date().toISOString(),
+        }, ...prev]);
         setTimeout(() => setSaveResult(null), 2500);
       } else {
         setSaveResult({ success: false, error: data.error || "Failed to save" });

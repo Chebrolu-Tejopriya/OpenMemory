@@ -11,6 +11,16 @@ import { getAllFolders, getPinterestBoards, getPinterestPinsCountByBoard, upsert
 import { StandardizedItem } from './types.js';
 import { generateEmbeddings } from './embeddings.js';
 import { scrapePageMetadata, buildEmbeddingText } from './scraper.js';
+import { getCache, setCache, invalidate } from './redis.js';
+
+// Cache TTLs (seconds)
+const TTL = {
+  SEARCH: 300,    // 5 min — search results
+  FOLDERS: 1800,  // 30 min — folder list rarely changes
+  BOARDS: 1800,   // 30 min — board list rarely changes
+  NOTES: 300,     // 5 min — notes list
+  OM_LINKS: 600,  // 10 min — saved links
+};
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -85,7 +95,10 @@ app.post('/ingest', async (req, res) => {
  */
 app.get('/folders', async (req, res) => {
   try {
+    const cached = await getCache<string[]>('folders');
+    if (cached) return res.json({ folders: cached });
     const folders = await getSupabaseFolders();
+    await setCache('folders', folders, TTL.FOLDERS);
     res.json({ folders });
   } catch (err) {
     console.error('Folders error:', err);
@@ -102,7 +115,10 @@ app.get('/folders', async (req, res) => {
  */
 app.get('/boards', async (req, res) => {
   try {
+    const cached = await getCache<string[]>('boards');
+    if (cached) return res.json({ boards: cached });
     const boards = await getSupabaseBoards();
+    await setCache('boards', boards, TTL.BOARDS);
     res.json({ boards });
   } catch (err) {
     console.error('Boards error:', err);
@@ -338,6 +354,7 @@ app.post('/save-link', async (req, res) => {
       return res.status(500).json({ error: 'Failed to save to Supabase' });
     }
 
+    await invalidate('om-links', 'folders');
     res.json({ success: true, title, url: cleanUrl });
   } catch (err) {
     console.error('Save link error:', err);
@@ -360,8 +377,12 @@ app.get('/search', async (req, res) => {
       return res.status(400).json({ error: 'q parameter is required' });
     }
 
-    // Use Supabase search (has all embeddings already generated)
+    const cacheKey = `search:${query.toLowerCase().trim()}:${source ?? 'all'}:${limit}`;
+    const cached = await getCache<object>(cacheKey);
+    if (cached) return res.json(cached);
+
     const result = await searchSupabase(query, limit, source);
+    await setCache(cacheKey, result, TTL.SEARCH);
     res.json(result);
   } catch (err) {
     console.error('Search error:', err);
@@ -414,9 +435,13 @@ const sbHeaders = {
  */
 app.get('/notes', async (req, res) => {
   try {
+    const cached = await getCache<object[]>('notes:all');
+    if (cached) return res.json({ notes: cached });
     const r = await fetch(`${SB_URL}/rest/v1/sticky_notes?select=*&order=created_at.desc`, { headers: sbHeaders });
     if (!r.ok) return res.status(500).json({ error: await r.text() });
-    res.json({ notes: await r.json() });
+    const notes = await r.json();
+    await setCache('notes:all', notes, TTL.NOTES);
+    res.json({ notes });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }
@@ -451,6 +476,7 @@ app.post('/notes', async (req, res) => {
       }),
     });
     if (!r.ok) return res.status(500).json({ error: await r.text() });
+    await invalidate('notes:all');
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
@@ -463,12 +489,16 @@ app.post('/notes', async (req, res) => {
  */
 app.get('/om-links', async (req, res) => {
   try {
+    const cached = await getCache<object[]>('om-links');
+    if (cached) return res.json({ links: cached });
     const r = await fetch(
       `${SB_URL}/rest/v1/bookmarks?folder=eq.OM&select=id,url,title,created_at&order=created_at.desc`,
       { headers: sbHeaders }
     );
     if (!r.ok) return res.status(500).json({ error: await r.text() });
-    res.json({ links: await r.json() });
+    const links = await r.json();
+    await setCache('om-links', links, TTL.OM_LINKS);
+    res.json({ links });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }
@@ -487,6 +517,7 @@ app.delete('/om-link', async (req, res) => {
       { method: 'DELETE', headers: sbHeaders }
     );
     if (!r.ok) return res.status(500).json({ error: await r.text() });
+    await invalidate('om-links');
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
@@ -505,6 +536,7 @@ app.delete('/notes/:id', async (req, res) => {
       headers: sbHeaders,
     });
     if (!r.ok) return res.status(500).json({ error: await r.text() });
+    await invalidate('notes:all');
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
