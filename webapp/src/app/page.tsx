@@ -793,10 +793,10 @@ export default function Home() {
                     </button>
                   </div>
                   {note.title && (
-                    <p className="text-sm font-semibold pr-5 leading-snug" style={{ color: note.color?.text ?? '#78350f' }}>{note.title}</p>
+                    <p className="text-sm font-semibold pr-5 leading-snug break-words" style={{ color: note.color?.text ?? '#78350f' }}>{note.title}</p>
                   )}
                   {note.body && (
-                    <p className="text-xs whitespace-pre-wrap leading-relaxed opacity-80 mt-1" style={{ color: note.color?.text ?? '#78350f' }}>{note.body}</p>
+                    <p className="text-xs whitespace-pre-wrap leading-relaxed opacity-80 mt-1 break-words" style={{ color: note.color?.text ?? '#78350f' }}>{note.body}</p>
                   )}
                   <p className="text-[10px] opacity-40 mt-3" style={{ color: note.color?.text ?? '#78350f' }}>
                     {new Date(note.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
