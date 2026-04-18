@@ -1123,7 +1123,7 @@ export default function Home() {
                   }}
                 >
                   <button
-                    onClick={() => { setSavePopoverOpen(false); setSaveSubView('links'); }}
+                    onClick={() => { setSavePopoverOpen(false); setActiveView("save"); setSaveSubView('links'); }}
                     className="w-full flex items-center gap-3 px-4 py-3 text-white/80 hover:text-white transition-colors text-sm"
                     style={{ fontFamily: "var(--font-geist), sans-serif" }}
                   >
@@ -1132,7 +1132,7 @@ export default function Home() {
                   </button>
                   <div className="h-px" style={{ background: 'rgba(255,255,255,0.08)' }} />
                   <button
-                    onClick={() => { setSavePopoverOpen(false); setSaveSubView('notes'); setNoteTitle(""); setNoteBody(""); setNoteImage(null); setSelectedNoteColor(NOTE_COLORS[notes.length % NOTE_COLORS.length]); setSavePanelMode("note"); }}
+                    onClick={() => { setSavePopoverOpen(false); setActiveView("save"); setSaveSubView('notes'); setNoteTitle(""); setNoteBody(""); setNoteImage(null); setSelectedNoteColor(NOTE_COLORS[notes.length % NOTE_COLORS.length]); setSavePanelMode("note"); }}
                     className="w-full flex items-center gap-3 px-4 py-3 text-white/80 hover:text-white transition-colors text-sm"
                     style={{ fontFamily: "var(--font-geist), sans-serif" }}
                   >
@@ -1196,7 +1196,6 @@ export default function Home() {
                     key={view}
                     onClick={() => {
                       if (view === "save") {
-                        if (activeView !== "save") setActiveView("save");
                         setSavePopoverOpen(prev => !prev);
                       } else {
                         handleViewSwitch(view);
