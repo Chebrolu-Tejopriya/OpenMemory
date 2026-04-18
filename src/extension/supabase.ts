@@ -333,7 +333,7 @@ export async function getAllSupabaseBookmarkUrls(): Promise<string[]> {
 
     while (true) {
       const { data, error } = await supabaseRequest<{ url: string }[]>(
-        `bookmarks?select=url&limit=${PAGE_SIZE}&offset=${offset}`
+        `bookmarks?select=url&folder=neq.OM&limit=${PAGE_SIZE}&offset=${offset}`
       );
       if (error || !data || data.length === 0) break;
       urls.push(...data.map((b) => b.url));
