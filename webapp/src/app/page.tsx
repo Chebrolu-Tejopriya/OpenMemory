@@ -111,6 +111,7 @@ export default function Home() {
   const [saveSubView, setSaveSubView] = useState<'notes' | 'links'>('notes');
   const [omLinks, setOmLinks] = useState<Array<{ id: string; url: string; title: string; created_at: string }>>([]);
   const [omLinksLoading, setOmLinksLoading] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   // Mention / scope state
   const [mentionType, setMentionType] = useState<MentionType>(null);
@@ -206,6 +207,14 @@ export default function Home() {
     };
     init();
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Detect mobile breakpoint
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
   }, []);
 
   // Fetch OM saved links when that sub-view is opened
@@ -792,88 +801,70 @@ export default function Home() {
           }}
         />
 
-        {/* ── NOTES canvas — freely positionable ── */}
+        {/* ── NOTES canvas ── */}
         <div className={`relative z-10 h-full overflow-auto custom-scrollbar ${saveSubView !== 'notes' ? 'hidden' : ''}`}>
           {notes.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center select-none pointer-events-none">
               <StickyNote className="w-10 h-10 text-[#5b9888]/20 mb-3" />
-              <p className="text-sm text-[#3a3a3a]/25 font-medium">Hit + to add a note or link</p>
+              <p className="text-sm text-[#3a3a3a]/25 font-medium">Hit + to add a note</p>
             </div>
-          ) : (
-            <div className="relative" style={{ minWidth: '100%', minHeight: 'calc(100% + 200px)' }}>
+          ) : isMobile ? (
+            /* ── Mobile: 2-column grid, LIFO, no drag ── */
+            <div className="grid grid-cols-2 gap-3 p-4 pb-32">
               {notes.map((note) => (
                 <div
                   key={note.id}
-                  className="absolute group select-none"
-                  style={{
-                    left: note.x,
-                    top: note.y,
-                    width: 200,
-                    background: note.color?.bg ?? '#fde68a',
-                    borderRadius: 10,
-                    padding: 14,
-                    boxShadow: '0 2px 12px rgba(0,0,0,0.10)',
-                    cursor: 'grab',
-                    touchAction: 'none',
-                  }}
-                  onPointerDown={(e) => onNoteDragStart(e, note)}
-                  onPointerMove={(e) => onNoteDragMove(e, note.id)}
-                  onPointerUp={(e) => onNoteDragEnd(e, note.id)}
-                  onDoubleClick={() => {
-                    setEditingNote(note);
-                    setNoteTitle(note.title);
-                    setNoteBody(note.body);
-                    setSelectedNoteColor(note.color);
-                    setNoteImage(note.image ?? null);
-                    setSavePanelMode("note");
-                  }}
+                  className="relative group rounded-[10px]"
+                  style={{ background: note.color?.bg ?? '#fde68a', padding: 14, boxShadow: '0 2px 10px rgba(0,0,0,0.08)' }}
+                  onDoubleClick={() => { setEditingNote(note); setNoteTitle(note.title); setNoteBody(note.body); setSelectedNoteColor(note.color); setNoteImage(note.image ?? null); setSavePanelMode("note"); }}
                 >
-                  {/* Edit + Delete buttons — visible on hover */}
-                  <div
-                    className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg"
-                    style={{ padding: '3px 5px', background: note.image ? 'rgba(0,0,0,0.32)' : 'transparent' }}
-                  >
-                    <button
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={() => {
-                        setEditingNote(note);
-                        setNoteTitle(note.title);
-                        setNoteBody(note.body);
-                        setSelectedNoteColor(note.color);
-                        setNoteImage(note.image ?? null);
-                        setSavePanelMode("note");
-                      }}
-                      className="opacity-70 hover:opacity-100 transition-opacity"
-                      style={{ color: note.image ? 'white' : (note.color?.text ?? '#78350f') }}
-                    >
+                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg" style={{ padding: '3px 5px', background: note.image ? 'rgba(0,0,0,0.32)' : 'transparent' }}>
+                    <button onClick={() => { setEditingNote(note); setNoteTitle(note.title); setNoteBody(note.body); setSelectedNoteColor(note.color); setNoteImage(note.image ?? null); setSavePanelMode("note"); }} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.image ? 'white' : (note.color?.text ?? '#78350f') }}>
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
-                    <button
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={() => deleteNote(note.id)}
-                      className="opacity-70 hover:opacity-100 transition-opacity"
-                      style={{ color: note.image ? 'white' : (note.color?.text ?? '#78350f') }}
-                    >
+                    <button onClick={() => deleteNote(note.id)} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.image ? 'white' : (note.color?.text ?? '#78350f') }}>
                       <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
                   {note.image && (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={note.image}
-                      alt=""
-                      className="w-full rounded-md object-cover mb-1"
-                      style={{ maxHeight: 120, cursor: 'zoom-in' }}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => { e.stopPropagation(); setLightboxImage(note.image!); }}
-                    />
+                    <img src={note.image} alt="" className="w-full rounded-md object-cover mb-1 cursor-zoom-in" style={{ maxHeight: 100 }} onClick={() => setLightboxImage(note.image!)} />
                   )}
-                  {note.title && (
-                    <p className="text-sm font-semibold pr-5 leading-snug break-words" style={{ color: note.color?.text ?? '#78350f' }}>{note.title}</p>
+                  {note.title && <p className="text-sm font-semibold pr-5 leading-snug break-words" style={{ color: note.color?.text ?? '#78350f' }}>{note.title}</p>}
+                  {note.body && <p className="text-xs whitespace-pre-wrap leading-relaxed opacity-80 mt-1 break-words" style={{ color: note.color?.text ?? '#78350f' }}>{note.body}</p>}
+                  <p className="text-[10px] opacity-40 mt-3" style={{ color: note.color?.text ?? '#78350f' }}>
+                    {new Date(note.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            /* ── Desktop: freely positionable, draggable ── */
+            <div className="relative" style={{ minWidth: '100%', minHeight: 'calc(100% + 200px)' }}>
+              {notes.map((note) => (
+                <div
+                  key={note.id}
+                  className="absolute group select-none"
+                  style={{ left: note.x, top: note.y, width: 200, background: note.color?.bg ?? '#fde68a', borderRadius: 10, padding: 14, boxShadow: '0 2px 12px rgba(0,0,0,0.10)', cursor: 'grab', touchAction: 'none' }}
+                  onPointerDown={(e) => onNoteDragStart(e, note)}
+                  onPointerMove={(e) => onNoteDragMove(e, note.id)}
+                  onPointerUp={(e) => onNoteDragEnd(e, note.id)}
+                  onDoubleClick={() => { setEditingNote(note); setNoteTitle(note.title); setNoteBody(note.body); setSelectedNoteColor(note.color); setNoteImage(note.image ?? null); setSavePanelMode("note"); }}
+                >
+                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg" style={{ padding: '3px 5px', background: note.image ? 'rgba(0,0,0,0.32)' : 'transparent' }}>
+                    <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { setEditingNote(note); setNoteTitle(note.title); setNoteBody(note.body); setSelectedNoteColor(note.color); setNoteImage(note.image ?? null); setSavePanelMode("note"); }} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.image ? 'white' : (note.color?.text ?? '#78350f') }}>
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button onPointerDown={(e) => e.stopPropagation()} onClick={() => deleteNote(note.id)} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.image ? 'white' : (note.color?.text ?? '#78350f') }}>
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  {note.image && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={note.image} alt="" className="w-full rounded-md object-cover mb-1" style={{ maxHeight: 120, cursor: 'zoom-in' }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setLightboxImage(note.image!); }} />
                   )}
-                  {note.body && (
-                    <p className="text-xs whitespace-pre-wrap leading-relaxed opacity-80 mt-1 break-words" style={{ color: note.color?.text ?? '#78350f' }}>{note.body}</p>
-                  )}
+                  {note.title && <p className="text-sm font-semibold pr-5 leading-snug break-words" style={{ color: note.color?.text ?? '#78350f' }}>{note.title}</p>}
+                  {note.body && <p className="text-xs whitespace-pre-wrap leading-relaxed opacity-80 mt-1 break-words" style={{ color: note.color?.text ?? '#78350f' }}>{note.body}</p>}
                   <p className="text-[10px] opacity-40 mt-3" style={{ color: note.color?.text ?? '#78350f' }}>
                     {new Date(note.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                   </p>
