@@ -792,24 +792,6 @@ export default function Home() {
           }}
         />
 
-        {/* Sub-view toggle — Notes | Links */}
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex rounded-full overflow-hidden select-none" style={{ background: 'rgba(0,0,0,0.10)', padding: 3, gap: 2 }}>
-          {(['notes', 'links'] as const).map(v => (
-            <button
-              key={v}
-              onClick={() => setSaveSubView(v)}
-              className="text-xs font-medium px-4 py-1 rounded-full transition-all"
-              style={{
-                background: saveSubView === v ? 'rgba(91,152,136,0.85)' : 'transparent',
-                color: saveSubView === v ? 'white' : 'rgba(58,58,58,0.5)',
-                fontFamily: "var(--font-geist), sans-serif",
-              }}
-            >
-              {v === 'notes' ? 'Notes' : 'Links'}
-            </button>
-          ))}
-        </div>
-
         {/* ── NOTES canvas — freely positionable ── */}
         <div className={`relative z-10 h-full overflow-auto custom-scrollbar ${saveSubView !== 'notes' ? 'hidden' : ''}`}>
           {notes.length === 0 ? (
@@ -999,12 +981,6 @@ export default function Home() {
                 className="w-full max-w-[420px] rounded-2xl shadow-2xl p-6 flex flex-col gap-3"
                 style={{ background: noteColor.bg, transition: 'background 0.2s ease' }}
               >
-                <div className="flex items-center gap-2 opacity-40">
-                  <StickyNote className="w-3.5 h-3.5" style={{ color: noteColor.text }} />
-                  <span className="text-xs" style={{ color: noteColor.text, fontFamily: "var(--font-geist), sans-serif" }}>
-                    {editingNote ? "Edit note" : "New note"} · tap outside to save
-                  </span>
-                </div>
 
                 {/* Image preview (shown only when an image is attached) */}
                 {noteImage && (
