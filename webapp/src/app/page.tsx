@@ -528,7 +528,12 @@ export default function Home() {
       if (res.ok) {
         setSaveResult({ success: true, title: data.title });
         setSaveUrl("");
-        setTimeout(() => { setSavePanelMode(null); setSaveResult(null); }, 1800);
+        // Refresh OM links list if that sub-view is showing
+        fetch(`${BACKEND_URL}/om-links`)
+          .then(r => r.ok ? r.json() : Promise.reject())
+          .then(d => setOmLinks(d.links || []))
+          .catch(() => {});
+        setTimeout(() => setSaveResult(null), 2500);
       } else {
         setSaveResult({ success: false, error: data.error || "Failed to save" });
       }
@@ -899,6 +904,32 @@ export default function Home() {
         {/* ── LINKS panel ── */}
         {saveSubView === 'links' && (
           <div className="relative z-10 h-full overflow-y-auto custom-scrollbar pt-14 pb-28 px-5">
+            {/* Add link input */}
+            <div className="flex gap-2 mb-4 max-w-[600px] mx-auto">
+              <input
+                type="url"
+                value={saveUrl}
+                onChange={(e) => { setSaveUrl(e.target.value); setSaveResult(null); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveLink(); }}
+                placeholder="Paste a URL to save..."
+                className="flex-1 rounded-xl px-4 py-2.5 text-sm text-[#1a1a1a] placeholder:text-[#3a3a3a]/30 outline-none bg-white/80"
+                style={{ border: '1.5px solid rgba(91,152,136,0.25)', fontFamily: "var(--font-geist), sans-serif" }}
+              />
+              <button
+                onClick={handleSaveLink}
+                disabled={!saveUrl.trim() || saveLoading}
+                className="px-4 py-2.5 rounded-xl bg-[#5b9888] text-white text-sm font-medium hover:bg-[#4a8070] transition-colors disabled:opacity-40 flex items-center gap-1.5"
+                style={{ fontFamily: "var(--font-geist), sans-serif" }}
+              >
+                {saveLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
+                {saveLoading ? '' : 'Save'}
+              </button>
+            </div>
+            {saveResult && (
+              <p className={`text-xs px-1 mb-3 max-w-[600px] mx-auto ${saveResult.success ? 'text-[#3d7a64]' : 'text-red-500'}`}>
+                {saveResult.success ? `Saved: "${saveResult.title}"` : saveResult.error}
+              </p>
+            )}
             {omLinksLoading ? (
               <div className="h-full flex items-center justify-center">
                 <RefreshCw className="w-5 h-5 text-[#5b9888]/40 animate-spin" />
@@ -957,67 +988,22 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── Link modal ── */}
-        {savePanelMode === "link" && (
-          <div className="absolute inset-0 z-20 flex items-center justify-center p-6" onClick={(e) => { if (e.target === e.currentTarget) setSavePanelMode(null); }}>
-            <div className="w-full max-w-[420px] bg-white rounded-2xl shadow-2xl p-6 flex flex-col gap-4" style={{ border: '1px solid rgba(91,152,136,0.2)' }}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Link2 className="w-4 h-4 text-[#5b9888]" />
-                  <h3 className="font-semibold text-[#1a1a1a] text-sm" style={{ fontFamily: "var(--font-geist), sans-serif" }}>Add a Link</h3>
-                </div>
-                <button onClick={() => setSavePanelMode(null)} className="text-[#3a3a3a]/30 hover:text-[#3a3a3a] transition-colors">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <input
-                autoFocus
-                type="url"
-                value={saveUrl}
-                onChange={(e) => { setSaveUrl(e.target.value); setSaveResult(null); }}
-                onKeyDown={(e) => { if (e.key === "Enter") handleSaveLink(); if (e.key === "Escape") setSavePanelMode(null); }}
-                placeholder="https://..."
-                className="w-full border-2 border-[#5b9888]/30 focus:border-[#5b9888] rounded-xl px-4 py-3 text-sm text-[#1a1a1a] placeholder:text-[#3a3a3a]/30 outline-none transition-colors"
-                style={{ fontFamily: "var(--font-geist), sans-serif" }}
-              />
-              {saveResult && (
-                <p className={`text-xs px-1 ${saveResult.success ? "text-[#3d7a64]" : "text-red-500"}`}>
-                  {saveResult.success ? `Saved: "${saveResult.title}"` : saveResult.error}
-                </p>
-              )}
-              <div className="flex gap-2">
-                <button onClick={() => setSavePanelMode(null)} className="flex-1 py-2.5 rounded-xl border border-[#3a3a3a]/10 text-sm text-[#3a3a3a]/50 hover:text-[#3a3a3a] hover:border-[#3a3a3a]/20 transition-colors" style={{ fontFamily: "var(--font-geist), sans-serif" }}>
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveLink}
-                  disabled={!saveUrl.trim() || saveLoading}
-                  className="flex-1 py-2.5 rounded-xl bg-[#5b9888] text-white text-sm font-medium hover:bg-[#4a8070] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                  style={{ fontFamily: "var(--font-geist), sans-serif" }}
-                >
-                  {saveLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
-                  {saveLoading ? "Saving..." : "Save"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* ── Note compose modal ── */}
         {savePanelMode === "note" && (() => {
           const noteColor = selectedNoteColor;
           const closeModal = () => { setSavePanelMode(null); setEditingNote(null); setNoteTitle(""); setNoteBody(""); setNoteImage(null); };
+          const saveOrClose = () => { if (noteTitle.trim() || noteBody.trim() || noteImage) handleSaveNote(); else closeModal(); };
           return (
-            <div className="absolute inset-0 z-20 flex items-center justify-center p-6" onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}>
+            <div className="absolute inset-0 z-20 flex items-center justify-center p-6" onClick={(e) => { if (e.target === e.currentTarget) saveOrClose(); }}>
               <div
                 className="w-full max-w-[420px] rounded-2xl shadow-2xl p-6 flex flex-col gap-3"
                 style={{ background: noteColor.bg, transition: 'background 0.2s ease' }}
               >
-                <div className="flex items-center justify-between">
-                  <StickyNote className="w-4 h-4 opacity-50" style={{ color: noteColor.text }} />
-                  <button onClick={closeModal} style={{ color: noteColor.text }} className="opacity-40 hover:opacity-70 transition-opacity">
-                    <X className="w-4 h-4" />
-                  </button>
+                <div className="flex items-center gap-2 opacity-40">
+                  <StickyNote className="w-3.5 h-3.5" style={{ color: noteColor.text }} />
+                  <span className="text-xs" style={{ color: noteColor.text, fontFamily: "var(--font-geist), sans-serif" }}>
+                    {editingNote ? "Edit note" : "New note"} · tap outside to save
+                  </span>
                 </div>
 
                 {/* Image preview (shown only when an image is attached) */}
@@ -1059,7 +1045,7 @@ export default function Home() {
                 <textarea
                   value={noteBody}
                   onChange={(e) => setNoteBody(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) handleSaveNote(); if (e.key === "Escape") closeModal(); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) saveOrClose(); if (e.key === "Escape") closeModal(); }}
                   placeholder="Type anything..."
                   rows={4}
                   className="w-full bg-transparent outline-none text-sm resize-none placeholder:opacity-40 leading-relaxed"
@@ -1094,19 +1080,6 @@ export default function Home() {
                     title="Attach image"
                   >
                     <Upload className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="flex gap-2 pt-1">
-                  <button onClick={closeModal} className="flex-1 py-2.5 rounded-xl text-sm opacity-50 hover:opacity-80 transition-opacity border border-current" style={{ color: noteColor.text, fontFamily: "var(--font-geist), sans-serif" }}>
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSaveNote}
-                    disabled={!noteBody.trim() && !noteTitle.trim() && !noteImage}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-opacity disabled:opacity-30"
-                    style={{ background: noteColor.text, color: noteColor.bg, fontFamily: "var(--font-geist), sans-serif" }}
-                  >
-                    {editingNote ? "Save" : "Done"}
                   </button>
                 </div>
               </div>
@@ -1174,23 +1147,21 @@ export default function Home() {
                   }}
                 >
                   <button
-                    onClick={() => { setSavePopoverOpen(false); setSavePanelMode("link"); setSaveResult(null); setSaveUrl(""); }}
+                    onClick={() => { setSavePopoverOpen(false); setSaveSubView('links'); }}
                     className="w-full flex items-center gap-3 px-4 py-3 text-white/80 hover:text-white transition-colors text-sm"
                     style={{ fontFamily: "var(--font-geist), sans-serif" }}
                   >
                     <Link2 className="w-4 h-4 opacity-70" />
-                    <span>Link</span>
-                    <span className="ml-auto text-white/25 text-xs">L</span>
+                    <span>Links</span>
                   </button>
                   <div className="h-px" style={{ background: 'rgba(255,255,255,0.08)' }} />
                   <button
-                    onClick={() => { setSavePopoverOpen(false); setSavePanelMode("note"); setNoteTitle(""); setNoteBody(""); setSelectedNoteColor(NOTE_COLORS[notes.length % NOTE_COLORS.length]); }}
+                    onClick={() => { setSavePopoverOpen(false); setSaveSubView('notes'); setNoteTitle(""); setNoteBody(""); setNoteImage(null); setSelectedNoteColor(NOTE_COLORS[notes.length % NOTE_COLORS.length]); setSavePanelMode("note"); }}
                     className="w-full flex items-center gap-3 px-4 py-3 text-white/80 hover:text-white transition-colors text-sm"
                     style={{ fontFamily: "var(--font-geist), sans-serif" }}
                   >
                     <StickyNote className="w-4 h-4 opacity-70" />
-                    <span>Note</span>
-                    <span className="ml-auto text-white/25 text-xs">N</span>
+                    <span>Notes</span>
                   </button>
                 </div>
               </>
