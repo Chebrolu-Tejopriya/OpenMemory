@@ -466,11 +466,12 @@ export default function Home() {
       setNoteImage(null);
       setSavePanelMode(null);
       try {
-        await fetch(`${BACKEND_URL}/notes`, {
+        const r = await fetch(`${BACKEND_URL}/notes`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...newNote, image: newNote.image ?? null }),
         });
+        if (!r.ok) throw new Error('backend error');
       } catch {
         localStorage.setItem("om-sticky-notes", JSON.stringify([newNote, ...notes]));
       }
