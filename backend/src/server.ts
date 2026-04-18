@@ -508,6 +508,23 @@ app.get('/om-links', async (req, res) => {
  * DELETE /om-link?url=URL
  * Removes an OM bookmark by URL.
  */
+app.post('/restore-link', async (req, res) => {
+  try {
+    const { url, title } = req.body as { url?: string; title?: string };
+    if (!url) return res.status(400).json({ error: 'url is required' });
+    const r = await fetch(`${SB_URL}/rest/v1/bookmarks`, {
+      method: 'POST',
+      headers: { ...sbHeaders, 'Prefer': 'resolution=merge-duplicates' },
+      body: JSON.stringify({ url, title: title ?? url, folder: 'OM' }),
+    });
+    if (!r.ok) return res.status(500).json({ error: await r.text() });
+    await invalidate('om-links');
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
 app.delete('/om-link', async (req, res) => {
   try {
     const url = req.query.url as string;

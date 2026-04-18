@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Pencil, Upload } from "lucide-react";
+import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Pencil, Upload, Plus, ArchiveRestore, Trash2 } from "lucide-react";
 import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
@@ -112,6 +112,14 @@ export default function Home() {
   const [omLinks, setOmLinks] = useState<Array<{ id: string; url: string; title: string; created_at: string }>>([]);
   const [omLinksLoading, setOmLinksLoading] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [archivedNotes, setArchivedNotes] = useState<Note[]>(() => {
+    try { return JSON.parse(localStorage.getItem('om-archived-notes') ?? '[]'); } catch { return []; }
+  });
+  const [archivedLinks, setArchivedLinks] = useState<Array<{ id: string; url: string; title: string; created_at: string }>>(() => {
+    try { return JSON.parse(localStorage.getItem('om-archived-links') ?? '[]'); } catch { return []; }
+  });
+  const [showNotesArchive, setShowNotesArchive] = useState(false);
+  const [showLinksArchive, setShowLinksArchive] = useState(false);
 
   // Mention / scope state
   const [mentionType, setMentionType] = useState<MentionType>(null);
@@ -479,10 +487,42 @@ export default function Home() {
   };
 
   const deleteNote = async (id: string) => {
+    const note = notes.find(n => n.id === id);
+    if (note) {
+      setArchivedNotes(prev => {
+        const next = [note, ...prev];
+        localStorage.setItem('om-archived-notes', JSON.stringify(next));
+        return next;
+      });
+    }
     setNotes(prev => prev.filter(n => n.id !== id));
     try {
       await fetch(`${BACKEND_URL}/notes/${id}`, { method: 'DELETE' });
     } catch {}
+  };
+
+  const restoreNote = async (note: Note) => {
+    setArchivedNotes(prev => {
+      const next = prev.filter(n => n.id !== note.id);
+      localStorage.setItem('om-archived-notes', JSON.stringify(next));
+      return next;
+    });
+    setNotes(prev => [note, ...prev]);
+    try {
+      await fetch(`${BACKEND_URL}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...note, image: note.image ?? null }),
+      });
+    } catch {}
+  };
+
+  const permanentlyDeleteNote = (id: string) => {
+    setArchivedNotes(prev => {
+      const next = prev.filter(n => n.id !== id);
+      localStorage.setItem('om-archived-notes', JSON.stringify(next));
+      return next;
+    });
   };
 
   const onNoteDragStart = (e: React.PointerEvent<HTMLDivElement>, note: Note) => {
@@ -816,6 +856,50 @@ export default function Home() {
 
         {/* ── NOTES canvas ── */}
         <div className={`relative z-10 h-full overflow-auto custom-scrollbar ${saveSubView !== 'notes' ? 'hidden' : ''}`}>
+          {/* Archive toggle */}
+          <button
+            onClick={() => setShowNotesArchive(v => !v)}
+            className="absolute top-4 right-4 z-20 flex items-center gap-1.5 text-xs font-medium transition-all"
+            style={{ color: showNotesArchive ? '#5b9888' : 'rgba(58,58,58,0.35)', fontFamily: "var(--font-geist), sans-serif" }}
+          >
+            <ArchiveRestore className="w-4 h-4" />
+            {archivedNotes.length > 0 && <span className="text-[10px] bg-[#5b9888] text-white rounded-full px-1.5 py-0.5 leading-none">{archivedNotes.length}</span>}
+          </button>
+
+          {/* Notes archive panel */}
+          {showNotesArchive && (
+            <div className="absolute inset-0 z-10 overflow-y-auto custom-scrollbar" style={{ background: 'rgba(242,249,247,0.97)', backdropFilter: 'blur(8px)' }}>
+              <div className="pt-14 pb-28 px-4 max-w-2xl mx-auto">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-sm font-semibold text-[#1a1a1a]" style={{ fontFamily: "var(--font-geist), sans-serif" }}>Archived Notes</p>
+                  <button onClick={() => setShowNotesArchive(false)} className="text-[#3a3a3a]/40 hover:text-[#3a3a3a] transition-colors"><X className="w-4 h-4" /></button>
+                </div>
+                {archivedNotes.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 select-none pointer-events-none">
+                    <ArchiveRestore className="w-8 h-8 text-[#5b9888]/20 mb-2" />
+                    <p className="text-sm text-[#3a3a3a]/25">No archived notes</p>
+                  </div>
+                ) : (
+                  <div style={{ columns: 2, columnGap: 12 }}>
+                    {archivedNotes.map(note => (
+                      <div key={note.id} className="rounded-[10px] mb-3" style={{ breakInside: 'avoid', background: note.color?.bg ?? '#fde68a', padding: 12, opacity: 0.8 }}>
+                        {note.title && <p className="text-sm font-semibold leading-snug break-words mb-1" style={{ color: note.color?.text ?? '#78350f' }}>{note.title}</p>}
+                        {note.body && <p className="text-xs whitespace-pre-wrap leading-relaxed opacity-80 break-words" style={{ color: note.color?.text ?? '#78350f' }}>{note.body}</p>}
+                        <div className="flex gap-2 mt-3">
+                          <button onClick={() => restoreNote(note)} className="flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md transition-colors" style={{ background: 'rgba(0,0,0,0.08)', color: note.color?.text ?? '#78350f' }}>
+                            <ArchiveRestore className="w-3 h-3" /> Restore
+                          </button>
+                          <button onClick={() => permanentlyDeleteNote(note.id)} className="flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md transition-colors" style={{ background: 'rgba(0,0,0,0.08)', color: note.color?.text ?? '#78350f' }}>
+                            <Trash2 className="w-3 h-3" /> Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           {notes.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center select-none pointer-events-none">
               <StickyNote className="w-10 h-10 text-[#5b9888]/20 mb-3" />
@@ -890,6 +974,83 @@ export default function Home() {
         {/* ── LINKS panel ── */}
         {saveSubView === 'links' && (
           <div className="relative z-10 h-full overflow-y-auto custom-scrollbar pt-14 pb-28 px-5">
+            {/* Archive toggle */}
+            <button
+              onClick={() => setShowLinksArchive(v => !v)}
+              className="absolute top-4 right-4 z-20 flex items-center gap-1.5 text-xs font-medium transition-all"
+              style={{ color: showLinksArchive ? '#5b9888' : 'rgba(58,58,58,0.35)', fontFamily: "var(--font-geist), sans-serif" }}
+            >
+              <ArchiveRestore className="w-4 h-4" />
+              {archivedLinks.length > 0 && <span className="text-[10px] bg-[#5b9888] text-white rounded-full px-1.5 py-0.5 leading-none">{archivedLinks.length}</span>}
+            </button>
+
+            {/* Links archive panel */}
+            {showLinksArchive && (
+              <div className="absolute inset-0 z-10 overflow-y-auto custom-scrollbar" style={{ background: 'rgba(242,249,247,0.97)', backdropFilter: 'blur(8px)' }}>
+                <div className="pt-14 pb-28 px-5 max-w-[600px] mx-auto">
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-sm font-semibold text-[#1a1a1a]" style={{ fontFamily: "var(--font-geist), sans-serif" }}>Archived Links</p>
+                    <button onClick={() => setShowLinksArchive(false)} className="text-[#3a3a3a]/40 hover:text-[#3a3a3a] transition-colors"><X className="w-4 h-4" /></button>
+                  </div>
+                  {archivedLinks.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-20 select-none pointer-events-none">
+                      <ArchiveRestore className="w-8 h-8 text-[#5b9888]/20 mb-2" />
+                      <p className="text-sm text-[#3a3a3a]/25">No archived links</p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {archivedLinks.map(link => {
+                        let domain = '';
+                        try { domain = new URL(link.url).hostname.replace('www.', ''); } catch {}
+                        return (
+                          <div key={link.id} className="flex items-center gap-3 bg-white/70 backdrop-blur-sm rounded-xl px-4 py-3 shadow-sm" style={{ border: '1px solid rgba(91,152,136,0.15)', opacity: 0.8 }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={`https://www.google.com/s2/favicons?domain=${domain}&sz=32`} alt="" className="w-5 h-5 rounded flex-shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-[#1a1a1a] truncate">{link.title || domain}</p>
+                              <p className="text-xs text-[#5b9888] truncate">{domain}</p>
+                            </div>
+                            <div className="flex gap-1 flex-shrink-0">
+                              <button
+                                onClick={async () => {
+                                  setArchivedLinks(prev => {
+                                    const next = prev.filter(l => l.id !== link.id);
+                                    localStorage.setItem('om-archived-links', JSON.stringify(next));
+                                    return next;
+                                  });
+                                  setOmLinks(prev => [link, ...prev]);
+                                  try {
+                                    await fetch(`${BACKEND_URL}/restore-link`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ url: link.url, title: link.title }),
+                                    });
+                                  } catch {}
+                                }}
+                                className="flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md bg-[#5b9888]/10 text-[#3d7a64] hover:bg-[#5b9888]/20 transition-colors"
+                              >
+                                <ArchiveRestore className="w-3 h-3" /> Restore
+                              </button>
+                              <button
+                                onClick={() => setArchivedLinks(prev => {
+                                  const next = prev.filter(l => l.id !== link.id);
+                                  localStorage.setItem('om-archived-links', JSON.stringify(next));
+                                  return next;
+                                })}
+                                className="flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md bg-red-50 text-red-400 hover:bg-red-100 transition-colors"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Add link input */}
             <div className="flex gap-2 mb-4 max-w-[600px] mx-auto">
               <input
@@ -957,6 +1118,11 @@ export default function Home() {
                       </div>
                       <button
                         onClick={async () => {
+                          setArchivedLinks(prev => {
+                            const next = [link, ...prev];
+                            localStorage.setItem('om-archived-links', JSON.stringify(next));
+                            return next;
+                          });
                           setOmLinks(prev => prev.filter(l => l.id !== link.id));
                           try {
                             await fetch(`${BACKEND_URL}/om-link?url=${encodeURIComponent(link.url)}`, { method: 'DELETE' });
@@ -1096,7 +1262,7 @@ export default function Home() {
       {/* ── Bottom dock — liquid glass pill ── */}
       {(() => {
         const VIEWS: ActiveView[] = ["search", "browse", "canvas", "save"];
-        const ICONS = { search: Search, browse: LayoutGrid, canvas: Waypoints, save: StickyNote };
+        const ICONS = { search: Search, browse: LayoutGrid, canvas: Waypoints, save: Plus };
         const LABELS = { search: "Search", browse: "Collections", canvas: "Canvas", save: "Save" };
         const BTN = 44;   // button width & height px
         const PAD = 6;    // container padding px
