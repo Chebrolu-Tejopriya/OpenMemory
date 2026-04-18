@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Pencil } from "lucide-react";
+import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Pencil, Upload } from "lucide-react";
 import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
@@ -50,11 +50,29 @@ const NOTE_COLORS = [
 ];
 
 type NoteColor = typeof NOTE_COLORS[number];
-type Note = { id: string; title: string; body: string; createdAt: string; color: NoteColor; x: number; y: number };
+type Note = { id: string; title: string; body: string; createdAt: string; color: NoteColor; x: number; y: number; image?: string };
 
 function getDefaultPosition(index: number): { x: number; y: number } {
   const cols = 4;
   return { x: 20 + (index % cols) * 222, y: 20 + Math.floor(index / cols) * 202 };
+}
+
+function compressImage(file: File): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new globalThis.Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const MAX = 560;
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', 0.78));
+    };
+    img.src = url;
+  });
 }
 
 type ActiveView = "search" | "browse" | "canvas" | "save";
@@ -88,6 +106,7 @@ export default function Home() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [selectedNoteColor, setSelectedNoteColor] = useState<NoteColor>(NOTE_COLORS[1]);
+  const [noteImage, setNoteImage] = useState<string | null>(null);
 
   // Mention / scope state
   const [mentionType, setMentionType] = useState<MentionType>(null);
@@ -103,6 +122,7 @@ export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
   const mentionContainerRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<{ id: string; startPX: number; startPY: number; origX: number; origY: number; currentX: number; currentY: number; hasDragged: boolean } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const userName = "TEJA";
 
   useEffect(() => {
@@ -126,7 +146,7 @@ export default function Home() {
         const res = await fetch(`${BACKEND_URL}/notes`);
         if (res.ok) {
           const data = await res.json();
-          const fromServer = (data.notes || []).map((n: { id: string; title: string | null; body: string | null; created_at: string; color_bg: string; color_text: string; pos_x: number | null; pos_y: number | null }, i: number) => ({
+          const fromServer = (data.notes || []).map((n: { id: string; title: string | null; body: string | null; created_at: string; color_bg: string; color_text: string; pos_x: number | null; pos_y: number | null; image_data: string | null }, i: number) => ({
             id: n.id,
             title: n.title ?? '',
             body: n.body ?? '',
@@ -134,6 +154,7 @@ export default function Home() {
             color: { bg: n.color_bg, text: n.color_text },
             x: n.pos_x ?? getDefaultPosition(i).x,
             y: n.pos_y ?? getDefaultPosition(i).y,
+            ...(n.image_data ? { image: n.image_data } : {}),
           }));
 
           // One-time migration: push any localStorage notes not yet in Supabase
@@ -182,6 +203,22 @@ export default function Home() {
     init();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Paste image when note modal is open
+  useEffect(() => {
+    if (savePanelMode !== 'note') return;
+    const handlePaste = async (e: ClipboardEvent) => {
+      const items = Array.from(e.clipboardData?.items ?? []);
+      const imgItem = items.find(it => it.type.startsWith('image/'));
+      if (!imgItem) return;
+      const file = imgItem.getAsFile();
+      if (!file) return;
+      const dataUrl = await compressImage(file);
+      setNoteImage(dataUrl);
+    };
+    document.addEventListener('paste', handlePaste);
+    return () => document.removeEventListener('paste', handlePaste);
+  }, [savePanelMode]);
 
   // Close mention dropdown on outside click
   useEffect(() => {
@@ -372,17 +409,18 @@ export default function Home() {
 
     if (editingNote) {
       // ── Edit existing note ──
-      const updated: Note = { ...editingNote, title: noteTitle.trim(), body: noteBody.trim(), color: selectedNoteColor };
+      const updated: Note = { ...editingNote, title: noteTitle.trim(), body: noteBody.trim(), color: selectedNoteColor, image: noteImage ?? undefined };
       setNotes(prev => prev.map(n => n.id === editingNote.id ? updated : n));
       setEditingNote(null);
       setNoteTitle("");
       setNoteBody("");
+      setNoteImage(null);
       setSavePanelMode(null);
       try {
         await fetch(`${BACKEND_URL}/notes`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updated),
+          body: JSON.stringify({ ...updated, image: updated.image ?? null }),
         });
       } catch {}
     } else {
@@ -396,16 +434,18 @@ export default function Home() {
         color: selectedNoteColor,
         x: pos.x,
         y: pos.y,
+        ...(noteImage ? { image: noteImage } : {}),
       };
       setNotes(prev => [newNote, ...prev]);
       setNoteTitle("");
       setNoteBody("");
+      setNoteImage(null);
       setSavePanelMode(null);
       try {
         await fetch(`${BACKEND_URL}/notes`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newNote),
+          body: JSON.stringify({ ...newNote, image: newNote.image ?? null }),
         });
       } catch {
         localStorage.setItem("om-sticky-notes", JSON.stringify([newNote, ...notes]));
@@ -764,6 +804,7 @@ export default function Home() {
                     setNoteTitle(note.title);
                     setNoteBody(note.body);
                     setSelectedNoteColor(note.color);
+                    setNoteImage(note.image ?? null);
                     setSavePanelMode("note");
                   }}
                 >
@@ -776,6 +817,7 @@ export default function Home() {
                         setNoteTitle(note.title);
                         setNoteBody(note.body);
                         setSelectedNoteColor(note.color);
+                        setNoteImage(note.image ?? null);
                         setSavePanelMode("note");
                       }}
                       className="opacity-50 hover:opacity-100 transition-opacity"
@@ -792,6 +834,10 @@ export default function Home() {
                       <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
+                  {note.image && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={note.image} alt="" className="w-full rounded-md object-cover mb-1" style={{ maxHeight: 120, pointerEvents: 'none' }} />
+                  )}
                   {note.title && (
                     <p className="text-sm font-semibold pr-5 leading-snug break-words" style={{ color: note.color?.text ?? '#78350f' }}>{note.title}</p>
                   )}
@@ -857,11 +903,11 @@ export default function Home() {
         {/* ── Note compose modal ── */}
         {savePanelMode === "note" && (() => {
           const noteColor = selectedNoteColor;
-          const closeModal = () => { setSavePanelMode(null); setEditingNote(null); setNoteTitle(""); setNoteBody(""); };
+          const closeModal = () => { setSavePanelMode(null); setEditingNote(null); setNoteTitle(""); setNoteBody(""); setNoteImage(null); };
           return (
             <div className="absolute inset-0 z-20 flex items-center justify-center p-6" onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}>
               <div
-                className="w-full max-w-[420px] rounded-2xl shadow-2xl p-6 flex flex-col gap-4"
+                className="w-full max-w-[420px] rounded-2xl shadow-2xl p-6 flex flex-col gap-3"
                 style={{ background: noteColor.bg, transition: 'background 0.2s ease' }}
               >
                 <div className="flex items-center justify-between">
@@ -870,6 +916,49 @@ export default function Home() {
                     <X className="w-4 h-4" />
                   </button>
                 </div>
+
+                {/* Image preview / upload zone */}
+                {noteImage ? (
+                  <div className="relative rounded-xl overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={noteImage} alt="" className="w-full object-cover rounded-xl" style={{ maxHeight: 180 }} />
+                    <button
+                      type="button"
+                      onClick={() => setNoteImage(null)}
+                      className="absolute top-1.5 right-1.5 rounded-full p-0.5 flex items-center justify-center"
+                      style={{ background: 'rgba(0,0,0,0.45)', color: 'white' }}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full rounded-xl py-3 flex items-center justify-center gap-2 transition-opacity hover:opacity-80"
+                    style={{
+                      border: `1.5px dashed ${noteColor.text}`,
+                      color: noteColor.text,
+                      opacity: 0.4,
+                      background: 'transparent',
+                    }}
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span className="text-xs" style={{ fontFamily: "var(--font-geist), sans-serif" }}>Upload or paste image</span>
+                  </button>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (file) { const url = await compressImage(file); setNoteImage(url); }
+                    e.target.value = '';
+                  }}
+                />
+
                 <input
                   autoFocus
                   type="text"
@@ -884,7 +973,7 @@ export default function Home() {
                   onChange={(e) => setNoteBody(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) handleSaveNote(); if (e.key === "Escape") closeModal(); }}
                   placeholder="Type anything..."
-                  rows={5}
+                  rows={4}
                   className="w-full bg-transparent outline-none text-sm resize-none placeholder:opacity-40 leading-relaxed"
                   style={{ color: noteColor.text, fontFamily: "var(--font-geist), sans-serif" }}
                 />
@@ -916,7 +1005,7 @@ export default function Home() {
                   </button>
                   <button
                     onClick={handleSaveNote}
-                    disabled={!noteBody.trim() && !noteTitle.trim()}
+                    disabled={!noteBody.trim() && !noteTitle.trim() && !noteImage}
                     className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-opacity disabled:opacity-30"
                     style={{ background: noteColor.text, color: noteColor.bg, fontFamily: "var(--font-geist), sans-serif" }}
                   >
