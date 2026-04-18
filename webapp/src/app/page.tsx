@@ -529,16 +529,23 @@ export default function Home() {
     setSaveLoading(true);
     setSaveResult(null);
     try {
-      const res = await fetch(`${BACKEND_URL}/save-link`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: saveUrl.trim() }),
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 40000);
+      let res: Response;
+      try {
+        res = await fetch(`${BACKEND_URL}/save-link`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: saveUrl.trim() }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
       const data = await res.json();
       if (res.ok) {
         setSaveResult({ success: true, title: data.title });
         setSaveUrl("");
-        // Refresh OM links list if that sub-view is showing
         fetch(`${BACKEND_URL}/om-links`)
           .then(r => r.ok ? r.json() : Promise.reject())
           .then(d => setOmLinks(d.links || []))
@@ -547,8 +554,9 @@ export default function Home() {
       } else {
         setSaveResult({ success: false, error: data.error || "Failed to save" });
       }
-    } catch {
-      setSaveResult({ success: false, error: "Network error — is the backend running?" });
+    } catch (err) {
+      const isTimeout = err instanceof Error && err.name === 'AbortError';
+      setSaveResult({ success: false, error: isTimeout ? "Server is waking up — please try again in a moment" : "Network error — check your connection" });
     } finally {
       setSaveLoading(false);
     }
