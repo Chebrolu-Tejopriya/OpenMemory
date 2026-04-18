@@ -42,16 +42,20 @@ A personal inspiration memory system — search your Chrome bookmarks and Pinter
 - Lightbox image viewer
 - Synced to Supabase across devices; localStorage fallback when offline
 - Positions persisted per note (`pos_x`, `pos_y`)
+- **Archive** — deleted notes move to a trash bin (localStorage); restore or permanently delete from the Archive panel
 
 ### Save Tab
+- **4th dock tab** — Plus (`+`) icon; opens a popover to navigate to Notes or Links
+- **Header bar** — Notes and Saved Links panels each have a sticky title bar with the Archive button on the right
 - **Link saving** — paste any URL to scrape metadata, generate embedding, and save to Supabase bookmarks (folder = OM)
 - **Saved Links view** — list of all OM bookmarks with favicon, title, and delete button
+- **Archive** — deleted links move to a trash bin (localStorage); restore (re-upserts to Supabase) or permanently delete
 - Popover dock button for quick navigation between Notes and Links
 
 ### Chrome Extension
 - Sync Chrome bookmarks and Pinterest pins to Supabase
 - **Real-time delete sync** — removing a bookmark from Chrome instantly deletes it from Supabase via `onRemoved` listener
-- **Startup reconciliation** — on every browser start or extension reload, compares all Chrome bookmark URLs against Supabase and bulk-deletes any orphaned rows (covers bookmarks deleted while the extension was inactive or the service worker was dormant)
+- **Startup reconciliation** — on every browser start or extension reload, compares Chrome bookmark URLs against Supabase and bulk-deletes orphaned rows; **OM-saved links (`folder = OM`) are excluded** so webapp-saved links are never wiped
 - **Delete board** — remove all pins for a board from Supabase + local SQLite in one click
 - Board list persists locally (SQLite) and syncs state with Supabase
 
@@ -231,6 +235,12 @@ Scrapes metadata, generates embedding, saves to Supabase. Invalidates `om-links`
 
 ### `DELETE /om-link?url=<url>`
 Removes a saved link. Invalidates `om-links` cache.
+
+### `POST /restore-link`
+Re-upserts an archived link directly to Supabase (no scraping or embedding). Invalidates `om-links` cache.
+```json
+{ "url": "https://...", "title": "Page Title" }
+```
 
 ### `DELETE /board?board_name=<name>`
 Removes a board entry from local SQLite (caller responsible for Supabase pin deletion).

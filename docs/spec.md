@@ -355,6 +355,7 @@ DELETE /notes/:id                                                              /
 ```
 GET    /om-links                          → { links: OmLink[] }               // cached 10 min
 POST   /save-link  Body: { url, folder? } → { success, title, url }           // invalidates om-links + folders
+POST   /restore-link Body: { url, title } → { success }                       // direct upsert, no scraping; invalidates om-links
 DELETE /om-link?url=<url>                                                      // invalidates om-links
 ```
 
@@ -462,6 +463,9 @@ Liquid glass pill, dark-neutral base (visible on any background):
 
 ## 8.6 Sticky Notes (Save View — Notes sub-view)
 
+- Header bar: "Notes" title left, Archive button (with count badge) right
+- Archive panel is a full-panel overlay; toggled by the header Archive button
+
 **Desktop:**
 - Infinite canvas with absolute-positioned note cards
 - Drag to reposition via `setPointerCapture` + `pointerDown/Move/Up`
@@ -499,17 +503,34 @@ type Note = {
 
 ## 8.7 Save View — Links Sub-view
 
+- Header bar: "Saved Links" title left, Archive button right
 - Paste any URL → `POST /save-link` → scrapes metadata + embedding → saves to Supabase (folder = OM)
 - 40s AbortController timeout with clear error message if backend times out
 - On success: optimistically prepend to local `omLinks` state (no refetch)
 - Saved Links list: favicon, title, domain, delete button
-- Delete: optimistic local remove + `DELETE /om-link` (invalidates Redis cache)
+- Delete: moves link to localStorage `om-archived-links` + calls `DELETE /om-link` (invalidates Redis cache)
+- **Archive panel**: overlay showing archived links with Restore and Delete Permanently buttons
+  - Restore: re-adds to `omLinks` state + calls `POST /restore-link` (direct upsert, no scraping)
+  - Delete Permanently: removes from localStorage only (already deleted from Supabase)
 
 ## 8.8 Save Popover (4th dock tab)
 
-- Clicking the 4th dock tab toggles a popover over the current view (does NOT switch view)
+- 4th dock tab icon: **Plus (`+`)** — toggles a popover over the current view (does NOT switch view)
 - Popover has two options: **Notes** and **Links**
 - Clicking either navigates to the Save view with the correct sub-view active
+
+## 8.9 Archive (Notes + Links)
+
+- Archive is **localStorage-only** (`om-archived-notes`, `om-archived-links`) — no DB migrations needed
+- Persists across page refreshes on the same browser; not synced across devices
+- **Notes archive**: `deleteNote()` saves the full `Note` object to archive before calling `DELETE /notes/:id`
+  - Restore: calls `POST /notes` to re-save, removes from archive
+  - Permanent delete: removes from localStorage only
+- **Links archive**: delete handler saves link object to archive before calling `DELETE /om-link`
+  - Restore: calls `POST /restore-link` (fast, no scraping), removes from archive
+  - Permanent delete: removes from localStorage only
+- Archive button in header bar shows a green count badge when items exist
+- Archive panel is a full-panel overlay within the Notes/Links view
 
 ---
 
@@ -590,10 +611,12 @@ chrome.bookmarks.onMoved    → updateBookmark()
 
 On every `onInstalled` and `onStartup`, `reconcileDeletedBookmarks()` runs after an 8-second delay:
 
-1. Fetch all URLs from Supabase `bookmarks` table (`select=url` only, paginated at 1000/page)
+1. Fetch URLs from Supabase `bookmarks` table where **`folder != 'OM'`** (`select=url&folder=neq.OM`, paginated at 1000/page)
 2. Fetch all current Chrome bookmark URLs via `chrome.bookmarks.getTree()`
 3. Diff: any URL in Supabase not present in Chrome is an orphan
 4. Delete each orphan via `deleteBookmark(url, 'url')`
+
+**Critical:** `folder = 'OM'` rows are excluded from reconciliation. These are manually saved via the webapp and are not Chrome bookmarks — including them would cause every webapp-saved link to be deleted on every Chrome startup.
 
 This guarantees Supabase stays in sync even for deletions that happened while the browser was closed or the service worker was inactive.
 
