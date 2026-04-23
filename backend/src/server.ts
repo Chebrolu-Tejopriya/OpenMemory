@@ -332,7 +332,7 @@ app.post('/save-link', async (req, res) => {
     const supabaseUrl = process.env.SUPABASE_URL || 'https://ghfybenvdenuupiqgouf.supabase.co';
     const supabaseKey = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdoZnliZW52ZGVudXVwaXFnb3VmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NTgwNDIsImV4cCI6MjA5MDIzNDA0Mn0._ADsqO0uFMEwNJ1lTKc3_0sBuuN3Jvxa3-naDmdYK1k';
 
-    const upsertRes = await fetch(`${supabaseUrl}/rest/v1/bookmarks`, {
+    const upsertRes = await fetch(`${supabaseUrl}/rest/v1/bookmarks?on_conflict=url`, {
       method: 'POST',
       headers: {
         'apikey': supabaseKey,
