@@ -112,12 +112,8 @@ export default function Home() {
   const [omLinks, setOmLinks] = useState<Array<{ id: string; url: string; title: string; created_at: string }>>([]);
   const [omLinksLoading, setOmLinksLoading] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [archivedNotes, setArchivedNotes] = useState<Note[]>(() => {
-    try { return JSON.parse(localStorage.getItem('om-archived-notes') ?? '[]'); } catch { return []; }
-  });
-  const [archivedLinks, setArchivedLinks] = useState<Array<{ id: string; url: string; title: string; created_at: string }>>(() => {
-    try { return JSON.parse(localStorage.getItem('om-archived-links') ?? '[]'); } catch { return []; }
-  });
+  const [archivedNotes, setArchivedNotes] = useState<Note[]>([]);
+  const [archivedLinks, setArchivedLinks] = useState<Array<{ id: string; url: string; title: string; created_at: string }>>([]);
   const [showNotesArchive, setShowNotesArchive] = useState(false);
   const [showLinksArchive, setShowLinksArchive] = useState(false);
 
@@ -154,24 +150,29 @@ export default function Home() {
 
   // Load sticky notes from Supabase (via backend), fall back to localStorage
   useEffect(() => {
+    const mapNote = (n: { id: string; title: string | null; body: string | null; created_at: string; color_bg: string; color_text: string; pos_x: number | null; pos_y: number | null; image_data: string | null }, i: number): Note => ({
+      id: n.id,
+      title: n.title ?? '',
+      body: n.body ?? '',
+      createdAt: n.created_at,
+      color: { bg: n.color_bg, text: n.color_text },
+      x: n.pos_x ?? getDefaultPosition(i).x,
+      y: n.pos_y ?? getDefaultPosition(i).y,
+      ...(n.image_data ? { image: n.image_data } : {}),
+    });
+
     const init = async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/notes`);
+        const [res, archivedRes] = await Promise.all([
+          fetch(`${BACKEND_URL}/notes`),
+          fetch(`${BACKEND_URL}/archived-notes`),
+        ]);
         if (res.ok) {
           const data = await res.json();
-          const fromServer = (data.notes || []).map((n: { id: string; title: string | null; body: string | null; created_at: string; color_bg: string; color_text: string; pos_x: number | null; pos_y: number | null; image_data: string | null }, i: number) => ({
-            id: n.id,
-            title: n.title ?? '',
-            body: n.body ?? '',
-            createdAt: n.created_at,
-            color: { bg: n.color_bg, text: n.color_text },
-            x: n.pos_x ?? getDefaultPosition(i).x,
-            y: n.pos_y ?? getDefaultPosition(i).y,
-            ...(n.image_data ? { image: n.image_data } : {}),
-          }));
+          const fromServer: Note[] = (data.notes || []).map(mapNote);
 
           // One-time migration: push any localStorage notes not yet in Supabase
-          const serverIds = new Set(fromServer.map((n: { id: string }) => n.id));
+          const serverIds = new Set(fromServer.map((n) => n.id));
           try {
             const stored = localStorage.getItem("om-sticky-notes");
             if (stored) {
@@ -195,6 +196,10 @@ export default function Home() {
           } catch {}
 
           setNotes(fromServer);
+          if (archivedRes.ok) {
+            const archivedData = await archivedRes.json();
+            setArchivedNotes((archivedData.notes || []).map(mapNote));
+          }
           return;
         }
       } catch {}
@@ -225,13 +230,18 @@ export default function Home() {
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  // Fetch OM saved links when that sub-view is opened
+  // Fetch OM saved links + archived links when that sub-view is opened
   useEffect(() => {
     if (saveSubView !== 'links') return;
     setOmLinksLoading(true);
-    fetch(`${BACKEND_URL}/om-links`)
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(data => setOmLinks(data.links || []))
+    Promise.all([
+      fetch(`${BACKEND_URL}/om-links`).then(r => r.ok ? r.json() : Promise.reject()),
+      fetch(`${BACKEND_URL}/archived-links`).then(r => r.ok ? r.json() : Promise.reject()),
+    ])
+      .then(([activeData, archivedData]) => {
+        setOmLinks(activeData.links || []);
+        setArchivedLinks(archivedData.links || []);
+      })
       .catch(() => {})
       .finally(() => setOmLinksLoading(false));
   }, [saveSubView]);
@@ -488,13 +498,7 @@ export default function Home() {
 
   const deleteNote = async (id: string) => {
     const note = notes.find(n => n.id === id);
-    if (note) {
-      setArchivedNotes(prev => {
-        const next = [note, ...prev];
-        localStorage.setItem('om-archived-notes', JSON.stringify(next));
-        return next;
-      });
-    }
+    if (note) setArchivedNotes(prev => [note, ...prev]);
     setNotes(prev => prev.filter(n => n.id !== id));
     try {
       await fetch(`${BACKEND_URL}/notes/${id}`, { method: 'DELETE' });
@@ -502,27 +506,18 @@ export default function Home() {
   };
 
   const restoreNote = async (note: Note) => {
-    setArchivedNotes(prev => {
-      const next = prev.filter(n => n.id !== note.id);
-      localStorage.setItem('om-archived-notes', JSON.stringify(next));
-      return next;
-    });
+    setArchivedNotes(prev => prev.filter(n => n.id !== note.id));
     setNotes(prev => [note, ...prev]);
     try {
-      await fetch(`${BACKEND_URL}/notes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...note, image: note.image ?? null }),
-      });
+      await fetch(`${BACKEND_URL}/restore-note/${note.id}`, { method: 'POST' });
     } catch {}
   };
 
-  const permanentlyDeleteNote = (id: string) => {
-    setArchivedNotes(prev => {
-      const next = prev.filter(n => n.id !== id);
-      localStorage.setItem('om-archived-notes', JSON.stringify(next));
-      return next;
-    });
+  const permanentlyDeleteNote = async (id: string) => {
+    setArchivedNotes(prev => prev.filter(n => n.id !== id));
+    try {
+      await fetch(`${BACKEND_URL}/notes/${id}/permanent`, { method: 'DELETE' });
+    } catch {}
   };
 
   const onNoteDragStart = (e: React.PointerEvent<HTMLDivElement>, note: Note) => {
@@ -1017,17 +1012,13 @@ export default function Home() {
                             <div className="flex gap-1 flex-shrink-0">
                               <button
                                 onClick={async () => {
-                                  setArchivedLinks(prev => {
-                                    const next = prev.filter(l => l.id !== link.id);
-                                    localStorage.setItem('om-archived-links', JSON.stringify(next));
-                                    return next;
-                                  });
+                                  setArchivedLinks(prev => prev.filter(l => l.id !== link.id));
                                   setOmLinks(prev => [link, ...prev]);
                                   try {
                                     await fetch(`${BACKEND_URL}/restore-link`, {
                                       method: 'POST',
                                       headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ url: link.url, title: link.title }),
+                                      body: JSON.stringify({ url: link.url }),
                                     });
                                   } catch {}
                                 }}
@@ -1036,11 +1027,12 @@ export default function Home() {
                                 <ArchiveRestore className="w-3 h-3" /> Restore
                               </button>
                               <button
-                                onClick={() => setArchivedLinks(prev => {
-                                  const next = prev.filter(l => l.id !== link.id);
-                                  localStorage.setItem('om-archived-links', JSON.stringify(next));
-                                  return next;
-                                })}
+                                onClick={async () => {
+                                  setArchivedLinks(prev => prev.filter(l => l.id !== link.id));
+                                  try {
+                                    await fetch(`${BACKEND_URL}/om-link/permanent?url=${encodeURIComponent(link.url)}`, { method: 'DELETE' });
+                                  } catch {}
+                                }}
                                 className="flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md bg-red-50 text-red-400 hover:bg-red-100 transition-colors"
                               >
                                 <Trash2 className="w-3 h-3" />
@@ -1122,11 +1114,7 @@ export default function Home() {
                       </div>
                       <button
                         onClick={async () => {
-                          setArchivedLinks(prev => {
-                            const next = [link, ...prev];
-                            localStorage.setItem('om-archived-links', JSON.stringify(next));
-                            return next;
-                          });
+                          setArchivedLinks(prev => [link, ...prev]);
                           setOmLinks(prev => prev.filter(l => l.id !== link.id));
                           try {
                             await fetch(`${BACKEND_URL}/om-link?url=${encodeURIComponent(link.url)}`, { method: 'DELETE' });

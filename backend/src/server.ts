@@ -437,10 +437,24 @@ app.get('/notes', async (req, res) => {
   try {
     const cached = await getCache<object[]>('notes:all');
     if (cached) return res.json({ notes: cached });
-    const r = await fetch(`${SB_URL}/rest/v1/sticky_notes?select=*&order=created_at.desc`, { headers: sbHeaders });
+    const r = await fetch(`${SB_URL}/rest/v1/sticky_notes?select=*&archived=is.false&order=created_at.desc`, { headers: sbHeaders });
     if (!r.ok) return res.status(500).json({ error: await r.text() });
     const notes = await r.json();
     await setCache('notes:all', notes, TTL.NOTES);
+    res.json({ notes });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+app.get('/archived-notes', async (req, res) => {
+  try {
+    const cached = await getCache<object[]>('notes:archived');
+    if (cached) return res.json({ notes: cached });
+    const r = await fetch(`${SB_URL}/rest/v1/sticky_notes?select=*&archived=is.true&order=created_at.desc`, { headers: sbHeaders });
+    if (!r.ok) return res.status(500).json({ error: await r.text() });
+    const notes = await r.json();
+    await setCache('notes:archived', notes, TTL.NOTES);
     res.json({ notes });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
@@ -492,7 +506,7 @@ app.get('/om-links', async (req, res) => {
     const cached = await getCache<object[]>('om-links');
     if (cached) return res.json({ links: cached });
     const r = await fetch(
-      `${SB_URL}/rest/v1/bookmarks?folder=eq.OM&select=id,url,title,created_at&order=created_at.desc`,
+      `${SB_URL}/rest/v1/bookmarks?folder=eq.OM&archived=is.false&select=id,url,title,created_at&order=created_at.desc`,
       { headers: sbHeaders }
     );
     if (!r.ok) return res.status(500).json({ error: await r.text() });
@@ -504,28 +518,69 @@ app.get('/om-links', async (req, res) => {
   }
 });
 
+app.get('/archived-links', async (req, res) => {
+  try {
+    const cached = await getCache<object[]>('om-links:archived');
+    if (cached) return res.json({ links: cached });
+    const r = await fetch(
+      `${SB_URL}/rest/v1/bookmarks?folder=eq.OM&archived=is.true&select=id,url,title,created_at&order=created_at.desc`,
+      { headers: sbHeaders }
+    );
+    if (!r.ok) return res.status(500).json({ error: await r.text() });
+    const links = await r.json();
+    await setCache('om-links:archived', links, TTL.OM_LINKS);
+    res.json({ links });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
 /**
  * DELETE /om-link?url=URL
- * Removes an OM bookmark by URL.
+ * Archives an OM bookmark (sets archived=true).
  */
-app.post('/restore-link', async (req, res) => {
+app.delete('/om-link', async (req, res) => {
   try {
-    const { url, title } = req.body as { url?: string; title?: string };
+    const url = req.query.url as string;
     if (!url) return res.status(400).json({ error: 'url is required' });
-    const r = await fetch(`${SB_URL}/rest/v1/bookmarks`, {
-      method: 'POST',
-      headers: { ...sbHeaders, 'Prefer': 'resolution=merge-duplicates' },
-      body: JSON.stringify({ url, title: title ?? url, folder: 'OM' }),
-    });
+    const r = await fetch(
+      `${SB_URL}/rest/v1/bookmarks?url=eq.${encodeURIComponent(url)}&folder=eq.OM`,
+      { method: 'PATCH', headers: sbHeaders, body: JSON.stringify({ archived: true }) }
+    );
     if (!r.ok) return res.status(500).json({ error: await r.text() });
-    await invalidate('om-links');
+    await invalidate('om-links', 'om-links:archived');
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }
 });
 
-app.delete('/om-link', async (req, res) => {
+/**
+ * POST /restore-link
+ * Body: { url: string }
+ * Restores an archived OM link (sets archived=false).
+ */
+app.post('/restore-link', async (req, res) => {
+  try {
+    const { url } = req.body as { url?: string };
+    if (!url) return res.status(400).json({ error: 'url is required' });
+    const r = await fetch(
+      `${SB_URL}/rest/v1/bookmarks?url=eq.${encodeURIComponent(url)}&folder=eq.OM`,
+      { method: 'PATCH', headers: sbHeaders, body: JSON.stringify({ archived: false }) }
+    );
+    if (!r.ok) return res.status(500).json({ error: await r.text() });
+    await invalidate('om-links', 'om-links:archived');
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
+ * DELETE /om-link/permanent?url=URL
+ * Permanently deletes an archived OM link.
+ */
+app.delete('/om-link/permanent', async (req, res) => {
   try {
     const url = req.query.url as string;
     if (!url) return res.status(400).json({ error: 'url is required' });
@@ -534,7 +589,7 @@ app.delete('/om-link', async (req, res) => {
       { method: 'DELETE', headers: sbHeaders }
     );
     if (!r.ok) return res.status(500).json({ error: await r.text() });
-    await invalidate('om-links');
+    await invalidate('om-links:archived');
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
@@ -543,9 +598,49 @@ app.delete('/om-link', async (req, res) => {
 
 /**
  * DELETE /notes/:id
- * Deletes a sticky note by id. Response: { success: true }
+ * Archives a sticky note (sets archived=true). Response: { success: true }
  */
 app.delete('/notes/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const r = await fetch(`${SB_URL}/rest/v1/sticky_notes?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: sbHeaders,
+      body: JSON.stringify({ archived: true }),
+    });
+    if (!r.ok) return res.status(500).json({ error: await r.text() });
+    await invalidate('notes:all', 'notes:archived');
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
+ * POST /restore-note/:id
+ * Restores an archived note (sets archived=false). Response: { success: true }
+ */
+app.post('/restore-note/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const r = await fetch(`${SB_URL}/rest/v1/sticky_notes?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: sbHeaders,
+      body: JSON.stringify({ archived: false }),
+    });
+    if (!r.ok) return res.status(500).json({ error: await r.text() });
+    await invalidate('notes:all', 'notes:archived');
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
+ * DELETE /notes/:id/permanent
+ * Permanently deletes an archived note. Response: { success: true }
+ */
+app.delete('/notes/:id/permanent', async (req, res) => {
   try {
     const { id } = req.params;
     const r = await fetch(`${SB_URL}/rest/v1/sticky_notes?id=eq.${encodeURIComponent(id)}`, {
@@ -553,7 +648,7 @@ app.delete('/notes/:id', async (req, res) => {
       headers: sbHeaders,
     });
     if (!r.ok) return res.status(500).json({ error: await r.text() });
-    await invalidate('notes:all');
+    await invalidate('notes:archived');
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
