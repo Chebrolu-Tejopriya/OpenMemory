@@ -642,8 +642,8 @@ export default function Home() {
       </div>
       <div className="sm:hidden absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-[#ebfdff]/80 to-transparent z-10 pointer-events-none" />
 
-      {/* Video pause/play button — top right */}
-      {THEMES[themeIndex].type === "video" && (
+      {/* Video pause/play button — top right, search view only */}
+      {THEMES[themeIndex].type === "video" && activeView === "search" && (
         <button
           onClick={() => {
             const a = videoRef.current;
