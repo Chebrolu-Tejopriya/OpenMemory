@@ -234,16 +234,18 @@ export default function Home() {
   useEffect(() => {
     if (saveSubView !== 'links') return;
     setOmLinksLoading(true);
-    Promise.all([
-      fetch(`${BACKEND_URL}/om-links`).then(r => r.ok ? r.json() : Promise.reject()),
-      fetch(`${BACKEND_URL}/archived-links`).then(r => r.ok ? r.json() : Promise.reject()),
-    ])
-      .then(([activeData, archivedData]) => {
-        setOmLinks(activeData.links || []);
-        setArchivedLinks(archivedData.links || []);
-      })
-      .catch(() => {})
-      .finally(() => setOmLinksLoading(false));
+    const loadLinks = async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/om-links`);
+        if (r.ok) setOmLinks((await r.json()).links || []);
+      } catch {}
+      try {
+        const r = await fetch(`${BACKEND_URL}/archived-links`);
+        if (r.ok) setArchivedLinks((await r.json()).links || []);
+      } catch {}
+      setOmLinksLoading(false);
+    };
+    loadLinks();
   }, [saveSubView]);
 
   // Paste image when note modal is open
