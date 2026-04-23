@@ -988,7 +988,7 @@ export default function Home() {
               </button>
             </div>
 
-            <div className="pt-4 px-4">
+            <div className="flex-1 overflow-auto custom-scrollbar relative">
             {/* Links archive panel */}
             {showLinksArchive && (
               <div className="absolute inset-0 z-10 overflow-y-auto custom-scrollbar" style={{ background: 'rgba(242,249,247,0.97)', backdropFilter: 'blur(8px)' }}>
@@ -1050,6 +1050,7 @@ export default function Home() {
             )}
 
             {/* Add link input */}
+            <div className="pt-4 px-4">
             <div className="flex gap-2 mb-4 max-w-[600px] mx-auto">
               <input
                 type="url"
@@ -1131,7 +1132,8 @@ export default function Home() {
                 })}
               </div>
             )}
-            </div>{/* end inner scroll */}
+            </div>{/* end pt-4 px-4 */}
+            </div>{/* end flex-1 scroll */}
           </div>
         )}
 
