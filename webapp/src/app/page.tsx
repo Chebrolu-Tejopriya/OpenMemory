@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Pencil, Upload, Plus, ArchiveRestore, Trash2 } from "lucide-react";
+import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Pencil, Upload, Plus, ArchiveRestore, Trash2, Pause, Play } from "lucide-react";
 import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
@@ -116,6 +116,7 @@ export default function Home() {
   const [archivedLinks, setArchivedLinks] = useState<Array<{ id: string; url: string; title: string; created_at: string }>>([]);
   const [showNotesArchive, setShowNotesArchive] = useState(false);
   const [showLinksArchive, setShowLinksArchive] = useState(false);
+  const [videoPaused, setVideoPaused] = useState(false);
 
   // Mention / scope state
   const [mentionType, setMentionType] = useState<MentionType>(null);
@@ -640,6 +641,27 @@ export default function Home() {
         <Image src="/images/top-gradient.png" alt="" fill className="object-cover" priority />
       </div>
       <div className="sm:hidden absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-[#ebfdff]/80 to-transparent z-10 pointer-events-none" />
+
+      {/* Video pause/play button — top right */}
+      {THEMES[themeIndex].type === "video" && (
+        <button
+          onClick={() => {
+            const a = videoRef.current;
+            const b = videoBRef.current;
+            if (!a || !b) return;
+            if (videoPaused) { a.play().catch(() => {}); b.play().catch(() => {}); }
+            else { a.pause(); b.pause(); }
+            setVideoPaused(v => !v);
+          }}
+          className="absolute top-3 right-4 z-30 flex items-center justify-center w-8 h-8 rounded-full transition-all duration-200 hover:scale-110"
+          style={{ background: 'rgba(255,255,255,0.25)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.35)' }}
+          title={videoPaused ? 'Play background' : 'Pause background'}
+        >
+          {videoPaused
+            ? <Play className="w-3.5 h-3.5 text-white/80" fill="currentColor" />
+            : <Pause className="w-3.5 h-3.5 text-white/80" />}
+        </button>
+      )}
 
 
       {/* ══════════════════════════════════════════
