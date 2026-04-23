@@ -864,9 +864,9 @@ export default function Home() {
               className="flex items-center gap-1.5 text-xs font-medium transition-all"
               style={{ color: showNotesArchive ? '#5b9888' : 'rgba(58,58,58,0.4)', fontFamily: "var(--font-geist), sans-serif" }}
             >
-              <ArchiveRestore className="w-4 h-4" />
-              <span>Archive</span>
-              {archivedNotes.length > 0 && <span className="text-[10px] bg-[#5b9888] text-white rounded-full px-1.5 py-0.5 leading-none">{archivedNotes.length}</span>}
+              {showNotesArchive ? <X className="w-4 h-4" /> : <ArchiveRestore className="w-4 h-4" />}
+              <span>{showNotesArchive ? 'Close' : 'Archive'}</span>
+              {!showNotesArchive && archivedNotes.length > 0 && <span className="text-[10px] bg-[#5b9888] text-white rounded-full px-1.5 py-0.5 leading-none">{archivedNotes.length}</span>}
             </button>
           </div>
 
@@ -985,9 +985,9 @@ export default function Home() {
                 className="flex items-center gap-1.5 text-xs font-medium transition-all"
                 style={{ color: showLinksArchive ? '#5b9888' : 'rgba(58,58,58,0.4)', fontFamily: "var(--font-geist), sans-serif" }}
               >
-                <ArchiveRestore className="w-4 h-4" />
-                <span>Archive</span>
-                {archivedLinks.length > 0 && <span className="text-[10px] bg-[#5b9888] text-white rounded-full px-1.5 py-0.5 leading-none">{archivedLinks.length}</span>}
+                {showLinksArchive ? <X className="w-4 h-4" /> : <ArchiveRestore className="w-4 h-4" />}
+                <span>{showLinksArchive ? 'Close' : 'Archive'}</span>
+                {!showLinksArchive && archivedLinks.length > 0 && <span className="text-[10px] bg-[#5b9888] text-white rounded-full px-1.5 py-0.5 leading-none">{archivedLinks.length}</span>}
               </button>
             </div>
 
