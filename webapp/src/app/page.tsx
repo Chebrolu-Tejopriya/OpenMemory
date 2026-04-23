@@ -991,7 +991,7 @@ export default function Home() {
               </button>
             </div>
 
-            <div className="pt-4">
+            <div className="pt-4 px-4">
             {/* Links archive panel */}
             {showLinksArchive && (
               <div className="absolute inset-0 z-10 overflow-y-auto custom-scrollbar" style={{ background: 'rgba(242,249,247,0.97)', backdropFilter: 'blur(8px)' }}>
