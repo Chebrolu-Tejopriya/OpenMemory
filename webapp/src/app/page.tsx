@@ -63,11 +63,11 @@ function findEmptyPosition(existingNotes: { x: number; y: number }[]): { x: numb
   for (let row = 0; row < 50; row++) {
     for (let col = 0; col < cols; col++) {
       const x = 20 + col * W, y = 20 + row * H;
-      const occupied = existingNotes.some(n => Math.abs(n.x - x) < W - 10 && Math.abs(n.y - y) < H - 10);
+      const occupied = existingNotes.some(n => Math.abs(n.x - x) < W / 2 && Math.abs(n.y - y) < H / 2);
       if (!occupied) return { x, y };
     }
   }
-  return { x: 20, y: 20 + existingNotes.length * H };
+  return { x: 20, y: 20 };
 }
 
 function compressImage(file: File): Promise<string> {
