@@ -706,24 +706,16 @@ export async function searchSupabase(
 export async function getSupabaseFolders(): Promise<string[]> {
   try {
     const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/bookmarks?select=folder&order=folder.asc`,
-      {
-        method: 'GET',
-        headers: requestHeaders,
-      }
+      `${SUPABASE_URL}/rest/v1/bookmarks?select=folder&order=folder.asc&limit=2000`,
+      { method: 'GET', headers: { ...requestHeaders, 'Prefer': 'count=none' } }
     );
-
     if (!response.ok) {
       console.error('[Supabase] Failed to fetch folders:', response.status);
       return [];
     }
-
-    const data = await response.json();
+    const data: Array<{ folder: string | null }> = await response.json();
     const folders = new Set<string>();
-    data.forEach((item: { folder: string | null }) => {
-      if (item.folder) folders.add(item.folder);
-    });
-
+    data.forEach(item => { if (item.folder) folders.add(item.folder); });
     return Array.from(folders).sort();
   } catch (error) {
     console.error('[Supabase] Error fetching folders:', error);
@@ -737,24 +729,16 @@ export async function getSupabaseFolders(): Promise<string[]> {
 export async function getSupabaseBoards(): Promise<string[]> {
   try {
     const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/pinterest_pins?select=board_name&order=board_name.asc`,
-      {
-        method: 'GET',
-        headers: requestHeaders,
-      }
+      `${SUPABASE_URL}/rest/v1/pinterest_pins?select=board_name&order=board_name.asc&limit=2000`,
+      { method: 'GET', headers: { ...requestHeaders, 'Prefer': 'count=none' } }
     );
-
     if (!response.ok) {
       console.error('[Supabase] Failed to fetch boards:', response.status);
       return [];
     }
-
-    const data = await response.json();
+    const data: Array<{ board_name: string | null }> = await response.json();
     const boards = new Set<string>();
-    data.forEach((item: { board_name: string | null }) => {
-      if (item.board_name && !isHiddenBoard(item.board_name)) boards.add(item.board_name);
-    });
-
+    data.forEach(item => { if (item.board_name && !isHiddenBoard(item.board_name)) boards.add(item.board_name); });
     return Array.from(boards).sort();
   } catch (error) {
     console.error('[Supabase] Error fetching boards:', error);
