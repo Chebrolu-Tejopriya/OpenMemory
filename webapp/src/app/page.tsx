@@ -50,7 +50,7 @@ const NOTE_COLORS = [
 ];
 
 type NoteColor = typeof NOTE_COLORS[number];
-type Note = { id: string; title: string; body: string; createdAt: string; color: NoteColor; x: number; y: number; image?: string };
+type Note = { id: string; title: string; body: string; createdAt: string; color: NoteColor; x: number; y: number; images?: string[] };
 
 function getDefaultPosition(index: number): { x: number; y: number } {
   const cols = 4;
@@ -106,7 +106,7 @@ export default function Home() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [selectedNoteColor, setSelectedNoteColor] = useState<NoteColor>(NOTE_COLORS[1]);
-  const [noteImage, setNoteImage] = useState<string | null>(null);
+  const [noteImages, setNoteImages] = useState<string[]>([]);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [saveSubView, setSaveSubView] = useState<'notes' | 'links'>('notes');
   const [omLinks, setOmLinks] = useState<Array<{ id: string; url: string; title: string; created_at: string }>>([]);
@@ -159,7 +159,7 @@ export default function Home() {
       color: { bg: n.color_bg, text: n.color_text },
       x: n.pos_x ?? getDefaultPosition(i).x,
       y: n.pos_y ?? getDefaultPosition(i).y,
-      ...(n.image_data ? { image: n.image_data } : {}),
+      ...(n.image_data ? { images: (() => { try { const p = JSON.parse(n.image_data); return Array.isArray(p) ? p : [n.image_data]; } catch { return [n.image_data]; } })() } : {}),
     });
 
     const init = async () => {
@@ -259,7 +259,7 @@ export default function Home() {
       const file = imgItem.getAsFile();
       if (!file) return;
       const dataUrl = await compressImage(file);
-      setNoteImage(dataUrl);
+      setNoteImages(prev => [...prev, dataUrl]);
     };
     document.addEventListener('paste', handlePaste);
     return () => document.removeEventListener('paste', handlePaste);
@@ -454,18 +454,18 @@ export default function Home() {
 
     if (editingNote) {
       // ── Edit existing note ──
-      const updated: Note = { ...editingNote, title: noteTitle.trim(), body: noteBody.trim(), color: selectedNoteColor, image: noteImage ?? undefined };
+      const updated: Note = { ...editingNote, title: noteTitle.trim(), body: noteBody.trim(), color: selectedNoteColor, ...(noteImages.length > 0 ? { images: noteImages } : { images: undefined }) };
       setNotes(prev => prev.map(n => n.id === editingNote.id ? updated : n));
       setEditingNote(null);
       setNoteTitle("");
       setNoteBody("");
-      setNoteImage(null);
+      setNoteImages([]);
       setSavePanelMode(null);
       try {
         await fetch(`${BACKEND_URL}/notes`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...updated, image: updated.image ?? null }),
+          body: JSON.stringify({ ...updated, image: updated.images && updated.images.length > 0 ? JSON.stringify(updated.images) : null }),
         });
       } catch {}
     } else {
@@ -479,18 +479,18 @@ export default function Home() {
         color: selectedNoteColor,
         x: pos.x,
         y: pos.y,
-        ...(noteImage ? { image: noteImage } : {}),
+        ...(noteImages.length > 0 ? { images: noteImages } : {}),
       };
       setNotes(prev => [newNote, ...prev]);
       setNoteTitle("");
       setNoteBody("");
-      setNoteImage(null);
+      setNoteImages([]);
       setSavePanelMode(null);
       try {
         const r = await fetch(`${BACKEND_URL}/notes`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...newNote, image: newNote.image ?? null }),
+          body: JSON.stringify({ ...newNote, image: newNote.images && newNote.images.length > 0 ? JSON.stringify(newNote.images) : null }),
         });
         if (!r.ok) throw new Error('backend error');
       } catch {
@@ -934,19 +934,23 @@ export default function Home() {
                   key={note.id}
                   className="relative group rounded-[10px]"
                   style={{ breakInside: 'avoid', marginBottom: 12, background: note.color?.bg ?? '#fde68a', padding: 14, boxShadow: '0 2px 10px rgba(0,0,0,0.08)' }}
-                  onDoubleClick={() => { setEditingNote(note); setNoteTitle(note.title); setNoteBody(note.body); setSelectedNoteColor(note.color); setNoteImage(note.image ?? null); setSavePanelMode("note"); }}
+                  onDoubleClick={() => { setEditingNote(note); setNoteTitle(note.title); setNoteBody(note.body); setSelectedNoteColor(note.color); setNoteImages(note.images ?? []); setSavePanelMode("note"); }}
                 >
-                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg" style={{ padding: '3px 5px', background: note.image ? 'rgba(0,0,0,0.32)' : 'transparent' }}>
-                    <button onClick={() => { setEditingNote(note); setNoteTitle(note.title); setNoteBody(note.body); setSelectedNoteColor(note.color); setNoteImage(note.image ?? null); setSavePanelMode("note"); }} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.image ? 'white' : (note.color?.text ?? '#78350f') }}>
+                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg" style={{ padding: '3px 5px', background: note.images?.length ? 'rgba(0,0,0,0.32)' : 'transparent' }}>
+                    <button onClick={() => { setEditingNote(note); setNoteTitle(note.title); setNoteBody(note.body); setSelectedNoteColor(note.color); setNoteImages(note.images ?? []); setSavePanelMode("note"); }} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.images?.length ? 'white' : (note.color?.text ?? '#78350f') }}>
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
-                    <button onClick={() => deleteNote(note.id)} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.image ? 'white' : (note.color?.text ?? '#78350f') }}>
+                    <button onClick={() => deleteNote(note.id)} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.images?.length ? 'white' : (note.color?.text ?? '#78350f') }}>
                       <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
-                  {note.image && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={note.image} alt="" className="w-full rounded-md object-cover mb-1 cursor-zoom-in" style={{ maxHeight: 100 }} onClick={() => setLightboxImage(note.image!)} />
+                  {note.images && note.images.length > 0 && (
+                    <div className={`grid gap-1 mb-1 ${note.images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                      {note.images.slice(0, 4).map((img, idx) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img key={idx} src={img} alt="" className="w-full rounded-md object-cover cursor-zoom-in" style={{ maxHeight: note.images!.length === 1 ? 90 : 60 }} onClick={() => setLightboxImage(img)} />
+                      ))}
+                    </div>
                   )}
                   {note.title && <p className="text-sm font-semibold pr-5 leading-snug break-words" style={{ color: note.color?.text ?? '#78350f' }}>{note.title}</p>}
                   {note.body && <p className="text-xs whitespace-pre-wrap leading-relaxed opacity-80 mt-1 break-words" style={{ color: note.color?.text ?? '#78350f' }}>{note.body}</p>}
@@ -967,19 +971,23 @@ export default function Home() {
                   onPointerDown={(e) => onNoteDragStart(e, note)}
                   onPointerMove={(e) => onNoteDragMove(e, note.id)}
                   onPointerUp={(e) => onNoteDragEnd(e, note.id)}
-                  onDoubleClick={() => { setEditingNote(note); setNoteTitle(note.title); setNoteBody(note.body); setSelectedNoteColor(note.color); setNoteImage(note.image ?? null); setSavePanelMode("note"); }}
+                  onDoubleClick={() => { setEditingNote(note); setNoteTitle(note.title); setNoteBody(note.body); setSelectedNoteColor(note.color); setNoteImages(note.images ?? []); setSavePanelMode("note"); }}
                 >
-                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg" style={{ padding: '3px 5px', background: note.image ? 'rgba(0,0,0,0.32)' : 'transparent' }}>
-                    <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { setEditingNote(note); setNoteTitle(note.title); setNoteBody(note.body); setSelectedNoteColor(note.color); setNoteImage(note.image ?? null); setSavePanelMode("note"); }} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.image ? 'white' : (note.color?.text ?? '#78350f') }}>
+                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg" style={{ padding: '3px 5px', background: note.images?.length ? 'rgba(0,0,0,0.32)' : 'transparent' }}>
+                    <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { setEditingNote(note); setNoteTitle(note.title); setNoteBody(note.body); setSelectedNoteColor(note.color); setNoteImages(note.images ?? []); setSavePanelMode("note"); }} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.images?.length ? 'white' : (note.color?.text ?? '#78350f') }}>
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
-                    <button onPointerDown={(e) => e.stopPropagation()} onClick={() => deleteNote(note.id)} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.image ? 'white' : (note.color?.text ?? '#78350f') }}>
+                    <button onPointerDown={(e) => e.stopPropagation()} onClick={() => deleteNote(note.id)} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.images?.length ? 'white' : (note.color?.text ?? '#78350f') }}>
                       <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
-                  {note.image && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={note.image} alt="" className="w-full rounded-md object-cover mb-1" style={{ maxHeight: 120, cursor: 'zoom-in' }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setLightboxImage(note.image!); }} />
+                  {note.images && note.images.length > 0 && (
+                    <div className={`grid gap-1 mb-1 ${note.images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                      {note.images.slice(0, 4).map((img, idx) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img key={idx} src={img} alt="" className="w-full rounded-md object-cover" style={{ maxHeight: note.images!.length === 1 ? 110 : 70, cursor: 'zoom-in' }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setLightboxImage(img); }} />
+                      ))}
+                    </div>
                   )}
                   {note.title && <p className="text-sm font-semibold pr-5 leading-snug break-words" style={{ color: note.color?.text ?? '#78350f' }}>{note.title}</p>}
                   {note.body && <p className="text-xs whitespace-pre-wrap leading-relaxed opacity-80 mt-1 break-words" style={{ color: note.color?.text ?? '#78350f' }}>{note.body}</p>}
@@ -1162,8 +1170,8 @@ export default function Home() {
         {/* ── Note compose modal ── */}
         {savePanelMode === "note" && (() => {
           const noteColor = selectedNoteColor;
-          const closeModal = () => { setSavePanelMode(null); setEditingNote(null); setNoteTitle(""); setNoteBody(""); setNoteImage(null); };
-          const saveOrClose = () => { if (noteTitle.trim() || noteBody.trim() || noteImage) handleSaveNote(); else closeModal(); };
+          const closeModal = () => { setSavePanelMode(null); setEditingNote(null); setNoteTitle(""); setNoteBody(""); setNoteImages([]); };
+          const saveOrClose = () => { if (noteTitle.trim() || noteBody.trim() || noteImages.length > 0) handleSaveNote(); else closeModal(); };
           return (
             <div className="absolute inset-0 z-20 flex items-center justify-center p-6" onClick={(e) => { if (e.target === e.currentTarget) saveOrClose(); }}>
               <div
@@ -1171,29 +1179,35 @@ export default function Home() {
                 style={{ background: noteColor.bg, transition: 'background 0.2s ease' }}
               >
 
-                {/* Image preview (shown only when an image is attached) */}
-                {noteImage && (
-                  <div className="relative rounded-xl overflow-hidden">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={noteImage} alt="" className="w-full object-cover rounded-xl" style={{ maxHeight: 180 }} />
-                    <button
-                      type="button"
-                      onClick={() => setNoteImage(null)}
-                      className="absolute top-1.5 right-1.5 rounded-full p-0.5 flex items-center justify-center"
-                      style={{ background: 'rgba(0,0,0,0.45)', color: 'white' }}
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
+                {/* Image previews */}
+                {noteImages.length > 0 && (
+                  <div className={`grid gap-1.5 ${noteImages.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                    {noteImages.map((img, idx) => (
+                      <div key={idx} className="relative rounded-xl overflow-hidden">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={img} alt="" className="w-full object-cover rounded-xl" style={{ maxHeight: noteImages.length === 1 ? 180 : 100 }} />
+                        <button
+                          type="button"
+                          onClick={() => setNoteImages(prev => prev.filter((_, i) => i !== idx))}
+                          className="absolute top-1 right-1 rounded-full p-0.5 flex items-center justify-center"
+                          style={{ background: 'rgba(0,0,0,0.45)', color: 'white' }}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
+                  multiple
                   className="hidden"
                   onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (file) { const url = await compressImage(file); setNoteImage(url); }
+                    const files = Array.from(e.target.files ?? []);
+                    const urls = await Promise.all(files.map(compressImage));
+                    setNoteImages(prev => [...prev, ...urls]);
                     e.target.value = '';
                   }}
                 />
@@ -1241,7 +1255,7 @@ export default function Home() {
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className="ml-auto transition-opacity hover:opacity-80"
-                    style={{ color: noteColor.text, opacity: noteImage ? 1 : 0.4 }}
+                    style={{ color: noteColor.text, opacity: noteImages.length > 0 ? 1 : 0.4 }}
                     title="Attach image"
                   >
                     <Upload className="w-4 h-4" />
@@ -1321,7 +1335,7 @@ export default function Home() {
                   </button>
                   <div className="h-px" style={{ background: 'rgba(255,255,255,0.08)' }} />
                   <button
-                    onClick={() => { setSavePopoverOpen(false); setActiveView("save"); setSaveSubView('notes'); setNoteTitle(""); setNoteBody(""); setNoteImage(null); setSelectedNoteColor(NOTE_COLORS[notes.length % NOTE_COLORS.length]); setSavePanelMode("note"); }}
+                    onClick={() => { setSavePopoverOpen(false); setActiveView("save"); setSaveSubView('notes'); setNoteTitle(""); setNoteBody(""); setNoteImages([]); setSelectedNoteColor(NOTE_COLORS[notes.length % NOTE_COLORS.length]); setSavePanelMode("note"); }}
                     className="w-full flex items-center gap-3 px-4 py-3 text-white/80 hover:text-white transition-colors text-sm"
                     style={{ fontFamily: "var(--font-geist), sans-serif" }}
                   >
