@@ -57,6 +57,19 @@ function getDefaultPosition(index: number): { x: number; y: number } {
   return { x: 20 + (index % cols) * 222, y: 20 + Math.floor(index / cols) * 202 };
 }
 
+function findEmptyPosition(existingNotes: { x: number; y: number }[]): { x: number; y: number } {
+  const W = 222, H = 202;
+  const cols = 4;
+  for (let row = 0; row < 50; row++) {
+    for (let col = 0; col < cols; col++) {
+      const x = 20 + col * W, y = 20 + row * H;
+      const occupied = existingNotes.some(n => Math.abs(n.x - x) < W - 10 && Math.abs(n.y - y) < H - 10);
+      if (!occupied) return { x, y };
+    }
+  }
+  return { x: 20, y: 20 + existingNotes.length * H };
+}
+
 function compressImage(file: File): Promise<string> {
   return new Promise((resolve) => {
     const img = new globalThis.Image();
@@ -470,7 +483,7 @@ export default function Home() {
       } catch {}
     } else {
       // ── Create new note ──
-      const pos = getDefaultPosition(notes.length);
+      const pos = findEmptyPosition(notes);
       const newNote: Note = {
         id: Date.now().toString(),
         title: noteTitle.trim(),
