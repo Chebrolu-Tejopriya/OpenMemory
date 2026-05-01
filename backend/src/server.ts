@@ -15,11 +15,12 @@ import { getCache, setCache, invalidate } from './redis.js';
 
 // Cache TTLs (seconds)
 const TTL = {
-  SEARCH: 300,    // 5 min — search results
-  FOLDERS: 1800,  // 30 min — folder list rarely changes
-  BOARDS: 1800,   // 30 min — board list rarely changes
-  NOTES: 300,     // 5 min — notes list
-  OM_LINKS: 600,  // 10 min — saved links
+  SEARCH: 600,    // 10 min — search results
+  FOLDERS: 3600,  // 1 hr — folder list rarely changes
+  BOARDS: 3600,   // 1 hr — board list rarely changes
+  NOTES: 1800,    // 30 min — notes list (no image_data, safe to cache longer)
+  OM_LINKS: 1800, // 30 min — saved links
+  BROWSE: 1800,   // 30 min — browse results
 };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -144,10 +145,13 @@ app.get('/browse', async (req, res) => {
       return res.status(400).json({ error: 'source must be chrome or pinterest' });
     }
 
-    // folder/board is optional — omitting it returns ALL items for that source
     const folderOrBoard = (source === 'chrome' ? folder : board) ?? '';
+    const cacheKey = `browse:${source}:${folderOrBoard}`;
+    const cached = await getCache<object>(cacheKey);
+    if (cached) return res.json(cached);
 
     const result = await browseSupabase(source, folderOrBoard, maxItems);
+    await setCache(cacheKey, result, TTL.BROWSE);
     res.json(result);
   } catch (err) {
     console.error('Browse error:', err);
@@ -433,11 +437,14 @@ const sbHeaders = {
  * Returns all sticky notes ordered newest-first.
  * Response: { notes: StickyNote[] }
  */
+// image_data excluded from list — fetched on demand via GET /notes/:id
+const NOTES_LIST_SELECT = 'id,title,body,color_bg,color_text,created_at,pos_x,pos_y,archived';
+
 app.get('/notes', async (req, res) => {
   try {
     const cached = await getCache<object[]>('notes:all');
     if (cached) return res.json({ notes: cached });
-    const r = await fetch(`${SB_URL}/rest/v1/sticky_notes?select=*&archived=is.false&order=created_at.desc`, { headers: sbHeaders });
+    const r = await fetch(`${SB_URL}/rest/v1/sticky_notes?select=${NOTES_LIST_SELECT}&archived=is.false&order=created_at.desc`, { headers: sbHeaders });
     if (!r.ok) return res.status(500).json({ error: await r.text() });
     const notes = await r.json();
     await setCache('notes:all', notes, TTL.NOTES);
@@ -451,11 +458,28 @@ app.get('/archived-notes', async (req, res) => {
   try {
     const cached = await getCache<object[]>('notes:archived');
     if (cached) return res.json({ notes: cached });
-    const r = await fetch(`${SB_URL}/rest/v1/sticky_notes?select=*&archived=is.true&order=created_at.desc`, { headers: sbHeaders });
+    const r = await fetch(`${SB_URL}/rest/v1/sticky_notes?select=${NOTES_LIST_SELECT}&archived=is.true&order=created_at.desc`, { headers: sbHeaders });
     if (!r.ok) return res.status(500).json({ error: await r.text() });
     const notes = await r.json();
     await setCache('notes:archived', notes, TTL.NOTES);
     res.json({ notes });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
+ * GET /notes/:id
+ * Returns a single note with full data including image_data (not cached — called on demand).
+ */
+app.get('/notes/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const r = await fetch(`${SB_URL}/rest/v1/sticky_notes?id=eq.${encodeURIComponent(id)}&select=*&limit=1`, { headers: sbHeaders });
+    if (!r.ok) return res.status(500).json({ error: await r.text() });
+    const rows = await r.json();
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json({ note: rows[0] });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }

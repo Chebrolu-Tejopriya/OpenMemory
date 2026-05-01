@@ -513,6 +513,34 @@ export default function Home() {
     }
   };
 
+  const openNoteForEdit = async (note: Note) => {
+    setEditingNote(note);
+    setNoteTitle(note.title);
+    setNoteBody(note.body);
+    setSelectedNoteColor(note.color);
+    setSavePanelMode("note");
+    if (note.images !== undefined) {
+      setNoteImages(note.images);
+    } else {
+      setNoteImages([]);
+      try {
+        const r = await fetch(`${BACKEND_URL}/notes/${note.id}`);
+        if (r.ok) {
+          const data = await r.json();
+          const n = data.note;
+          if (n?.image_data) {
+            try {
+              const p = JSON.parse(n.image_data);
+              setNoteImages(Array.isArray(p) ? p : [n.image_data]);
+            } catch {
+              setNoteImages([n.image_data]);
+            }
+          }
+        }
+      } catch {}
+    }
+  };
+
   const deleteNote = async (id: string) => {
     const note = notes.find(n => n.id === id);
     if (note) setArchivedNotes(prev => [note, ...prev]);
@@ -948,10 +976,10 @@ export default function Home() {
                   key={note.id}
                   className="relative group rounded-[10px]"
                   style={{ breakInside: 'avoid', marginBottom: 12, background: note.color?.bg ?? '#fde68a', padding: 14, boxShadow: '0 2px 10px rgba(0,0,0,0.08)' }}
-                  onDoubleClick={() => { setEditingNote(note); setNoteTitle(note.title); setNoteBody(note.body); setSelectedNoteColor(note.color); setNoteImages(note.images ?? []); setSavePanelMode("note"); }}
+                  onDoubleClick={() => openNoteForEdit(note)}
                 >
                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg" style={{ padding: '3px 5px', background: note.images?.length ? 'rgba(0,0,0,0.32)' : 'transparent' }}>
-                    <button onClick={() => { setEditingNote(note); setNoteTitle(note.title); setNoteBody(note.body); setSelectedNoteColor(note.color); setNoteImages(note.images ?? []); setSavePanelMode("note"); }} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.images?.length ? 'white' : (note.color?.text ?? '#78350f') }}>
+                    <button onClick={() => openNoteForEdit(note)} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.images?.length ? 'white' : (note.color?.text ?? '#78350f') }}>
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button onClick={() => deleteNote(note.id)} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.images?.length ? 'white' : (note.color?.text ?? '#78350f') }}>
@@ -985,10 +1013,10 @@ export default function Home() {
                   onPointerDown={(e) => onNoteDragStart(e, note)}
                   onPointerMove={(e) => onNoteDragMove(e, note.id)}
                   onPointerUp={(e) => onNoteDragEnd(e, note.id)}
-                  onDoubleClick={() => { setEditingNote(note); setNoteTitle(note.title); setNoteBody(note.body); setSelectedNoteColor(note.color); setNoteImages(note.images ?? []); setSavePanelMode("note"); }}
+                  onDoubleClick={() => openNoteForEdit(note)}
                 >
                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg" style={{ padding: '3px 5px', background: note.images?.length ? 'rgba(0,0,0,0.32)' : 'transparent' }}>
-                    <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { setEditingNote(note); setNoteTitle(note.title); setNoteBody(note.body); setSelectedNoteColor(note.color); setNoteImages(note.images ?? []); setSavePanelMode("note"); }} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.images?.length ? 'white' : (note.color?.text ?? '#78350f') }}>
+                    <button onPointerDown={(e) => e.stopPropagation()} onClick={() => openNoteForEdit(note)} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.images?.length ? 'white' : (note.color?.text ?? '#78350f') }}>
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button onPointerDown={(e) => e.stopPropagation()} onClick={() => deleteNote(note.id)} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.images?.length ? 'white' : (note.color?.text ?? '#78350f') }}>
