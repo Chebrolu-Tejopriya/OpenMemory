@@ -59,11 +59,12 @@ function getDefaultPosition(index: number): { x: number; y: number } {
 
 function findEmptyPosition(existingNotes: { x: number; y: number }[]): { x: number; y: number } {
   const W = 222, H = 202;
-  const cols = 4;
+  const xThresh = W * 0.45, yThresh = H * 0.45;
+  const cols = 6;
   for (let row = 0; row < 50; row++) {
     for (let col = 0; col < cols; col++) {
       const x = 20 + col * W, y = 20 + row * H;
-      const occupied = existingNotes.some(n => Math.abs(n.x - x) < W / 2 && Math.abs(n.y - y) < H / 2);
+      const occupied = existingNotes.some(n => Math.abs(n.x - x) < xThresh && Math.abs(n.y - y) < yThresh);
       if (!occupied) return { x, y };
     }
   }
