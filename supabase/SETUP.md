@@ -102,7 +102,7 @@ The extension listens to these Chrome bookmark events:
   - New bookmarks
   - Bookmarks with title changes
 - Folder-only changes don't regenerate embeddings
-- Uses OpenAI `text-embedding-3-small` (1536 dimensions)
+- Uses 384-dimension embeddings
 
 ## API Reference
 

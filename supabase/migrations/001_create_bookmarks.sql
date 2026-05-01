@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS bookmarks (
   title TEXT NOT NULL,
   folder TEXT,
   chrome_id TEXT,
-  embedding vector(1536), -- OpenAI text-embedding-3-small dimension
+  embedding vector(384),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -26,8 +26,8 @@ WITH (m = 16, ef_construction = 64);
 
 -- Function to search bookmarks by vector similarity
 CREATE OR REPLACE FUNCTION search_bookmarks(
-  query_embedding vector(1536),
-  match_count INT DEFAULT 20,
+  query_embedding vector(384),
+  match_count INT DEFAULT 500,
   filter_folder TEXT DEFAULT NULL
 )
 RETURNS TABLE (
