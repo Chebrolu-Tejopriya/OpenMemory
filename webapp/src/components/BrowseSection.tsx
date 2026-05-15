@@ -12,9 +12,10 @@ interface BrowseSectionProps {
   folders: string[];
   boards: string[];
   constrained?: boolean;
+  active?: boolean;
 }
 
-export default function BrowseSection({ folders, boards, constrained = false }: BrowseSectionProps) {
+export default function BrowseSection({ folders, boards, constrained = false, active = true }: BrowseSectionProps) {
   const [activeTab, setActiveTab] = useState<BrowseTab>("bookmarks");
   const [selectedItem, setSelectedItem] = useState<string>("");
   const [cards, setCards] = useState<SearchResult[]>([]);
@@ -62,8 +63,8 @@ export default function BrowseSection({ folders, boards, constrained = false }: 
   }, [activeTab]);
 
   useEffect(() => {
-    if (selectedItem) fetchCards(selectedItem);
-  }, [selectedItem, fetchCards]);
+    if (selectedItem && active) fetchCards(selectedItem);
+  }, [selectedItem, fetchCards, active]);
 
   const list = (activeTab === "bookmarks" ? folders : boards)
     .slice()
