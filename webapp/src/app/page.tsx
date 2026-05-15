@@ -1342,12 +1342,12 @@ export default function Home() {
                 />
                 <textarea
                   value={noteBody}
-                  onChange={(e) => setNoteBody(e.target.value)}
+                  onChange={(e) => { setNoteBody(e.target.value); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
                   onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) saveOrClose(); if (e.key === "Escape") closeModal(); }}
                   placeholder="Type anything..."
-                  rows={4}
+                  rows={1}
                   className="w-full bg-transparent outline-none text-sm resize-none placeholder:opacity-40 leading-relaxed"
-                  style={{ color: noteColor.text, fontFamily: "var(--font-geist), sans-serif" }}
+                  style={{ color: noteColor.text, fontFamily: "var(--font-geist), sans-serif", overflow: 'hidden' }}
                 />
                 {/* Todo checklist — Notion-style */}
                 {noteTodos.length > 0 && (
