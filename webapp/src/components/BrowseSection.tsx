@@ -62,9 +62,16 @@ export default function BrowseSection({ folders, boards, constrained = false, ac
     }
   }, [activeTab]);
 
+  // Fetch when selected item changes (user clicks a different folder/board)
   useEffect(() => {
-    if (selectedItem && active) fetchCards(selectedItem);
-  }, [selectedItem, fetchCards, active]);
+    if (selectedItem) fetchCards(selectedItem);
+  }, [selectedItem, fetchCards]);
+
+  // Re-fetch when Collections tab is opened (active toggled true)
+  useEffect(() => {
+    if (active && selectedItem) fetchCards(selectedItem);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
 
   const list = (activeTab === "bookmarks" ? folders : boards)
     .slice()
