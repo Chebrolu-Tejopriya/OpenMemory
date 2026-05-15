@@ -919,19 +919,21 @@ export default function Home() {
         {/* ── NOTES canvas ── */}
         <div className={`relative z-10 h-full flex flex-col ${saveSubView !== 'notes' ? 'hidden' : ''}`}>
           {/* Header bar */}
-          <div className="flex-shrink-0 flex items-center gap-3 px-5 py-3 z-20" style={{ borderBottom: '1px solid rgba(91,152,136,0.12)', background: 'rgba(242,249,247,0.85)', backdropFilter: 'blur(8px)' }}>
+          <div className="flex-shrink-0 flex items-center px-5 py-3 z-20" style={{ borderBottom: '1px solid rgba(91,152,136,0.12)', background: 'rgba(242,249,247,0.85)', backdropFilter: 'blur(8px)' }}>
             <p className="text-sm font-semibold text-[#1a1a1a] flex-shrink-0" style={{ fontFamily: "var(--font-geist), sans-serif" }}>Notes</p>
-            <div className="flex-1 flex items-center gap-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(91,152,136,0.08)', border: '1px solid rgba(91,152,136,0.15)' }}>
-              <Search className="w-3 h-3 flex-shrink-0" style={{ color: 'rgba(91,152,136,0.6)' }} />
-              <input
-                type="text"
-                value={noteSearch}
-                onChange={e => setNoteSearch(e.target.value)}
-                placeholder="Search notes..."
-                className="flex-1 bg-transparent outline-none text-xs text-[#1a1a1a] placeholder:text-[#3a3a3a]/30 min-w-0"
-                style={{ fontFamily: "var(--font-geist), sans-serif" }}
-              />
-              {noteSearch && <button onClick={() => setNoteSearch('')}><X className="w-3 h-3" style={{ color: 'rgba(58,58,58,0.4)' }} /></button>}
+            <div className="flex-1 flex justify-center">
+              <div className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 w-1/2" style={{ background: 'rgba(91,152,136,0.08)', border: '1px solid rgba(91,152,136,0.15)' }}>
+                <Search className="w-3 h-3 flex-shrink-0" style={{ color: 'rgba(91,152,136,0.6)' }} />
+                <input
+                  type="text"
+                  value={noteSearch}
+                  onChange={e => setNoteSearch(e.target.value)}
+                  placeholder="Search notes..."
+                  className="flex-1 bg-transparent outline-none text-xs text-[#1a1a1a] placeholder:text-[#3a3a3a]/30 min-w-0"
+                  style={{ fontFamily: "var(--font-geist), sans-serif" }}
+                />
+                {noteSearch && <button onClick={() => setNoteSearch('')}><X className="w-3 h-3" style={{ color: 'rgba(58,58,58,0.4)' }} /></button>}
+              </div>
             </div>
             <button
               onClick={() => setShowNotesArchive(v => !v)}
