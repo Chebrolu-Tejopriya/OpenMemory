@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Pencil, Upload, Plus, ArchiveRestore, Trash2, Pause, Play } from "lucide-react";
+import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Pencil, Upload, Plus, ArchiveRestore, Trash2, Pause, Play, GripHorizontal } from "lucide-react";
 import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
@@ -131,6 +131,7 @@ export default function Home() {
   const [showNotesArchive, setShowNotesArchive] = useState(false);
   const [showLinksArchive, setShowLinksArchive] = useState(false);
   const [videoPaused, setVideoPaused] = useState(false);
+  const [noteSearch, setNoteSearch] = useState("");
 
   // Mention / scope state
   const [mentionType, setMentionType] = useState<MentionType>(null);
@@ -918,11 +919,23 @@ export default function Home() {
         {/* ── NOTES canvas ── */}
         <div className={`relative z-10 h-full flex flex-col ${saveSubView !== 'notes' ? 'hidden' : ''}`}>
           {/* Header bar */}
-          <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 z-20" style={{ borderBottom: '1px solid rgba(91,152,136,0.12)', background: 'rgba(242,249,247,0.85)', backdropFilter: 'blur(8px)' }}>
-            <p className="text-sm font-semibold text-[#1a1a1a]" style={{ fontFamily: "var(--font-geist), sans-serif" }}>Notes</p>
+          <div className="flex-shrink-0 flex items-center gap-3 px-5 py-3 z-20" style={{ borderBottom: '1px solid rgba(91,152,136,0.12)', background: 'rgba(242,249,247,0.85)', backdropFilter: 'blur(8px)' }}>
+            <p className="text-sm font-semibold text-[#1a1a1a] flex-shrink-0" style={{ fontFamily: "var(--font-geist), sans-serif" }}>Notes</p>
+            <div className="flex-1 flex items-center gap-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(91,152,136,0.08)', border: '1px solid rgba(91,152,136,0.15)' }}>
+              <Search className="w-3 h-3 flex-shrink-0" style={{ color: 'rgba(91,152,136,0.6)' }} />
+              <input
+                type="text"
+                value={noteSearch}
+                onChange={e => setNoteSearch(e.target.value)}
+                placeholder="Search notes..."
+                className="flex-1 bg-transparent outline-none text-xs text-[#1a1a1a] placeholder:text-[#3a3a3a]/30 min-w-0"
+                style={{ fontFamily: "var(--font-geist), sans-serif" }}
+              />
+              {noteSearch && <button onClick={() => setNoteSearch('')}><X className="w-3 h-3" style={{ color: 'rgba(58,58,58,0.4)' }} /></button>}
+            </div>
             <button
               onClick={() => setShowNotesArchive(v => !v)}
-              className="flex items-center gap-1.5 text-xs font-medium transition-all"
+              className="flex items-center gap-1.5 text-xs font-medium transition-all flex-shrink-0"
               style={{ color: showNotesArchive ? '#5b9888' : 'rgba(58,58,58,0.4)', fontFamily: "var(--font-geist), sans-serif" }}
             >
               {showNotesArchive ? <X className="w-4 h-4" /> : <ArchiveRestore className="w-4 h-4" />}
@@ -963,15 +976,24 @@ export default function Home() {
               </div>
             </div>
           )}
-          {notes.length === 0 ? (
+          {(() => {
+            const filteredNotes = noteSearch.trim()
+              ? notes.filter(n => n.title.toLowerCase().includes(noteSearch.toLowerCase()) || n.body.toLowerCase().includes(noteSearch.toLowerCase()))
+              : notes;
+            return notes.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center select-none pointer-events-none">
               <StickyNote className="w-10 h-10 text-[#5b9888]/20 mb-3" />
               <p className="text-sm text-[#3a3a3a]/25 font-medium">Hit + to add a note</p>
             </div>
+          ) : filteredNotes.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center select-none pointer-events-none">
+              <Search className="w-8 h-8 text-[#5b9888]/20 mb-2" />
+              <p className="text-sm text-[#3a3a3a]/25">No notes match &quot;{noteSearch}&quot;</p>
+            </div>
           ) : isMobile ? (
             /* ── Mobile: 2-column grid, LIFO, no drag ── */
             <div style={{ columns: 2, columnGap: 12, padding: 16, paddingBottom: 128 }}>
-              {notes.map((note) => (
+              {filteredNotes.map((note) => (
                 <div
                   key={note.id}
                   className="relative group rounded-[10px]"
@@ -1005,16 +1027,20 @@ export default function Home() {
           ) : (
             /* ── Desktop: freely positionable, draggable ── */
             <div className="relative" style={{ minWidth: '100%', minHeight: 'calc(100% + 200px)' }}>
-              {notes.map((note) => (
+              {filteredNotes.map((note) => (
                 <div
                   key={note.id}
                   className="absolute group select-none"
-                  style={{ left: note.x, top: note.y, width: 200, background: note.color?.bg ?? '#fde68a', borderRadius: 10, padding: 14, boxShadow: '0 2px 12px rgba(0,0,0,0.10)', cursor: 'grab', touchAction: 'none' }}
+                  style={{ left: note.x, top: note.y, width: 200, background: note.color?.bg ?? '#fde68a', borderRadius: 10, paddingBottom: 14, paddingLeft: 14, paddingRight: 14, paddingTop: 8, boxShadow: '0 2px 12px rgba(0,0,0,0.10)', cursor: 'grab', touchAction: 'none' }}
                   onPointerDown={(e) => onNoteDragStart(e, note)}
                   onPointerMove={(e) => onNoteDragMove(e, note.id)}
                   onPointerUp={(e) => onNoteDragEnd(e, note.id)}
                   onDoubleClick={() => openNoteForEdit(note)}
                 >
+                  {/* Drag handle */}
+                  <div className="flex justify-center mb-1.5 opacity-30 group-hover:opacity-60 transition-opacity" style={{ color: note.color?.text ?? '#78350f' }}>
+                    <GripHorizontal className="w-4 h-4" />
+                  </div>
                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg" style={{ padding: '3px 5px', background: note.images?.length ? 'rgba(0,0,0,0.32)' : 'transparent' }}>
                     <button onPointerDown={(e) => e.stopPropagation()} onClick={() => openNoteForEdit(note)} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.images?.length ? 'white' : (note.color?.text ?? '#78350f') }}>
                       <Pencil className="w-3.5 h-3.5" />
@@ -1039,7 +1065,8 @@ export default function Home() {
                 </div>
               ))}
             </div>
-          )}
+          );
+          })()}
           </div>{/* end inner scroll */}
         </div>
 
