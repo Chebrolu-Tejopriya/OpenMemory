@@ -147,8 +147,8 @@ app.get('/browse', async (req, res) => {
 
     const folderOrBoard = (source === 'chrome' ? folder : board) ?? '';
     const cacheKey = `browse:${source}:${folderOrBoard}`;
-    const cached = await getCache<object>(cacheKey);
-    if (cached) return res.json(cached);
+    const cached = await getCache<{ results: unknown[] }>(cacheKey);
+    if (cached && cached.results?.length > 0) return res.json(cached);
 
     const result = await browseSupabase(source, folderOrBoard, maxItems);
     if (result.results.length > 0) await setCache(cacheKey, result, TTL.BROWSE);
