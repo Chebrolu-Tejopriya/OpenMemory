@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Pencil, Upload, Plus, ArchiveRestore, Trash2, Pause, Play, GripHorizontal } from "lucide-react";
+import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Pencil, Upload, Plus, ArchiveRestore, Trash2, Pause, Play, GripHorizontal, ListTodo, Square, CheckSquare2 } from "lucide-react";
 import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
@@ -50,7 +50,8 @@ const NOTE_COLORS = [
 ];
 
 type NoteColor = typeof NOTE_COLORS[number];
-type Note = { id: string; title: string; body: string; createdAt: string; color: NoteColor; x: number; y: number; images?: string[] };
+type TodoItem = { id: string; text: string; done: boolean };
+type Note = { id: string; title: string; body: string; createdAt: string; color: NoteColor; x: number; y: number; images?: string[]; todos?: TodoItem[] };
 
 function getDefaultPosition(index: number): { x: number; y: number } {
   const cols = 4;
@@ -117,6 +118,8 @@ export default function Home() {
   const [saveResult, setSaveResult] = useState<{ success: boolean; title?: string; error?: string } | null>(null);
   const [noteTitle, setNoteTitle] = useState("");
   const [noteBody, setNoteBody] = useState("");
+  const [noteTodos, setNoteTodos] = useState<TodoItem[]>([]);
+  const [noteTodoInput, setNoteTodoInput] = useState("");
   const [notes, setNotes] = useState<Note[]>([]);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [selectedNoteColor, setSelectedNoteColor] = useState<NoteColor>(NOTE_COLORS[1]);
@@ -166,7 +169,7 @@ export default function Home() {
 
   // Load sticky notes from Supabase (via backend), fall back to localStorage
   useEffect(() => {
-    const mapNote = (n: { id: string; title: string | null; body: string | null; created_at: string; color_bg: string; color_text: string; pos_x: number | null; pos_y: number | null; image_data: string | null }, i: number): Note => ({
+    const mapNote = (n: { id: string; title: string | null; body: string | null; created_at: string; color_bg: string; color_text: string; pos_x: number | null; pos_y: number | null; image_data: string | null; todos?: string | null }, i: number): Note => ({
       id: n.id,
       title: n.title ?? '',
       body: n.body ?? '',
@@ -175,6 +178,7 @@ export default function Home() {
       x: n.pos_x ?? getDefaultPosition(i).x,
       y: n.pos_y ?? getDefaultPosition(i).y,
       ...(n.image_data ? { images: (() => { try { const p = JSON.parse(n.image_data); return Array.isArray(p) ? p : [n.image_data]; } catch { return [n.image_data]; } })() } : {}),
+      ...(n.todos ? { todos: (() => { try { return JSON.parse(n.todos!); } catch { return []; } })() } : {}),
     });
 
     const init = async () => {
@@ -465,22 +469,26 @@ export default function Home() {
   };
 
   const handleSaveNote = async () => {
-    if (!noteBody.trim() && !noteTitle.trim()) return;
+    if (!noteBody.trim() && !noteTitle.trim() && noteTodos.length === 0) return;
+
+    const todosToSave = noteTodos.filter(t => t.text.trim());
 
     if (editingNote) {
       // ── Edit existing note ──
-      const updated: Note = { ...editingNote, title: noteTitle.trim(), body: noteBody.trim(), color: selectedNoteColor, ...(noteImages.length > 0 ? { images: noteImages } : { images: undefined }) };
+      const updated: Note = { ...editingNote, title: noteTitle.trim(), body: noteBody.trim(), color: selectedNoteColor, ...(noteImages.length > 0 ? { images: noteImages } : { images: undefined }), ...(todosToSave.length > 0 ? { todos: todosToSave } : { todos: undefined }) };
       setNotes(prev => prev.map(n => n.id === editingNote.id ? updated : n));
       setEditingNote(null);
       setNoteTitle("");
       setNoteBody("");
       setNoteImages([]);
+      setNoteTodos([]);
+      setNoteTodoInput("");
       setSavePanelMode(null);
       try {
         await fetch(`${BACKEND_URL}/notes`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...updated, image: updated.images && updated.images.length > 0 ? JSON.stringify(updated.images) : null }),
+          body: JSON.stringify({ ...updated, image: updated.images && updated.images.length > 0 ? JSON.stringify(updated.images) : null, todos: todosToSave.length > 0 ? JSON.stringify(todosToSave) : null }),
         });
       } catch {}
     } else {
@@ -495,17 +503,20 @@ export default function Home() {
         x: pos.x,
         y: pos.y,
         ...(noteImages.length > 0 ? { images: noteImages } : {}),
+        ...(todosToSave.length > 0 ? { todos: todosToSave } : {}),
       };
       setNotes(prev => [newNote, ...prev]);
       setNoteTitle("");
       setNoteBody("");
       setNoteImages([]);
+      setNoteTodos([]);
+      setNoteTodoInput("");
       setSavePanelMode(null);
       try {
         const r = await fetch(`${BACKEND_URL}/notes`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...newNote, image: newNote.images && newNote.images.length > 0 ? JSON.stringify(newNote.images) : null }),
+          body: JSON.stringify({ ...newNote, image: newNote.images && newNote.images.length > 0 ? JSON.stringify(newNote.images) : null, todos: todosToSave.length > 0 ? JSON.stringify(todosToSave) : null }),
         });
         if (!r.ok) throw new Error('backend error');
       } catch {
@@ -519,6 +530,8 @@ export default function Home() {
     setNoteTitle(note.title);
     setNoteBody(note.body);
     setSelectedNoteColor(note.color);
+    setNoteTodos(note.todos ?? []);
+    setNoteTodoInput("");
     setSavePanelMode("note");
     if (note.images !== undefined) {
       setNoteImages(note.images);
@@ -540,6 +553,21 @@ export default function Home() {
         }
       } catch {}
     }
+  };
+
+  const toggleTodoItem = async (noteId: string, todoId: string) => {
+    const note = notes.find(n => n.id === noteId);
+    if (!note?.todos) return;
+    const updated = note.todos.map(t => t.id === todoId ? { ...t, done: !t.done } : t);
+    const updatedNote = { ...note, todos: updated };
+    setNotes(prev => prev.map(n => n.id === noteId ? updatedNote : n));
+    try {
+      await fetch(`${BACKEND_URL}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...updatedNote, image: updatedNote.images?.length ? JSON.stringify(updatedNote.images) : null, todos: JSON.stringify(updated) }),
+      });
+    } catch {}
   };
 
   const deleteNote = async (id: string) => {
@@ -1020,6 +1048,16 @@ export default function Home() {
                   )}
                   {note.title && <p className="text-sm font-semibold pr-5 leading-snug break-words" style={{ color: note.color?.text ?? '#78350f' }}>{note.title}</p>}
                   {note.body && <p className="text-xs whitespace-pre-wrap leading-relaxed opacity-80 mt-1 break-words pr-5" style={{ color: note.color?.text ?? '#78350f' }}>{note.body}</p>}
+                  {note.todos && note.todos.length > 0 && (
+                    <div className="flex flex-col gap-1 mt-2">
+                      {note.todos.map(todo => (
+                        <button key={todo.id} type="button" onClick={(e) => { e.stopPropagation(); toggleTodoItem(note.id, todo.id); }} className="flex items-center gap-1.5 text-left">
+                          {todo.done ? <CheckSquare2 className="w-3.5 h-3.5 flex-shrink-0" style={{ color: note.color?.text ?? '#78350f', opacity: 0.5 }} /> : <Square className="w-3.5 h-3.5 flex-shrink-0" style={{ color: note.color?.text ?? '#78350f', opacity: 0.7 }} />}
+                          <span className="text-xs leading-snug" style={{ color: note.color?.text ?? '#78350f', opacity: todo.done ? 0.45 : 0.8, textDecoration: todo.done ? 'line-through' : 'none' }}>{todo.text}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <p className="text-[10px] opacity-40 mt-3" style={{ color: note.color?.text ?? '#78350f' }}>
                     {new Date(note.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · {new Date(note.createdAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
                   </p>
@@ -1061,6 +1099,16 @@ export default function Home() {
                   )}
                   {note.title && <p className="text-sm font-semibold pr-5 leading-snug break-words" style={{ color: note.color?.text ?? '#78350f' }}>{note.title}</p>}
                   {note.body && <p className="text-xs whitespace-pre-wrap leading-relaxed opacity-80 mt-1 break-words pr-5" style={{ color: note.color?.text ?? '#78350f' }}>{note.body}</p>}
+                  {note.todos && note.todos.length > 0 && (
+                    <div className="flex flex-col gap-1 mt-2">
+                      {note.todos.map(todo => (
+                        <button key={todo.id} type="button" onClick={(e) => { e.stopPropagation(); toggleTodoItem(note.id, todo.id); }} className="flex items-center gap-1.5 text-left">
+                          {todo.done ? <CheckSquare2 className="w-3.5 h-3.5 flex-shrink-0" style={{ color: note.color?.text ?? '#78350f', opacity: 0.5 }} /> : <Square className="w-3.5 h-3.5 flex-shrink-0" style={{ color: note.color?.text ?? '#78350f', opacity: 0.7 }} />}
+                          <span className="text-xs leading-snug" style={{ color: note.color?.text ?? '#78350f', opacity: todo.done ? 0.45 : 0.8, textDecoration: todo.done ? 'line-through' : 'none' }}>{todo.text}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <p className="text-[10px] opacity-40 mt-3" style={{ color: note.color?.text ?? '#78350f' }}>
                     {new Date(note.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · {new Date(note.createdAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
                   </p>
@@ -1241,8 +1289,8 @@ export default function Home() {
         {/* ── Note compose modal ── */}
         {savePanelMode === "note" && (() => {
           const noteColor = selectedNoteColor;
-          const closeModal = () => { setSavePanelMode(null); setEditingNote(null); setNoteTitle(""); setNoteBody(""); setNoteImages([]); };
-          const saveOrClose = () => { if (noteTitle.trim() || noteBody.trim() || noteImages.length > 0) handleSaveNote(); else closeModal(); };
+          const closeModal = () => { setSavePanelMode(null); setEditingNote(null); setNoteTitle(""); setNoteBody(""); setNoteImages([]); setNoteTodos([]); setNoteTodoInput(""); };
+          const saveOrClose = () => { if (noteTitle.trim() || noteBody.trim() || noteImages.length > 0 || noteTodos.some(t => t.text.trim())) handleSaveNote(); else closeModal(); };
           return (
             <div className="absolute inset-0 z-20 flex items-center justify-center p-6" onClick={(e) => { if (e.target === e.currentTarget) saveOrClose(); }}>
               <div
@@ -1301,7 +1349,33 @@ export default function Home() {
                   className="w-full bg-transparent outline-none text-sm resize-none placeholder:opacity-40 leading-relaxed"
                   style={{ color: noteColor.text, fontFamily: "var(--font-geist), sans-serif" }}
                 />
-                {/* Color picker + image icon */}
+                {/* Todo checklist */}
+                {noteTodos.length > 0 && (
+                  <div className="flex flex-col gap-1">
+                    {noteTodos.map((todo) => (
+                      <div key={todo.id} className="flex items-center gap-2 group">
+                        <button type="button" onClick={() => setNoteTodos(prev => prev.map(t => t.id === todo.id ? { ...t, done: !t.done } : t))} style={{ color: noteColor.text, opacity: todo.done ? 0.5 : 1, flexShrink: 0 }}>
+                          {todo.done ? <CheckSquare2 className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                        </button>
+                        <input
+                          type="text"
+                          value={todo.text}
+                          onChange={e => setNoteTodos(prev => prev.map(t => t.id === todo.id ? { ...t, text: e.target.value } : t))}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); setNoteTodos(prev => [...prev, { id: Date.now().toString(), text: '', done: false }]); setTimeout(() => { const inputs = document.querySelectorAll('[data-todo-input]'); (inputs[inputs.length - 1] as HTMLInputElement)?.focus(); }, 0); } if (e.key === 'Backspace' && todo.text === '') { e.preventDefault(); setNoteTodos(prev => prev.filter(t => t.id !== todo.id)); } }}
+                          data-todo-input
+                          placeholder="List item"
+                          className="flex-1 bg-transparent outline-none text-sm"
+                          style={{ color: noteColor.text, opacity: todo.done ? 0.5 : 1, textDecoration: todo.done ? 'line-through' : 'none', fontFamily: "var(--font-geist), sans-serif" }}
+                        />
+                        <button type="button" onClick={() => setNoteTodos(prev => prev.filter(t => t.id !== todo.id))} className="opacity-0 group-hover:opacity-40 hover:!opacity-70 transition-opacity" style={{ color: noteColor.text }}>
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Color picker + image + checklist toggle */}
                 <div className="flex items-center gap-2.5">
                   {NOTE_COLORS.map((c, i) => (
                     <button
@@ -1324,8 +1398,17 @@ export default function Home() {
                   ))}
                   <button
                     type="button"
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => { setNoteTodos(prev => [...prev, { id: Date.now().toString(), text: '', done: false }]); setTimeout(() => { const inputs = document.querySelectorAll('[data-todo-input]'); (inputs[inputs.length - 1] as HTMLInputElement)?.focus(); }, 0); }}
                     className="ml-auto transition-opacity hover:opacity-80"
+                    style={{ color: noteColor.text, opacity: noteTodos.length > 0 ? 1 : 0.4 }}
+                    title="Add checklist item"
+                  >
+                    <ListTodo className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="transition-opacity hover:opacity-80"
                     style={{ color: noteColor.text, opacity: noteImages.length > 0 ? 1 : 0.4 }}
                     title="Attach image"
                   >
