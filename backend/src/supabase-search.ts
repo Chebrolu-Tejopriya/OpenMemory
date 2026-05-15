@@ -729,7 +729,7 @@ export async function getSupabaseFolders(): Promise<string[]> {
 export async function getSupabaseBoards(): Promise<string[]> {
   try {
     const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/pinterest_pins?select=board_name&order=board_name.asc&limit=2000`,
+      `${SUPABASE_URL}/rest/v1/pinterest_boards?select=board_name&order=board_name.asc&limit=2000`,
       { method: 'GET', headers: { ...requestHeaders, 'Prefer': 'count=none' } }
     );
     if (!response.ok) {
