@@ -694,14 +694,16 @@ app.post('/telegram-webhook', async (req, res) => {
       message?: {
         chat?: { id: number };
         text?: string;
+        caption?: string;
+        photo?: unknown[];
         entities?: Array<{ type: string; offset: number; length: number }>;
+        caption_entities?: Array<{ type: string; offset: number; length: number }>;
       };
     };
 
-    if (!message?.text || !message?.chat?.id) return;
+    if (!message?.chat?.id) return;
 
     const chatId = message.chat.id;
-    const text = message.text.trim();
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     if (!botToken) { console.error('TELEGRAM_BOT_TOKEN not set'); return; }
 
@@ -713,8 +715,22 @@ app.post('/telegram-webhook', async (req, res) => {
       });
     };
 
+    // Image with no text: reply unsupported
+    if (message.photo && !message.caption) {
+      await sendReply('🖼️ Images aren\'t supported. Send a link or some text.');
+      return;
+    }
+
+    // Use caption as text if it's a photo with caption
+    const rawText = message.photo ? message.caption! : message.text;
+    const entities = message.photo ? (message.caption_entities ?? []) : (message.entities ?? []);
+
+    if (!rawText) return;
+
+    const text = rawText.trim();
+
     // Detect URLs: check Telegram entities or URL pattern
-    const urlEntity = message.entities?.find(e => e.type === 'url' || e.type === 'text_link');
+    const urlEntity = entities.find(e => e.type === 'url' || e.type === 'text_link');
     const urlPattern = /^https?:\/\/\S+$/i;
     const isUrl = !!urlEntity || urlPattern.test(text);
 
