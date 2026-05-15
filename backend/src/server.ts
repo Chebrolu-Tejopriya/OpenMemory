@@ -358,7 +358,7 @@ app.post('/save-link', async (req, res) => {
       return res.status(500).json({ error: 'Failed to save to Supabase' });
     }
 
-    await invalidate('om-links', 'folders');
+    await invalidate('om-links', 'folders', 'browse:chrome:OM');
     res.json({ success: true, title, url: cleanUrl });
   } catch (err) {
     console.error('Save link error:', err);
@@ -750,7 +750,7 @@ app.post('/telegram-webhook', async (req, res) => {
       });
 
       if (upsertRes.ok) {
-        await invalidate('om-links', 'folders');
+        await invalidate('om-links', 'folders', 'browse:chrome:OM');
         await sendReply(`✅ Link saved!\n${title}`);
       } else {
         console.error('Telegram save-link error:', await upsertRes.text());
