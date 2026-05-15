@@ -20,7 +20,7 @@ const TTL = {
   BOARDS: 3600,   // 1 hr — board list rarely changes
   NOTES: 1800,    // 30 min — notes list (no image_data, safe to cache longer)
   OM_LINKS: 1800, // 30 min — saved links
-  BROWSE: 1800,   // 30 min — browse results
+  BROWSE: 7200,   // 2 hr — browse results (canvas fetches all bookmarks+pins)
 };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

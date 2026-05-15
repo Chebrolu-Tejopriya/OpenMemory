@@ -113,7 +113,7 @@ function Card({ result, style }: { result: SearchResult; style: React.CSSPropert
 // ── CanvasView ─────────────────────────────────────────────────────────────
 interface Props { folders: string[]; boards: string[]; active: boolean }
 
-export default function CanvasView({ folders: _folders, boards: _boards, active: _active }: Props) {
+export default function CanvasView({ folders: _folders, boards: _boards, active }: Props) {
   const [items, setItems] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const hasFetched = useRef(false);
@@ -133,9 +133,9 @@ export default function CanvasView({ folders: _folders, boards: _boards, active:
   const raf = useRef<number | null>(null);
   const ptrHistory = useRef<{ x: number; y: number; t: number }[]>([]);
 
-  // ── Fetch eagerly on mount — so data is ready by the time user opens canvas ─
+  // ── Fetch only when canvas tab is first opened ───────────────────────────
   useEffect(() => {
-    if (hasFetched.current) return;
+    if (!active || hasFetched.current) return;
     hasFetched.current = true;
     setLoading(true);
 
