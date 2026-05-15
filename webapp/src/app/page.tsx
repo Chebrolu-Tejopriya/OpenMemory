@@ -1349,29 +1349,55 @@ export default function Home() {
                   className="w-full bg-transparent outline-none text-sm resize-none placeholder:opacity-40 leading-relaxed"
                   style={{ color: noteColor.text, fontFamily: "var(--font-geist), sans-serif" }}
                 />
-                {/* Todo checklist */}
+                {/* Todo checklist — Notion-style */}
                 {noteTodos.length > 0 && (
-                  <div className="flex flex-col gap-1">
-                    {noteTodos.map((todo) => (
-                      <div key={todo.id} className="flex items-center gap-2 group">
-                        <button type="button" onClick={() => setNoteTodos(prev => prev.map(t => t.id === todo.id ? { ...t, done: !t.done } : t))} style={{ color: noteColor.text, opacity: todo.done ? 0.5 : 1, flexShrink: 0 }}>
+                  <div className="flex flex-col rounded-xl overflow-hidden" style={{ border: `1px solid ${noteColor.text}18`, background: `${noteColor.text}06` }}>
+                    {noteTodos.map((todo, idx) => (
+                      <div key={todo.id} className="flex items-center gap-2 group px-3 py-2" style={{ borderBottom: idx < noteTodos.length - 1 ? `1px solid ${noteColor.text}10` : 'none' }}>
+                        <button
+                          type="button"
+                          onClick={() => setNoteTodos(prev => prev.map(t => t.id === todo.id ? { ...t, done: !t.done } : t))}
+                          className="flex-shrink-0 transition-opacity"
+                          style={{ color: noteColor.text, opacity: todo.done ? 0.45 : 0.7 }}
+                        >
                           {todo.done ? <CheckSquare2 className="w-4 h-4" /> : <Square className="w-4 h-4" />}
                         </button>
                         <input
                           type="text"
                           value={todo.text}
                           onChange={e => setNoteTodos(prev => prev.map(t => t.id === todo.id ? { ...t, text: e.target.value } : t))}
-                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); setNoteTodos(prev => [...prev, { id: Date.now().toString(), text: '', done: false }]); setTimeout(() => { const inputs = document.querySelectorAll('[data-todo-input]'); (inputs[inputs.length - 1] as HTMLInputElement)?.focus(); }, 0); } if (e.key === 'Backspace' && todo.text === '') { e.preventDefault(); setNoteTodos(prev => prev.filter(t => t.id !== todo.id)); } }}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const newId = Date.now().toString();
+                              setNoteTodos(prev => [...prev, { id: newId, text: '', done: false }]);
+                              setTimeout(() => { const inputs = document.querySelectorAll('[data-todo-input]'); (inputs[inputs.length - 1] as HTMLInputElement)?.focus(); }, 0);
+                            }
+                            if (e.key === 'Backspace' && todo.text === '') {
+                              e.preventDefault();
+                              setNoteTodos(prev => prev.filter(t => t.id !== todo.id));
+                            }
+                          }}
                           data-todo-input
                           placeholder="List item"
-                          className="flex-1 bg-transparent outline-none text-sm"
-                          style={{ color: noteColor.text, opacity: todo.done ? 0.5 : 1, textDecoration: todo.done ? 'line-through' : 'none', fontFamily: "var(--font-geist), sans-serif" }}
+                          className="flex-1 bg-transparent outline-none text-sm min-w-0"
+                          style={{ color: noteColor.text, opacity: todo.done ? 0.45 : 1, textDecoration: todo.done ? 'line-through' : 'none', fontFamily: "var(--font-geist), sans-serif" }}
                         />
-                        <button type="button" onClick={() => setNoteTodos(prev => prev.filter(t => t.id !== todo.id))} className="opacity-0 group-hover:opacity-40 hover:!opacity-70 transition-opacity" style={{ color: noteColor.text }}>
+                        <button type="button" onClick={() => setNoteTodos(prev => prev.filter(t => t.id !== todo.id))} className="opacity-0 group-hover:opacity-30 hover:!opacity-60 transition-opacity flex-shrink-0" style={{ color: noteColor.text }}>
                           <X className="w-3 h-3" />
                         </button>
                       </div>
                     ))}
+                    {/* Add item row */}
+                    <button
+                      type="button"
+                      onClick={() => { setNoteTodos(prev => [...prev, { id: Date.now().toString(), text: '', done: false }]); setTimeout(() => { const inputs = document.querySelectorAll('[data-todo-input]'); (inputs[inputs.length - 1] as HTMLInputElement)?.focus(); }, 0); }}
+                      className="flex items-center gap-2 px-3 py-2 w-full text-left transition-opacity hover:opacity-70"
+                      style={{ color: noteColor.text, opacity: 0.35, borderTop: `1px solid ${noteColor.text}10` }}
+                    >
+                      <Plus className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="text-xs" style={{ fontFamily: "var(--font-geist), sans-serif" }}>Add item</span>
+                    </button>
                   </div>
                 )}
 
@@ -1401,7 +1427,7 @@ export default function Home() {
                     onClick={() => { setNoteTodos(prev => [...prev, { id: Date.now().toString(), text: '', done: false }]); setTimeout(() => { const inputs = document.querySelectorAll('[data-todo-input]'); (inputs[inputs.length - 1] as HTMLInputElement)?.focus(); }, 0); }}
                     className="ml-auto transition-opacity hover:opacity-80"
                     style={{ color: noteColor.text, opacity: noteTodos.length > 0 ? 1 : 0.4 }}
-                    title="Add checklist item"
+                    title="Add checklist"
                   >
                     <ListTodo className="w-4 h-4" />
                   </button>
