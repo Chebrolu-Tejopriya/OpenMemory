@@ -776,17 +776,39 @@ app.post('/telegram-webhook', async (req, res) => {
       }
     } else if (text.startsWith('/todo')) {
       // Save as todo note
-      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-      const items = lines.slice(1); // skip the /todo line
+      // Support two formats:
+      // Multi-line:  /todo\nBuy milk\nCall dentist
+      // Single-line: /todo Title: item1, item2, item3
+      const rest = text.slice('/todo'.length).trim();
 
-      if (items.length === 0) {
-        await sendReply('Send items after /todo, e.g.:\n/todo\nBuy milk\nCall dentist');
+      if (!rest) {
+        await sendReply('Examples:\n/todo Shopping: Buy milk, Call dentist\n\nor multi-line:\n/todo\nBuy milk\nCall dentist');
         return;
       }
 
-      // First item becomes title if there's more than one item, otherwise no title
-      const title = items.length > 1 ? items[0] : '';
-      const todoLines = items.length > 1 ? items.slice(1) : items;
+      let title = '';
+      let todoLines: string[] = [];
+
+      if (rest.includes('\n')) {
+        // Multi-line: first line is title (if present), rest are items
+        const lines = rest.split('\n').map(l => l.trim()).filter(Boolean);
+        if (lines.length > 1) { title = lines[0]; todoLines = lines.slice(1); }
+        else { todoLines = lines; }
+      } else if (rest.includes(':')) {
+        // Single-line with title: "Title: item1, item2"
+        const colonIdx = rest.indexOf(':');
+        title = rest.slice(0, colonIdx).trim();
+        todoLines = rest.slice(colonIdx + 1).split(',').map(s => s.trim()).filter(Boolean);
+      } else {
+        // Single-line no title, comma-separated
+        todoLines = rest.split(',').map(s => s.trim()).filter(Boolean);
+      }
+
+      if (todoLines.length === 0) {
+        await sendReply('No items found. Example:\n/todo Shopping: Buy milk, Call dentist');
+        return;
+      }
+
       const todos = todoLines.map((t, i) => ({ id: `${Date.now()}-${i}`, text: t, done: false }));
 
       const noteId = `tg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
