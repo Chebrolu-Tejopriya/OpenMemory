@@ -774,6 +774,43 @@ app.post('/telegram-webhook', async (req, res) => {
         console.error('Telegram save-link error:', await upsertRes.text());
         await sendReply('❌ Failed to save link. Try again.');
       }
+    } else if (text.startsWith('/todo')) {
+      // Save as todo note
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      const items = lines.slice(1); // skip the /todo line
+
+      if (items.length === 0) {
+        await sendReply('Send items after /todo, e.g.:\n/todo\nBuy milk\nCall dentist');
+        return;
+      }
+
+      // First item becomes title if there's more than one item, otherwise no title
+      const title = items.length > 1 ? items[0] : '';
+      const todoLines = items.length > 1 ? items.slice(1) : items;
+      const todos = todoLines.map((t, i) => ({ id: `${Date.now()}-${i}`, text: t, done: false }));
+
+      const noteId = `tg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const r = await fetch(`${SB_URL}/rest/v1/sticky_notes`, {
+        method: 'POST',
+        headers: { ...sbHeaders, 'Prefer': 'resolution=merge-duplicates' },
+        body: JSON.stringify({
+          id: noteId,
+          title,
+          body: '',
+          todos: JSON.stringify(todos),
+          color_bg: '#fde68a',
+          color_text: '#78350f',
+          created_at: new Date().toISOString(),
+        }),
+      });
+
+      if (r.ok) {
+        await invalidate('notes:all');
+        await sendReply(`✅ Todo list saved! (${todos.length} item${todos.length === 1 ? '' : 's'})`);
+      } else {
+        console.error('Telegram save-todo error:', await r.text());
+        await sendReply('❌ Failed to save todo. Try again.');
+      }
     } else {
       // Save as sticky note
       const noteId = `tg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
