@@ -679,6 +679,112 @@ app.delete('/notes/:id/permanent', async (req, res) => {
   }
 });
 
+/**
+ * POST /telegram-webhook
+ * Receives updates from Telegram Bot API.
+ * - URL message → saved to OM bookmarks via /save-link logic
+ * - Plain text → saved as a sticky note
+ * Responds 200 immediately (Telegram requires fast ACK).
+ */
+app.post('/telegram-webhook', async (req, res) => {
+  res.sendStatus(200); // ACK immediately so Telegram doesn't retry
+
+  try {
+    const { message } = req.body as {
+      message?: {
+        chat?: { id: number };
+        text?: string;
+        entities?: Array<{ type: string; offset: number; length: number }>;
+      };
+    };
+
+    if (!message?.text || !message?.chat?.id) return;
+
+    const chatId = message.chat.id;
+    const text = message.text.trim();
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    if (!botToken) { console.error('TELEGRAM_BOT_TOKEN not set'); return; }
+
+    const sendReply = async (msg: string) => {
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: msg }),
+      });
+    };
+
+    // Detect URLs: check Telegram entities or URL pattern
+    const urlEntity = message.entities?.find(e => e.type === 'url' || e.type === 'text_link');
+    const urlPattern = /^https?:\/\/\S+$/i;
+    const isUrl = !!urlEntity || urlPattern.test(text);
+
+    if (isUrl) {
+      // Extract URL from entity or use the full text
+      const url = urlEntity
+        ? text.slice(urlEntity.offset, urlEntity.offset + urlEntity.length)
+        : text;
+
+      let parsedUrl: URL;
+      try { parsedUrl = new URL(url); } catch {
+        await sendReply('❌ Invalid URL.');
+        return;
+      }
+
+      const cleanUrl = parsedUrl.toString();
+      const metadata = await scrapePageMetadata(cleanUrl);
+      const title = metadata?.ogTitle || metadata?.pageTitle || parsedUrl.hostname;
+      const folderName = 'OM';
+
+      const embeddingText = buildEmbeddingText({ title, folder: folderName, source: 'chrome', metadata });
+      const [embedding] = await generateEmbeddings([embeddingText]);
+
+      const upsertRes = await fetch(`${SB_URL}/rest/v1/bookmarks?on_conflict=url`, {
+        method: 'POST',
+        headers: { ...sbHeaders, 'Prefer': 'resolution=merge-duplicates' },
+        body: JSON.stringify({
+          url: cleanUrl,
+          title,
+          folder: folderName,
+          ...(embedding ? { embedding: `[${embedding.join(',')}]` } : {}),
+        }),
+      });
+
+      if (upsertRes.ok) {
+        await invalidate('om-links', 'folders');
+        await sendReply(`✅ Link saved!\n${title}`);
+      } else {
+        console.error('Telegram save-link error:', await upsertRes.text());
+        await sendReply('❌ Failed to save link. Try again.');
+      }
+    } else {
+      // Save as sticky note
+      const noteId = `tg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const r = await fetch(`${SB_URL}/rest/v1/sticky_notes`, {
+        method: 'POST',
+        headers: { ...sbHeaders, 'Prefer': 'resolution=merge-duplicates' },
+        body: JSON.stringify({
+          id: noteId,
+          title: '',
+          body: text,
+          color_bg: '#fde68a',
+          color_text: '#78350f',
+          created_at: new Date().toISOString(),
+        }),
+      });
+
+      if (r.ok) {
+        await invalidate('notes:all');
+        await sendReply('📝 Note saved!');
+      } else {
+        console.error('Telegram save-note error:', await r.text());
+        await sendReply('❌ Failed to save note. Try again.');
+      }
+    }
+  } catch (err) {
+    console.error('Telegram webhook error:', err);
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
