@@ -151,7 +151,7 @@ app.get('/browse', async (req, res) => {
     if (cached) return res.json(cached);
 
     const result = await browseSupabase(source, folderOrBoard, maxItems);
-    await setCache(cacheKey, result, TTL.BROWSE);
+    if (result.results.length > 0) await setCache(cacheKey, result, TTL.BROWSE);
     res.json(result);
   } catch (err) {
     console.error('Browse error:', err);
