@@ -168,7 +168,7 @@ export default function CanvasView({ folders: _folders, boards: _boards, active 
       setLoading(false);
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [active]);
 
   // ── Scroll to center tile when content mounts ────────────────────────────
   useEffect(() => {
