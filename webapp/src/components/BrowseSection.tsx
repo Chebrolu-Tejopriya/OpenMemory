@@ -157,7 +157,7 @@ export default function BrowseSection({ folders, boards, constrained = false, ac
 
         {/* Cards */}
         <div className="mt-3">
-          {isLoading ? skeletonCards : cards.length === 0 ? (
+          {isLoading || !selectedItem ? skeletonCards : cards.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-sm text-[#3a3a3a]/30">No items found</div>
           ) : (
             <div className="grid grid-cols-2 gap-3 pb-24 items-start">
@@ -198,7 +198,7 @@ export default function BrowseSection({ folders, boards, constrained = false, ac
 
         {/* Right panel — cards */}
         <div className={`flex-1 min-w-0 ${constrained ? "overflow-y-auto custom-scrollbar" : ""}`}>
-          {isLoading ? skeletonCards : cards.length === 0 ? (
+          {isLoading || !selectedItem ? skeletonCards : cards.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-sm text-[#3a3a3a]/30">No items found</div>
           ) : (
             <div className="grid grid-cols-3 gap-3 pb-2 items-start">
