@@ -728,20 +728,15 @@ export async function getSupabaseFolders(): Promise<string[]> {
  */
 export async function getSupabaseBoards(): Promise<string[]> {
   try {
+    // Query pinterest_boards (1 row per board) — much cheaper than scanning all pins
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/pinterest_boards?select=board_name&board_name=not.is.null&order=board_name.asc&limit=2000`,
+      { method: 'GET', headers: { ...requestHeaders, 'Prefer': 'count=none' } }
+    );
+    if (!response.ok) { console.error('[Supabase] Failed to fetch boards:', response.status); return []; }
+    const data: Array<{ board_name: string | null }> = await response.json();
     const boards = new Set<string>();
-    const PAGE = 2000;
-    let offset = 0;
-    while (true) {
-      const response = await fetch(
-        `${SUPABASE_URL}/rest/v1/pinterest_pins?select=board_name&board_name=not.is.null&limit=${PAGE}&offset=${offset}`,
-        { method: 'GET', headers: { ...requestHeaders, 'Prefer': 'count=none' } }
-      );
-      if (!response.ok) { console.error('[Supabase] Failed to fetch boards:', response.status); break; }
-      const data: Array<{ board_name: string | null }> = await response.json();
-      data.forEach(item => { if (item.board_name && !isHiddenBoard(item.board_name)) boards.add(item.board_name); });
-      if (data.length < PAGE) break;
-      offset += PAGE;
-    }
+    data.forEach(item => { if (item.board_name && !isHiddenBoard(item.board_name)) boards.add(item.board_name); });
     return Array.from(boards).sort();
   } catch (error) {
     console.error('[Supabase] Error fetching boards:', error);

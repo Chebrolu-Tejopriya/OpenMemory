@@ -17,7 +17,7 @@ import { getCache, setCache, invalidate } from './redis.js';
 const TTL = {
   SEARCH: 600,    // 10 min — search results
   FOLDERS: 3600,  // 1 hr — folder list rarely changes
-  BOARDS: 3600,   // 1 hr — board list rarely changes
+  BOARDS: 86400,  // 24 hr — board list rarely changes
   NOTES: 1800,    // 30 min — notes list (no image_data, safe to cache longer)
   OM_LINKS: 1800, // 30 min — saved links
   BROWSE: 7200,   // 2 hr — browse results (canvas fetches all bookmarks+pins)
