@@ -47,7 +47,7 @@ const BATCH_DELAY_MS = 1200; // 50 pins/min = 1.2s delay
 
 // Supabase auto-sync constants
 const SUPABASE_SYNC_ALARM = 'supabaseAutoSync';
-const SUPABASE_SYNC_MINUTES = 5; // Auto-sync every 5 minutes
+const SUPABASE_SYNC_MINUTES = 1440; // Auto-sync once per day (real-time listeners handle individual changes)
 
 
 // Blog URL patterns
@@ -121,10 +121,19 @@ function getAllChromeBookmarkUrls(): Promise<Set<string>> {
 
 /**
  * Compare Chrome bookmarks against Supabase and delete any rows whose
- * URLs no longer exist in Chrome. Runs silently on startup/install.
+ * URLs no longer exist in Chrome. Runs at most once per day to limit egress.
  */
 async function reconcileDeletedBookmarks() {
   if (!(await isSupabaseConfigured())) return;
+
+  // Only reconcile once per day — fetching all URLs from Supabase is expensive
+  const stored = await chrome.storage.local.get('lastReconcileAt');
+  const lastReconcile: number = stored.lastReconcileAt || 0;
+  const hoursSinceLast = (Date.now() - lastReconcile) / (1000 * 60 * 60);
+  if (hoursSinceLast < 23) {
+    console.log(`[OpenMemory] Skipping reconciliation — last run was ${Math.round(hoursSinceLast)}h ago`);
+    return;
+  }
 
   console.log('[OpenMemory] Reconciliation: checking for orphaned bookmarks...');
 
@@ -140,6 +149,7 @@ async function reconcileDeletedBookmarks() {
 
     if (orphaned.length === 0) {
       console.log('[OpenMemory] Reconciliation: all Supabase bookmarks accounted for');
+      await chrome.storage.local.set({ lastReconcileAt: Date.now() });
       return;
     }
 
@@ -151,6 +161,7 @@ async function reconcileDeletedBookmarks() {
       if (result.success) deleted++;
     }
 
+    await chrome.storage.local.set({ lastReconcileAt: Date.now() });
     console.log(`[OpenMemory] Reconciliation complete: ${deleted}/${orphaned.length} deleted`);
   } catch (err) {
     console.error('[OpenMemory] Reconciliation error:', err);
@@ -1000,13 +1011,22 @@ async function autoSyncToSupabase(): Promise<void> {
     return;
   }
 
+  // Check if we already did a full sync recently (within the last 23 hours)
+  const stored = await chrome.storage.local.get('lastFullSyncAt');
+  const lastFullSync: number = stored.lastFullSyncAt || 0;
+  const hoursSinceLast = (Date.now() - lastFullSync) / (1000 * 60 * 60);
+  if (hoursSinceLast < 23) {
+    console.log(`[Supabase] Skipping bulk sync — last full sync was ${Math.round(hoursSinceLast)}h ago. Real-time listeners handle incremental changes.`);
+    return;
+  }
+
   supabaseSyncInProgress = true;
-  console.log('[Supabase] Starting automatic sync...');
+  console.log('[Supabase] Starting daily full sync...');
 
   try {
-    // Get all local bookmarks
+    // Only sync bookmarks that don't yet exist in Supabase (new ones since last sync)
     const allBookmarks = await db.bookmarks.toArray();
-    console.log('[Supabase] Found', allBookmarks.length, 'local bookmarks');
+    console.log('[Supabase] Found', allBookmarks.length, 'local bookmarks for daily sync');
 
     if (allBookmarks.length > 0) {
       updateSyncStatus({ syncInProgress: true, pendingSync: allBookmarks.length });
@@ -1022,17 +1042,10 @@ async function autoSyncToSupabase(): Promise<void> {
         updateSyncStatus({ pendingSync: total - processed });
       });
 
-      console.log('[Supabase] Bookmarks sync complete:', result.success, 'synced,', result.failed, 'failed');
+      console.log('[Supabase] Daily sync complete:', result.success, 'synced,', result.failed, 'failed');
     }
 
-    // Sync Pinterest pins too
-    await syncPinterestPinsToSupabase();
-
-    // Backfill any missing embeddings (runs in background)
-    console.log('[Supabase] Checking for missing embeddings...');
-    backfillAllMissingEmbeddings().catch(err => {
-      console.error('[Supabase] Embedding backfill failed:', err);
-    });
+    await chrome.storage.local.set({ lastFullSyncAt: Date.now() });
 
     updateSyncStatus({
       syncInProgress: false,
