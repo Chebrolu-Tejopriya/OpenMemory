@@ -149,7 +149,8 @@ CREATE TABLE sticky_notes (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   pos_x FLOAT,     -- desktop drag position X
   pos_y FLOAT,     -- desktop drag position Y
-  image_data TEXT  -- base64-compressed JPEG, max 560px
+  image_data TEXT, -- base64-compressed JPEG, max 560px
+  todos TEXT       -- JSON: [{ id: string, text: string, done: boolean }]
 );
 
 CREATE INDEX idx_sticky_notes_created_at ON sticky_notes(created_at);
@@ -299,11 +300,13 @@ GET /browse?source=pinterest&board=<name>
 
 | Key | TTL | Invalidated by |
 |---|---|---|
-| `search:{query}:{source}:{limit}` | 5 min | Never (stale-ok) |
-| `folders` | 30 min | `POST /save-link` |
-| `boards` | 30 min | `POST /resync-board` (future) |
-| `notes:all` | 5 min | `POST /notes`, `DELETE /notes/:id` |
-| `om-links` | 10 min | `POST /save-link`, `DELETE /om-link` |
+| `search:{query}:{source}:{limit}` | 10 min | Never (stale-ok) |
+| `folders` | 1 hour | `POST /save-link`, Telegram link save |
+| `boards` | 24 hours | Manual cache delete |
+| `browse:chrome:{folder}` | 24 hours | `POST /save-link`, Telegram link save |
+| `browse:pinterest:{board}` | 24 hours | — |
+| `notes:all` | 30 min | `POST /notes`, `DELETE /notes/:id` |
+| `om-links` | 30 min | `POST /save-link`, `DELETE /om-link` |
 
 ## 7.2 Rules
 
@@ -489,17 +492,25 @@ Liquid glass pill, dark-neutral base (visible on any background):
 
 **Note type:**
 ```typescript
+type TodoItem = { id: string; text: string; done: boolean };
+
 type Note = {
   id: string;
   title: string;
   body: string;
   createdAt: string;
-  color: NoteColor;  // { bg: string; text: string }
+  color: NoteColor;    // { bg: string; text: string }
   x: number;
   y: number;
-  image?: string;    // base64 JPEG
+  image?: string;      // base64 JPEG
+  todos?: TodoItem[];  // optional checklist; stored as JSON TEXT in Supabase
 }
 ```
+
+**Note card display:**
+- Timestamp shown as `May 15 · 9:30 AM` (formatted from `createdAt`)
+- Todo items rendered as inline checkboxes; clicking toggles `done` state and PATCHes Supabase
+- Notion-style todo editor on desktop: bordered card with `+ Add item` row at bottom; textarea auto-expands per content
 
 ## 8.7 Save View — Links Sub-view
 
@@ -624,9 +635,19 @@ This guarantees Supabase stays in sync even for deletions that happened while th
 
 | Alarm | Interval | Purpose |
 |---|---|---|
-| `checkIndexing` | 2 min | Process metadata queue |
+| `checkIndexing` | 2 min | Process metadata queue when idle |
 | `pinterestSync` | 1 hour | Sync Pinterest boards |
-| `supabaseAutoSync` | 5 min | Auto-sync to Supabase |
+| `supabaseAutoSync` | 24 hours | Daily full bookmark sync (real-time listeners handle incremental) |
+
+## 11.4 Egress Guard
+
+`autoSyncToSupabase()` checks `lastFullSyncAt` in `chrome.storage.local` before running. If the last full sync was less than 23 hours ago it returns immediately — preventing the alarm from triggering an unnecessary bulk-upsert of all bookmarks.
+
+`reconcileDeletedBookmarks()` has the same 23-hour guard via `lastReconcileAt`.
+
+Both timestamps are written to `chrome.storage.local` after each successful run.
+
+**Why this matters:** each `upsertBookmark` call makes 2 Supabase requests (GET to check existing + POST upsert). With 1800+ bookmarks syncing every 5 minutes, this was generating ~45,000 requests/hour and hundreds of MB/day in egress. Real-time listeners (`onCreated`, `onRemoved`, `onChanged`, `onMoved`) handle all day-to-day changes — the bulk sync is only needed for initial setup or disaster recovery.
 
 ---
 
@@ -668,6 +689,8 @@ This guarantees Supabase stays in sync even for deletions that happened while th
 ❌ Skip reading files before editing  
 ❌ Use `search_pinterest_pins_text` RPC — it is not deployed; use direct PostgREST GET query instead
 ❌ Use `setPointerCapture` in CanvasView — it routes all pointer events to the container, breaking `<a>` link navigation on desktop; use window-level listeners during drag instead
+❌ Query `pinterest_pins` to get board names — use `pinterest_boards` table instead (pins table has 2000+ rows; scanning it for distinct board names caused 350–548MB/day egress)
+❌ Set `supabaseAutoSync` alarm to less than 60 minutes — real-time listeners handle all incremental changes; bulk sync runs once per day max
 
 ---
 
@@ -682,7 +705,30 @@ This guarantees Supabase stays in sync even for deletions that happened while th
 
 ---
 
-# 15. FUTURE ENHANCEMENTS (NOT CURRENT PRIORITY)
+# 15. TELEGRAM BOT (`@OM_SaveBot`)
+
+## 15.1 Webhook
+
+`POST /telegram-webhook` — Telegram POSTs every message here.
+
+## 15.2 Message Handling
+
+| Message type | Action |
+|---|---|
+| URL (any message starting with `http`) | Scrape metadata + generate embedding → save to `bookmarks` (folder = OM); invalidate `om-links`, `folders`, `browse:chrome:OM` |
+| `/todo Title: item1, item2` | Parse single-line format: everything before `:` = title, comma-separated items after `:` = todo list; save as sticky note with `todos` JSON |
+| `/todo` + multi-line | First line = title, remaining lines = todo items; save as sticky note |
+| Plain text | Save as sticky note (title = first line, body = rest) |
+| Photo + caption | Save caption as sticky note |
+| Photo (no caption) | Reply: "Photos without captions are not supported yet" |
+
+## 15.3 Environment
+
+`TELEGRAM_BOT_TOKEN` in `backend/.env` — set via BotFather.
+
+---
+
+# 17. FUTURE ENHANCEMENTS (NOT CURRENT PRIORITY)
 
 - **Authentication** — Firebase/Supabase Auth, per-user data isolation
 - **Public sharing** — read-only collection share links

@@ -42,7 +42,17 @@ A personal inspiration memory system — search your Chrome bookmarks and Pinter
 - Lightbox image viewer
 - Synced to Supabase across devices; localStorage fallback when offline
 - Positions persisted per note (`pos_x`, `pos_y`)
+- **Timestamps** — each note card shows creation date + time (`May 15 · 9:30 AM`)
+- **Todo lists** — add a checklist to any note; items toggleable inline from the card; Notion-style editor (desktop)
 - **Archive** — deleted notes move to a trash bin (localStorage); restore or permanently delete from the Archive panel
+
+### Telegram Bot (`@OM_SaveBot`)
+- Send a URL → saved to Supabase bookmarks (folder = OM) with metadata + embedding
+- Send plain text → saved as a sticky note
+- Send a photo + caption → caption saved as a sticky note
+- `/todo Title: item1, item2` → creates a note with a todo checklist (single-line mobile-friendly format)
+- `/todo` multi-line format → first line = title, remaining lines = todo items
+- Replies with confirmation on success, error message on failure
 
 ### Save Tab
 - **4th dock tab** — Plus (`+`) icon; opens a popover to navigate to Notes or Links
@@ -54,8 +64,9 @@ A personal inspiration memory system — search your Chrome bookmarks and Pinter
 
 ### Chrome Extension
 - Sync Chrome bookmarks and Pinterest pins to Supabase
-- **Real-time delete sync** — removing a bookmark from Chrome instantly deletes it from Supabase via `onRemoved` listener
-- **Startup reconciliation** — on every browser start or extension reload, compares Chrome bookmark URLs against Supabase and bulk-deletes orphaned rows; **OM-saved links (`folder = OM`) are excluded** so webapp-saved links are never wiped
+- **Real-time sync** — `onCreated`, `onRemoved`, `onChanged`, `onMoved` listeners handle all bookmark changes instantly
+- **Daily reconciliation** — once per day, compares Chrome URLs against Supabase and removes orphaned rows; **OM-saved links (`folder = OM`) are excluded** so webapp-saved links are never wiped
+- **Egress-safe bulk sync** — full re-sync runs at most once every 24 hours (real-time listeners cover all incremental changes); `supabaseAutoSync` alarm interval is 24 hours
 - **Delete board** — remove all pins for a board from Supabase + local SQLite in one click
 - Board list persists locally (SQLite) and syncs state with Supabase
 
@@ -95,10 +106,11 @@ A personal inspiration memory system — search your Chrome bookmarks and Pinter
 │  └── Python FastEmbed (port 3002) bge-small-en-v1.5 model  │
 ├─────────────────────────────────────────────────────────────┤
 │  Upstash Redis                                              │
-│  ├── search:{query}:{source}     5 min TTL                  │
-│  ├── folders / boards            30 min TTL                 │
-│  ├── notes:all                   5 min TTL                  │
-│  └── om-links                    10 min TTL                 │
+│  ├── search:{query}:{source}     10 min TTL                 │
+│  ├── folders                     1 hr TTL                   │
+│  ├── boards / browse             24 hr TTL                  │
+│  ├── notes:all                   30 min TTL                 │
+│  └── om-links                    30 min TTL                 │
 ├─────────────────────────────────────────────────────────────┤
 │  Supabase                                                   │
 │  ├── bookmarks                   Chrome bookmarks + vectors │
@@ -330,7 +342,8 @@ CREATE TABLE sticky_notes (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   pos_x FLOAT,
   pos_y FLOAT,
-  image_data TEXT
+  image_data TEXT,
+  todos TEXT  -- JSON array of { id, text, done }
 );
 ```
 
