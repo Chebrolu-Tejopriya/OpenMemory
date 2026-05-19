@@ -116,6 +116,7 @@ interface Props { folders: string[]; boards: string[]; active: boolean }
 export default function CanvasView({ folders: _folders, boards: _boards, active }: Props) {
   const [items, setItems] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const hasFetched = useRef(false);
   // ── Filter state ─────────────────────────────────────────────────────────
   const [source, setSource] = useState<CanvasSource>("chrome");
 
@@ -131,9 +132,10 @@ export default function CanvasView({ folders: _folders, boards: _boards, active 
   const raf = useRef<number | null>(null);
   const ptrHistory = useRef<{ x: number; y: number; t: number }[]>([]);
 
-  // ── Fetch whenever canvas tab is opened ─────────────────────────────────
+  // ── Fetch once when canvas tab is first opened ───────────────────────────
   useEffect(() => {
-    if (!active) return;
+    if (!active || hasFetched.current) return;
+    hasFetched.current = true;
     setLoading(true);
 
     (async () => {
