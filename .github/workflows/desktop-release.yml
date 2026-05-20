@@ -1,0 +1,100 @@
+name: Build Desktop App
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build & package (Windows)
+        working-directory: desktop
+        run: npm run dist:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: desktop/dist/*.exe
+
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build & package (macOS)
+        working-directory: desktop
+        run: npm run dist:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload macOS disk image
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-installer
+          path: desktop/dist/*.dmg
+
+  release:
+    needs: [build-windows, build-mac]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: artifacts/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: mac-installer
+          path: artifacts/
+
+      - name: Rename artifacts to stable names
+        run: |
+          find artifacts -name "*.exe" -exec mv {} artifacts/OpenMemory-Setup.exe \;
+          find artifacts -name "*.dmg" -exec mv {} artifacts/OpenMemory.dmg \;
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-latest
+          name: OpenMemory Desktop (latest)
+          body: |
+            Install OpenMemory Desktop to pin notes as floating windows on your desktop.
+
+            **Windows:** Download `OpenMemory-Setup.exe` and run it.
+            **macOS:** Download `OpenMemory.dmg`, open it, and drag to Applications.
+
+            No backend setup needed — connects to the cloud automatically.
+          files: |
+            artifacts/OpenMemory-Setup.exe
+            artifacts/OpenMemory.dmg
+          make_latest: true
+          prerelease: false

@@ -7,4 +7,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onNoteData: (cb: (note: unknown) => void) => {
     ipcRenderer.on('note-data', (_event, note) => cb(note))
   },
+  saveTodos: (noteId: string, todos: unknown[], color: { bg: string; text: string }) =>
+    ipcRenderer.invoke('save-todos', noteId, todos, color),
 })

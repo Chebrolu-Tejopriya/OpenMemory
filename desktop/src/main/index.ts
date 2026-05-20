@@ -2,7 +2,7 @@ import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, screen, shell } f
 import { join } from 'path'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000'
+const BACKEND_URL = process.env.BACKEND_URL || 'https://openmemory-backend-j775.onrender.com'
 const POLL_INTERVAL = 8000
 
 // ── Simple JSON store ─────────────────────────────────────────
@@ -143,7 +143,7 @@ function createTray() {
     const menu = Menu.buildFromTemplate([
       { label: `${noteWindows.size} note${noteWindows.size !== 1 ? 's' : ''} pinned`, enabled: false },
       { type: 'separator' },
-      { label: 'Open OpenMemory', click: () => shell.openExternal('http://localhost:3002') },
+      { label: 'Open OpenMemory', click: () => shell.openExternal('https://open-memory-nine.vercel.app') },
       { label: 'Refresh notes', click: () => syncPinnedNotes() },
       { type: 'separator' },
       { label: 'Quit', click: () => { isQuitting = true; app.quit() } },
@@ -154,7 +154,7 @@ function createTray() {
   rebuild()
   // Rebuild menu periodically to keep note count fresh
   setInterval(rebuild, POLL_INTERVAL)
-  tray.on('click', () => shell.openExternal('http://localhost:3002'))
+  tray.on('click', () => shell.openExternal('https://open-memory-nine.vercel.app'))
 }
 
 // ── App lifecycle ─────────────────────────────────────────────
@@ -185,4 +185,18 @@ ipcMain.handle('close-note', (_e, noteId: string) => {
   if (win) { win.destroy(); noteWindows.delete(noteId) }
 })
 
-ipcMain.handle('open-webapp', () => shell.openExternal('http://localhost:3002'))
+ipcMain.handle('open-webapp', () => shell.openExternal('https://open-memory-nine.vercel.app'))
+
+ipcMain.handle('save-todos', async (_e, noteId: string, todos: unknown[], color: { bg: string; text: string }) => {
+  try {
+    await fetch(`${BACKEND_URL}/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: noteId,
+        todos: JSON.stringify(todos),
+        color: { bg: color.bg, text: color.text },
+      }),
+    })
+  } catch {}
+})

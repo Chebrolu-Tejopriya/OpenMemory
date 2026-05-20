@@ -4,19 +4,47 @@
   "description": "OpenMemory floating sticky notes for desktop",
   "main": "out/main/index.js",
   "scripts": {
-    "dev": "cross-env ELECTRON_RUN_AS_NODE= electron-vite dev",
+    "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "start": "electron-vite preview"
+    "start": "electron-vite preview",
+    "dist": "electron-vite build && electron-builder",
+    "dist:win": "electron-vite build && electron-builder --win",
+    "dist:mac": "electron-vite build && electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.openmemory.desktop",
+    "productName": "OpenMemory",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "resources/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "resources/icon.icns",
+      "category": "public.app-category.productivity"
+    },
+    "nsis": {
+      "oneClick": true,
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico",
+      "shortcutName": "OpenMemory"
+    }
   },
   "dependencies": {
-    "@vitejs/plugin-react": "^4.7.0",
-    "electron-store": "^8.2.0"
+    "@vitejs/plugin-react": "^4.7.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "cross-env": "^10.1.0",
     "electron": "^29.4.6",
+    "electron-builder": "^24.13.3",
     "electron-vite": "^2.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

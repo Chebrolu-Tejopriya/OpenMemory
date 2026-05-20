@@ -470,6 +470,24 @@ app.get('/archived-notes', async (req, res) => {
 });
 
 /**
+ * GET /notes/pinned
+ * Returns all pinned notes (for the desktop Electron app). Not cached — needs to be fresh.
+ * MUST be registered before /notes/:id or Express will match "pinned" as an id.
+ */
+app.get('/notes/pinned', async (req, res) => {
+  try {
+    const r = await fetch(
+      `${SB_URL}/rest/v1/sticky_notes?pinned=eq.true&archived=is.false&select=${NOTES_LIST_SELECT}&order=created_at.desc`,
+      { headers: sbHeaders }
+    );
+    if (!r.ok) return res.status(500).json({ error: await r.text() });
+    res.json({ notes: await r.json() });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
  * GET /notes/:id
  * Returns a single note with full data including image_data (not cached — called on demand).
  */
@@ -481,23 +499,6 @@ app.get('/notes/:id', async (req, res) => {
     const rows = await r.json();
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
     res.json({ note: rows[0] });
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
-  }
-});
-
-/**
- * GET /notes/pinned
- * Returns all pinned notes (for the desktop Electron app). Not cached — needs to be fresh.
- */
-app.get('/notes/pinned', async (req, res) => {
-  try {
-    const r = await fetch(
-      `${SB_URL}/rest/v1/sticky_notes?pinned=eq.true&archived=is.false&select=${NOTES_LIST_SELECT}&order=created_at.desc`,
-      { headers: sbHeaders }
-    );
-    if (!r.ok) return res.status(500).json({ error: await r.text() });
-    res.json({ notes: await r.json() });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }
