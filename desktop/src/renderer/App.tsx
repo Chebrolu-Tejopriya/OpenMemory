@@ -18,8 +18,8 @@ declare global {
       openWebapp: () => Promise<void>
       onNoteData: (cb: (note: NoteData) => void) => void
       saveTodos: (noteId: string, todos: TodoItem[], color: { bg: string; text: string }) => Promise<void>
-      startDrag: () => Promise<void>
-      stopDrag: (x: number, y: number) => Promise<void>
+      startDrag: (offsetX: number, offsetY: number) => Promise<void>
+      stopDrag: () => Promise<void>
     }
   }
 }
@@ -91,9 +91,10 @@ export default function App() {
         onMouseDown={(e) => {
           if ((e.target as HTMLElement).closest('button')) return
           e.preventDefault()
-          window.electronAPI?.startDrag()
+          // Pass where in the window the user clicked so it doesn't jump
+          window.electronAPI?.startDrag(e.clientX, e.clientY)
           const onUp = () => {
-            window.electronAPI?.stopDrag(0, 0)
+            window.electronAPI?.stopDrag()
             window.removeEventListener('mouseup', onUp)
           }
           window.addEventListener('mouseup', onUp)

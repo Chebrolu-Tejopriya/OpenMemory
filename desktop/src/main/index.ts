@@ -174,33 +174,102 @@ ipcMain.handle('set-ignore-mouse', (_e, ignore: boolean) => {
   win?.setIgnoreMouseEvents(ignore, { forward: true })
 })
 
-ipcMain.handle('start-drag', (_e) => {
+type WinState = {
+  _dragInterval?: ReturnType<typeof setInterval>
+  _throwInterval?: ReturnType<typeof setInterval>
+  _offsetX: number
+  _offsetY: number
+  _history: { x: number; y: number; t: number }[]
+}
+const winState = new WeakMap<BrowserWindow, WinState>()
+function getState(win: BrowserWindow): WinState {
+  if (!winState.has(win)) winState.set(win, { _offsetX: 0, _offsetY: 0, _history: [] })
+  return winState.get(win)!
+}
+
+ipcMain.handle('start-drag', (_e, offsetX: number, offsetY: number) => {
   const win = BrowserWindow.fromWebContents(_e.sender)
   if (!win) return
-  const { screen: electronScreen } = require('electron')
-  const moveHandler = () => {
-    const { x, y } = electronScreen.getCursorScreenPoint()
-    const [w, h] = win.getSize()
-    win.setPosition(Math.round(x - w / 2), Math.round(y - 10))
+  const state = getState(win)
+  // Cancel any ongoing throw
+  if (state._throwInterval) { clearInterval(state._throwInterval); state._throwInterval = undefined }
+  state._offsetX = offsetX
+  state._offsetY = offsetY
+  state._history = []
+  const { screen: s } = require('electron')
+  const tick = () => {
+    const { x, y } = s.getCursorScreenPoint()
+    const nx = Math.round(x - state._offsetX)
+    const ny = Math.round(y - state._offsetY)
+    win.setPosition(nx, ny)
+    const now = Date.now()
+    state._history.push({ x: nx, y: ny, t: now })
+    if (state._history.length > 8) state._history.shift()
   }
-  // Use polling while button is held — cleared by stop-drag
-  const interval = setInterval(moveHandler, 16)
-  ;(win as unknown as { _dragInterval?: ReturnType<typeof setInterval> })._dragInterval = interval
+  state._dragInterval = setInterval(tick, 16)
 })
 
-ipcMain.handle('stop-drag', (_e, x: number, y: number) => {
+ipcMain.handle('stop-drag', (_e) => {
   const win = BrowserWindow.fromWebContents(_e.sender)
   if (!win) return
-  const w = win as unknown as { _dragInterval?: ReturnType<typeof setInterval> }
-  if (w._dragInterval) { clearInterval(w._dragInterval); w._dragInterval = undefined }
-  // Save final position
+  const state = getState(win)
+  if (state._dragInterval) { clearInterval(state._dragInterval); state._dragInterval = undefined }
+
+  // Calculate throw velocity from last few frames
+  const h = state._history
+  let vx = 0, vy = 0
+  if (h.length >= 2) {
+    const dt = (h[h.length - 1].t - h[0].t) / 1000 || 0.016
+    vx = (h[h.length - 1].x - h[0].x) / dt * 0.016
+    vy = (h[h.length - 1].y - h[0].y) / dt * 0.016
+  }
+
+  const speed = Math.sqrt(vx * vx + vy * vy)
+  if (speed < 2) {
+    saveWinPosition(win)
+    return
+  }
+
+  // Clamp initial velocity
+  const maxV = 40
+  if (Math.abs(vx) > maxV) vx = Math.sign(vx) * maxV
+  if (Math.abs(vy) > maxV) vy = Math.sign(vy) * maxV
+
+  const { screen: s } = require('electron')
+  const FRICTION = 0.88
+  const BOUNCE = 0.55
+
+  state._throwInterval = setInterval(() => {
+    vx *= FRICTION
+    vy *= FRICTION
+    const [cx, cy] = win.getPosition()
+    const [w, h2] = win.getSize()
+    const { width: sw, height: sh } = s.getPrimaryDisplay().workAreaSize
+    let nx = cx + vx
+    let ny = cy + vy
+
+    if (nx < 0) { nx = 0; vx = Math.abs(vx) * BOUNCE }
+    if (ny < 0) { ny = 0; vy = Math.abs(vy) * BOUNCE }
+    if (nx + w > sw) { nx = sw - w; vx = -Math.abs(vx) * BOUNCE }
+    if (ny + h2 > sh) { ny = sh - h2; vy = -Math.abs(vy) * BOUNCE }
+
+    win.setPosition(Math.round(nx), Math.round(ny))
+
+    if (Math.abs(vx) < 0.3 && Math.abs(vy) < 0.3) {
+      clearInterval(state._throwInterval!)
+      state._throwInterval = undefined
+      saveWinPosition(win)
+    }
+  }, 16)
+})
+
+function saveWinPosition(win: BrowserWindow) {
   const [px, py] = win.getPosition()
   const positions = loadPositions()
-  // find noteId for this window
   for (const [id, nw] of noteWindows) {
     if (nw === win) { positions[id] = { x: px, y: py }; savePositions(positions); break }
   }
-})
+}
 
 ipcMain.handle('close-note', (_e, noteId: string) => {
   // Unpin via backend then close
