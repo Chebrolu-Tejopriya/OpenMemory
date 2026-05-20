@@ -38,13 +38,22 @@ type PinnedNote = {
 }
 
 // ── Fetch pinned notes from backend ──────────────────────────
+let lastEtag = ''
+let lastNotes: PinnedNote[] = []
+
 async function fetchPinned(): Promise<PinnedNote[]> {
   try {
-    const res = await fetch(`${BACKEND_URL}/notes/pinned`)
-    if (!res.ok) return []
+    const headers: Record<string, string> = {}
+    if (lastEtag) headers['If-None-Match'] = lastEtag
+    const res = await fetch(`${BACKEND_URL}/notes/pinned`, { headers })
+    if (res.status === 304) return lastNotes // unchanged
+    if (!res.ok) return lastNotes
+    const etag = res.headers.get('etag')
+    if (etag) lastEtag = etag
     const data = await res.json()
-    return data.notes || []
-  } catch { return [] }
+    lastNotes = data.notes || []
+    return lastNotes
+  } catch { return lastNotes }
 }
 
 // ── Create a window for a single note ────────────────────────

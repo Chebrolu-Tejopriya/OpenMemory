@@ -477,14 +477,20 @@ app.get('/archived-notes', async (req, res) => {
 app.get('/notes/pinned', async (req, res) => {
   try {
     const cached = await getCache<object[]>('notes:pinned');
-    if (cached) return res.json({ notes: cached });
-    const r = await fetch(
-      `${SB_URL}/rest/v1/sticky_notes?pinned=eq.true&archived=is.false&select=${NOTES_LIST_SELECT}&order=created_at.desc`,
-      { headers: sbHeaders }
-    );
-    if (!r.ok) return res.status(500).json({ error: await r.text() });
-    const notes = await r.json();
-    await setCache('notes:pinned', notes, 20); // 20s cache — Electron polls every 30s
+    const notes = cached ?? await (async () => {
+      const r = await fetch(
+        `${SB_URL}/rest/v1/sticky_notes?pinned=eq.true&archived=is.false&select=${NOTES_LIST_SELECT}&order=created_at.desc`,
+        { headers: sbHeaders }
+      );
+      if (!r.ok) throw new Error(await r.text());
+      const data = await r.json();
+      await setCache('notes:pinned', data, 20);
+      return data;
+    })();
+    // ETag: hash of note ids+updated_at so unchanged data returns 304
+    const etag = `"${Buffer.from(JSON.stringify(notes.map((n: Record<string,unknown>) => n.id))).toString('base64').slice(0,16)}"`;
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
+    res.setHeader('ETag', etag);
     res.json({ notes });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
