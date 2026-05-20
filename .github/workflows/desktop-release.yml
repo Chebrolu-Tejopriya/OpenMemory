@@ -24,17 +24,25 @@ jobs:
         working-directory: desktop
         run: npm ci
 
-      - name: Build & package (Windows)
+      - name: Build
         working-directory: desktop
-        run: npm run dist:win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-vite build
 
-      - name: Upload Windows installer
+      - name: Package (Windows portable)
+        working-directory: desktop
+        run: npx electron-builder --win --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Zip win-unpacked
+        shell: pwsh
+        run: Compress-Archive -Path desktop/dist/win-unpacked/* -DestinationPath desktop/dist/OpenMemory-Windows.zip -Force
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-installer
-          path: desktop/dist/*.exe
+          name: windows-zip
+          path: desktop/dist/OpenMemory-Windows.zip
 
   build-mac:
     runs-on: macos-latest
@@ -52,14 +60,14 @@ jobs:
 
       - name: Build & package (macOS)
         working-directory: desktop
-        run: npm run dist:mac
+        run: npx electron-vite build && npx electron-builder --mac --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      - name: Upload macOS disk image
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mac-installer
+          name: mac-dmg
           path: desktop/dist/*.dmg
 
   release:
@@ -68,19 +76,14 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: windows-installer
+          name: windows-zip
           path: artifacts/
 
       - uses: actions/download-artifact@v4
         with:
-          name: mac-installer
+          name: mac-dmg
           path: artifacts/
-
-      - name: Rename artifacts to stable names
-        run: |
-          find artifacts -name "*.zip" -exec mv {} artifacts/OpenMemory-Windows.zip \; 2>/dev/null || true
-          find artifacts -name "*.exe" -exec mv {} artifacts/OpenMemory-Setup.exe \; 2>/dev/null || true
-          find artifacts -name "*.dmg" -exec mv {} artifacts/OpenMemory.dmg \; 2>/dev/null || true
+        continue-on-error: true
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -90,12 +93,9 @@ jobs:
           body: |
             Install OpenMemory Desktop to pin notes as floating windows on your desktop.
 
-            **Windows:** Download `OpenMemory-Setup.exe` and run it.
-            **macOS:** Download `OpenMemory.dmg`, open it, and drag to Applications.
+            **Windows:** Download `OpenMemory-Windows.zip`, extract, run `OpenMemory.exe`.
+            **macOS:** Download `OpenMemory.dmg`, open it, drag to Applications.
 
-            No backend setup needed — connects to the cloud automatically.
-          files: |
-            artifacts/OpenMemory-Windows.zip
-            artifacts/OpenMemory.dmg
+            No setup needed — connects to the cloud automatically.
+          files: artifacts/*
           make_latest: true
-          prerelease: false

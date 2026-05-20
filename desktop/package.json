@@ -2,6 +2,11 @@
   "name": "openMemory-desktop",
   "version": "0.1.0",
   "description": "OpenMemory floating sticky notes for desktop",
+  "author": "Chebrolu-Tejopriya",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Chebrolu-Tejopriya/OpenMemory.git"
+  },
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
