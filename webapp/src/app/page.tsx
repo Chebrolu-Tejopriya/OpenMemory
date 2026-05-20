@@ -1081,7 +1081,6 @@ export default function Home() {
                 </div>
               )}
             </div>
-            </button>
           </div>
 
           <div className="flex-1 overflow-auto custom-scrollbar relative">
