@@ -476,12 +476,16 @@ app.get('/archived-notes', async (req, res) => {
  */
 app.get('/notes/pinned', async (req, res) => {
   try {
+    const cached = await getCache<object[]>('notes:pinned');
+    if (cached) return res.json({ notes: cached });
     const r = await fetch(
       `${SB_URL}/rest/v1/sticky_notes?pinned=eq.true&archived=is.false&select=${NOTES_LIST_SELECT}&order=created_at.desc`,
       { headers: sbHeaders }
     );
     if (!r.ok) return res.status(500).json({ error: await r.text() });
-    res.json({ notes: await r.json() });
+    const notes = await r.json();
+    await setCache('notes:pinned', notes, 20); // 20s cache — Electron polls every 30s
+    res.json({ notes });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }
@@ -539,7 +543,7 @@ app.post('/notes', async (req, res) => {
       }),
     });
     if (!r.ok) return res.status(500).json({ error: await r.text() });
-    await invalidate('notes:all');
+    await invalidate('notes:all', 'notes:pinned');
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
