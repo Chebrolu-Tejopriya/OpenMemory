@@ -9,6 +9,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   saveTodos: (noteId: string, todos: unknown[], color: { bg: string; text: string }) =>
     ipcRenderer.invoke('save-todos', noteId, todos, color),
-  startDrag: (offsetX: number, offsetY: number) => ipcRenderer.invoke('start-drag', offsetX, offsetY),
+  startDrag: () => ipcRenderer.invoke('start-drag'),
   stopDrag: () => ipcRenderer.invoke('stop-drag'),
 })

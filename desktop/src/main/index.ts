@@ -196,16 +196,18 @@ function getState(win: BrowserWindow): WinState {
   return winState.get(win)!
 }
 
-ipcMain.handle('start-drag', (_e, offsetX: number, offsetY: number) => {
+ipcMain.handle('start-drag', (_e) => {
   const win = BrowserWindow.fromWebContents(_e.sender)
   if (!win) return
   const state = getState(win)
-  // Cancel any ongoing throw
   if (state._throwInterval) { clearInterval(state._throwInterval); state._throwInterval = undefined }
-  state._offsetX = offsetX
-  state._offsetY = offsetY
-  state._history = []
+  // Calculate offset in main process — both cursor and window pos are logical pixels, no DPI mismatch
   const { screen: s } = require('electron')
+  const cursor = s.getCursorScreenPoint()
+  const [wx, wy] = win.getPosition()
+  state._offsetX = cursor.x - wx
+  state._offsetY = cursor.y - wy
+  state._history = []
   const tick = () => {
     const { x, y } = s.getCursorScreenPoint()
     const nx = Math.round(x - state._offsetX)
