@@ -439,7 +439,7 @@ const sbHeaders = {
  * Response: { notes: StickyNote[] }
  */
 // image_data excluded from list — fetched on demand via GET /notes/:id
-const NOTES_LIST_SELECT = 'id,title,body,color_bg,color_text,created_at,pos_x,pos_y,archived,todos';
+const NOTES_LIST_SELECT = 'id,title,body,color_bg,color_text,created_at,pos_x,pos_y,archived,todos,pinned,pin_x,pin_y';
 
 app.get('/notes', async (req, res) => {
   try {
@@ -487,17 +487,35 @@ app.get('/notes/:id', async (req, res) => {
 });
 
 /**
+ * GET /notes/pinned
+ * Returns all pinned notes (for the desktop Electron app). Not cached — needs to be fresh.
+ */
+app.get('/notes/pinned', async (req, res) => {
+  try {
+    const r = await fetch(
+      `${SB_URL}/rest/v1/sticky_notes?pinned=eq.true&archived=is.false&select=${NOTES_LIST_SELECT}&order=created_at.desc`,
+      { headers: sbHeaders }
+    );
+    if (!r.ok) return res.status(500).json({ error: await r.text() });
+    res.json({ notes: await r.json() });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
  * POST /notes
  * Body: { id, title, body, color: { bg, text }, createdAt }
  * Upserts a sticky note. Response: { success: true }
  */
 app.post('/notes', async (req, res) => {
   try {
-    const { id, title, body, color, createdAt, x, y, image, todos } = req.body as {
+    const { id, title, body, color, createdAt, x, y, image, todos, pinned, pin_x, pin_y } = req.body as {
       id: string; title?: string; body?: string;
       color: { bg: string; text: string }; createdAt?: string;
       x?: number; y?: number; image?: string | null;
       todos?: string | null;
+      pinned?: boolean; pin_x?: number | null; pin_y?: number | null;
     };
     if (!id) return res.status(400).json({ error: 'id is required' });
     const r = await fetch(`${SB_URL}/rest/v1/sticky_notes`, {
@@ -514,6 +532,9 @@ app.post('/notes', async (req, res) => {
         ...(y !== undefined ? { pos_y: y } : {}),
         ...(image !== undefined ? { image_data: image ?? null } : {}),
         ...(todos !== undefined ? { todos: todos ?? null } : {}),
+        ...(pinned !== undefined ? { pinned } : {}),
+        ...(pin_x !== undefined ? { pin_x: pin_x ?? null } : {}),
+        ...(pin_y !== undefined ? { pin_y: pin_y ?? null } : {}),
       }),
     });
     if (!r.ok) return res.status(500).json({ error: await r.text() });
