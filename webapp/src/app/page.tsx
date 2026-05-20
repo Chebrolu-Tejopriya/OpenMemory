@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Pencil, Upload, Plus, ArchiveRestore, Trash2, Pause, Play, GripHorizontal, ListTodo, Square, CheckSquare2 } from "lucide-react";
 import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
@@ -9,6 +9,7 @@ import { SearchResult } from "@/components/SearchResultCard";
 import LeafIcon from "@/components/icons/LeafIcon";
 import BrowseSection from "@/components/BrowseSection";
 import CanvasView from "@/components/CanvasView";
+import HomeWidgets from "@/components/HomeWidgets";
 
 const ALL_SUGGESTIONS = [
   "Dashboard UI", "Landing Page", "Login Form", "Contact Form",
@@ -104,9 +105,10 @@ export default function Home() {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [folders, setFolders] = useState<string[]>([]);
   const [boards, setBoards] = useState<string[]>([]);
+  const [filtersLoading, setFiltersLoading] = useState(true);
   const [selectedFolder, setSelectedFolder] = useState("");
   const [selectedBoard, setSelectedBoard] = useState("");
-  const [suggestions, setSuggestions] = useState<string[]>(() => getRandomSuggestions(4));
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [suggestionsVisible, setSuggestionsVisible] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -136,6 +138,17 @@ export default function Home() {
   const [videoPaused, setVideoPaused] = useState(false);
   const [noteSearch, setNoteSearch] = useState("");
 
+  // Activity / home widgets state
+  const [activityData, setActivityData] = useState<{
+    totals: { bookmarks: number; pins: number; notes: number; links: number };
+    activity: { date: string; bookmarks: number; pins: number; notes: number; links: number }[];
+  } | null>(null);
+  const [insights, setInsights] = useState<{
+    topFolder: { name: string; count: number } | null;
+    topBoard:  { name: string; count: number } | null;
+    velocity:  { thisWeek: number; lastWeek: number } | null;
+  } | null>(null);
+
   // Mention / scope state
   const [mentionType, setMentionType] = useState<MentionType>(null);
   const [mentionQuery, setMentionQuery] = useState("");
@@ -153,6 +166,12 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const userName = "TEJA";
 
+  const todoRate = useMemo(() => {
+    const allTodos = notes.flatMap(n => n.todos ?? []);
+    if (allTodos.length === 0) return null;
+    return Math.round((allTodos.filter(t => t.done).length / allTodos.length) * 100);
+  }, [notes]);
+
   useEffect(() => {
     const fetchFilters = async () => {
       try {
@@ -162,9 +181,29 @@ export default function Home() {
         if (boardsRes.ok) setBoards((await boardsRes.json()).boards || []);
       } catch (error) {
         console.error("Error fetching filters:", error);
+      } finally {
+        setFiltersLoading(false);
       }
     };
     fetchFilters();
+  }, []);
+
+  useEffect(() => {
+    setSuggestions(getRandomSuggestions(4));
+  }, []);
+
+  useEffect(() => {
+    fetch(`${BACKEND_URL}/activity`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setActivityData(data); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch(`${BACKEND_URL}/insights`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setInsights(data); })
+      .catch(() => {});
   }, []);
 
   // Load sticky notes from Supabase (via backend), fall back to localStorage
@@ -449,9 +488,13 @@ export default function Home() {
   );
 
   useEffect(() => {
+    if (searchQuery) {
+      setIsLoading(true);
+      setHasSearched(true);
+    }
     const timer = setTimeout(() => {
       if (searchQuery) performSearch(searchQuery, sourceFilter, selectedFolder, selectedBoard);
-      else { setResults([]); setHasSearched(false); }
+      else { setResults([]); setHasSearched(false); setIsLoading(false); }
     }, 350);
     return () => clearTimeout(timer);
   }, [searchQuery, sourceFilter, selectedFolder, selectedBoard, performSearch]);
@@ -867,6 +910,8 @@ export default function Home() {
               </button>
             </div>
           </div>
+
+          {/* Home Widgets — hidden for now */}
         </div>
 
         {/* Search Results overlay */}
@@ -910,7 +955,7 @@ export default function Home() {
         {/* Collections content */}
         <div className="relative z-10 h-full flex flex-col pt-4 sm:pt-6 pb-4 px-4 sm:px-6 md:px-8 overflow-hidden">
           <div className="flex-1 min-h-0 w-full max-w-[1200px] mx-auto overflow-y-auto custom-scrollbar">
-            <BrowseSection folders={folders} boards={boards} constrained active={activeView === "browse"} />
+            <BrowseSection folders={folders} boards={boards} loading={filtersLoading} constrained active={activeView === "browse"} />
           </div>
         </div>
       </div>

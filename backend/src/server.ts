@@ -20,7 +20,8 @@ const TTL = {
   BOARDS: 86400,  // 24 hr — board list rarely changes
   NOTES: 1800,    // 30 min — notes list (no image_data, safe to cache longer)
   OM_LINKS: 1800, // 30 min — saved links
-  BROWSE: 86400,  // 24 hr — browse results (canvas fetches all bookmarks+pins)
+  BROWSE: 86400,   // 24 hr — browse results (canvas fetches all bookmarks+pins)
+  ACTIVITY: 86400, // 24 hr — historical activity data never changes
 };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -676,6 +677,116 @@ app.delete('/notes/:id/permanent', async (req, res) => {
     if (!r.ok) return res.status(500).json({ error: await r.text() });
     await invalidate('notes:archived');
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
+ * GET /insights
+ * Returns derived insights: top folder, top board, save velocity.
+ * Cached 24hr.
+ */
+app.get('/insights', async (_req, res) => {
+  try {
+    const cached = await getCache<object>('insights');
+    if (cached) return res.json(cached);
+
+    const rpc = (fn: string) =>
+      fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
+        method: 'POST',
+        headers: { ...sbHeaders, 'Content-Type': 'application/json' },
+        body: '{}'
+      }).then(r => r.ok ? r.json() : null).catch(() => null);
+
+    const [topFolderRes, topBoardRes, velocityRes] = await Promise.all([
+      rpc('get_top_folder'),
+      rpc('get_top_board'),
+      rpc('get_save_velocity'),
+    ]);
+
+    const payload = {
+      topFolder: topFolderRes?.[0] ? { name: topFolderRes[0].name, count: Number(topFolderRes[0].count) } : null,
+      topBoard:  topBoardRes?.[0]  ? { name: topBoardRes[0].name,  count: Number(topBoardRes[0].count)  } : null,
+      velocity: velocityRes?.[0] ? {
+        thisWeek: Number(velocityRes[0].this_week),
+        lastWeek: Number(velocityRes[0].last_week),
+      } : null,
+    };
+
+    await setCache('insights', payload, TTL.ACTIVITY);
+    res.json(payload);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+/**
+ * GET /activity
+ * Returns total counts + daily activity for the last 30 days across all 4 data types.
+ * Cached 24hr — historical data never changes.
+ * Response: { totals: { bookmarks, pins, notes, links }, activity: { date, bookmarks, pins, notes, links }[] }
+ */
+app.get('/activity', async (_req, res) => {
+  try {
+    const cached = await getCache<object>('activity');
+    if (cached) return res.json(cached);
+
+    // Call all 8 RPC functions in parallel
+    const rpcCall = (fn: string) =>
+      fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
+        method: 'POST',
+        headers: { ...sbHeaders, 'Content-Type': 'application/json' },
+        body: '{}'
+      }).then(r => r.ok ? r.json() : []);
+
+    const [
+      bmActivity, pinActivity, noteActivity, linkActivity,
+      bmCount, pinCount, noteCount, linkCount
+    ] = await Promise.all([
+      rpcCall('get_bookmark_activity'),
+      rpcCall('get_pin_activity'),
+      rpcCall('get_note_activity'),
+      rpcCall('get_link_activity'),
+      rpcCall('get_bookmark_count'),
+      rpcCall('get_pin_count'),
+      rpcCall('get_note_count'),
+      rpcCall('get_link_count'),
+    ]);
+
+    // Build a map of date → counts, filling all 30 days
+    const dayMap: Record<string, { bookmarks: number; pins: number; notes: number; links: number }> = {};
+    const today = new Date();
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      dayMap[key] = { bookmarks: 0, pins: 0, notes: 0, links: 0 };
+    }
+
+    for (const row of (bmActivity as { date: string; count: number }[]))
+      if (dayMap[row.date]) dayMap[row.date].bookmarks = Number(row.count);
+    for (const row of (pinActivity as { date: string; count: number }[]))
+      if (dayMap[row.date]) dayMap[row.date].pins = Number(row.count);
+    for (const row of (noteActivity as { date: string; count: number }[]))
+      if (dayMap[row.date]) dayMap[row.date].notes = Number(row.count);
+    for (const row of (linkActivity as { date: string; count: number }[]))
+      if (dayMap[row.date]) dayMap[row.date].links = Number(row.count);
+
+    const activity = Object.entries(dayMap).map(([date, counts]) => ({ date, ...counts }));
+
+    const payload = {
+      totals: {
+        bookmarks: Number(bmCount) || 0,
+        pins: Number(pinCount) || 0,
+        notes: Number(noteCount) || 0,
+        links: Number(linkCount) || 0,
+      },
+      activity,
+    };
+
+    await setCache('activity', payload, TTL.ACTIVITY);
+    res.json(payload);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }

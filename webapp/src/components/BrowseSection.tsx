@@ -11,11 +11,12 @@ type BrowseTab = "bookmarks" | "pinterest";
 interface BrowseSectionProps {
   folders: string[];
   boards: string[];
+  loading?: boolean;
   constrained?: boolean;
   active?: boolean;
 }
 
-export default function BrowseSection({ folders, boards, constrained = false, active = true }: BrowseSectionProps) {
+export default function BrowseSection({ folders, boards, loading = false, constrained = false, active = true }: BrowseSectionProps) {
   const [activeTab, setActiveTab] = useState<BrowseTab>("bookmarks");
   const [selectedItem, setSelectedItem] = useState<string>("");
   const [cards, setCards] = useState<SearchResult[]>([]);
@@ -76,6 +77,22 @@ export default function BrowseSection({ folders, boards, constrained = false, ac
     return parts[parts.length - 1] || path;
   }
 
+  const skeletonChips = (
+    <div className="flex gap-2">
+      {[80, 64, 96, 72].map((w, i) => (
+        <div key={i} className={`h-7 rounded-full bg-black/[0.07] animate-pulse shrink-0`} style={{ width: w }} />
+      ))}
+    </div>
+  );
+
+  const skeletonList = (
+    <div className="flex flex-col gap-1 px-1">
+      {["w-full", "w-4/5", "w-full", "w-3/4", "w-5/6"].map((w, i) => (
+        <div key={i} className={`h-8 rounded-lg bg-black/6 animate-pulse ${w}`} />
+      ))}
+    </div>
+  );
+
   const skeletonCards = (
     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
       {[...Array(6)].map((_, i) => (
@@ -131,7 +148,7 @@ export default function BrowseSection({ folders, boards, constrained = false, ac
 
         {/* Horizontally scrollable folder/board chips — scrolls naturally */}
         <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar mt-1">
-          {list.length === 0 ? (
+          {loading ? skeletonChips : list.length === 0 ? (
             <p className="text-xs text-[#3a3a3a]/30 px-2 py-2">No {activeTab === "bookmarks" ? "folders" : "boards"} found</p>
           ) : list.map((item) => (
             <button
@@ -169,7 +186,7 @@ export default function BrowseSection({ folders, boards, constrained = false, ac
 
           {/* Folder/board list */}
           <div className={`flex flex-col gap-0.5 overflow-y-auto custom-scrollbar pr-1 ${constrained ? "flex-1" : "max-h-[70vh]"}`}>
-            {list.length === 0 ? (
+            {loading ? skeletonList : list.length === 0 ? (
               <p className="text-xs text-[#3a3a3a]/30 px-2 py-3 text-center">
                 No {activeTab === "bookmarks" ? "folders" : "boards"} found
               </p>
