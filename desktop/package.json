@@ -1,0 +1,26 @@
+{
+  "name": "openMemory-desktop",
+  "version": "0.1.0",
+  "description": "OpenMemory floating sticky notes for desktop",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "cross-env ELECTRON_RUN_AS_NODE= electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "electron-store": "^8.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "cross-env": "^10.1.0",
+    "electron": "^29.4.6",
+    "electron-vite": "^2.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.5.2",
+    "vite": "^5.3.1"
+  }
+}
