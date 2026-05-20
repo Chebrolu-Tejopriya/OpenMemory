@@ -174,6 +174,34 @@ ipcMain.handle('set-ignore-mouse', (_e, ignore: boolean) => {
   win?.setIgnoreMouseEvents(ignore, { forward: true })
 })
 
+ipcMain.handle('start-drag', (_e) => {
+  const win = BrowserWindow.fromWebContents(_e.sender)
+  if (!win) return
+  const { screen: electronScreen } = require('electron')
+  const moveHandler = () => {
+    const { x, y } = electronScreen.getCursorScreenPoint()
+    const [w, h] = win.getSize()
+    win.setPosition(Math.round(x - w / 2), Math.round(y - 10))
+  }
+  // Use polling while button is held — cleared by stop-drag
+  const interval = setInterval(moveHandler, 16)
+  ;(win as unknown as { _dragInterval?: ReturnType<typeof setInterval> })._dragInterval = interval
+})
+
+ipcMain.handle('stop-drag', (_e, x: number, y: number) => {
+  const win = BrowserWindow.fromWebContents(_e.sender)
+  if (!win) return
+  const w = win as unknown as { _dragInterval?: ReturnType<typeof setInterval> }
+  if (w._dragInterval) { clearInterval(w._dragInterval); w._dragInterval = undefined }
+  // Save final position
+  const [px, py] = win.getPosition()
+  const positions = loadPositions()
+  // find noteId for this window
+  for (const [id, nw] of noteWindows) {
+    if (nw === win) { positions[id] = { x: px, y: py }; savePositions(positions); break }
+  }
+})
+
 ipcMain.handle('close-note', (_e, noteId: string) => {
   // Unpin via backend then close
   fetch(`${BACKEND_URL}/notes`, {

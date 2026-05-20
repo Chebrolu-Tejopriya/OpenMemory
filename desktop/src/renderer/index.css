@@ -191,5 +191,3 @@ html, body, #root {
   font-style: italic;
 }
 
-.drag-region { -webkit-app-region: drag; }
-.drag-region button { -webkit-app-region: no-drag; }

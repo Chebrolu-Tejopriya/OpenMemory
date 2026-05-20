@@ -18,6 +18,8 @@ declare global {
       openWebapp: () => Promise<void>
       onNoteData: (cb: (note: NoteData) => void) => void
       saveTodos: (noteId: string, todos: TodoItem[], color: { bg: string; text: string }) => Promise<void>
+      startDrag: () => Promise<void>
+      stopDrag: (x: number, y: number) => Promise<void>
     }
   }
 }
@@ -83,8 +85,21 @@ export default function App() {
 
   return (
     <div className="card" style={{ '--bg': bg, '--fg': fg, '--stripe': stripe } as React.CSSProperties}>
-      {/* Top bar — drag region */}
-      <div className="topbar drag-region">
+      {/* Top bar — manual drag */}
+      <div
+        className="topbar"
+        onMouseDown={(e) => {
+          if ((e.target as HTMLElement).closest('button')) return
+          e.preventDefault()
+          window.electronAPI?.startDrag()
+          const onUp = () => {
+            window.electronAPI?.stopDrag(0, 0)
+            window.removeEventListener('mouseup', onUp)
+          }
+          window.addEventListener('mouseup', onUp)
+        }}
+        style={{ cursor: 'grab' }}
+      >
         <div className="handle-dots">
           <span /><span /><span />
           <span /><span /><span />
