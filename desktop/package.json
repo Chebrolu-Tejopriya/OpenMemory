@@ -21,7 +21,7 @@
       "out/**/*"
     ],
     "win": {
-      "target": "nsis",
+      "target": "portable",
       "icon": "resources/icon.ico"
     },
     "mac": {

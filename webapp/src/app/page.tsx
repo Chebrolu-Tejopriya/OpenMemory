@@ -1057,13 +1057,13 @@ export default function Home() {
                   </div>
                   <div className="px-3 pb-3 flex flex-col gap-1.5">
                     <a
-                      href="https://github.com/Chebrolu-Tejopriya/OpenMemory/releases/latest/download/OpenMemory-Setup.exe"
+                      href="https://github.com/Chebrolu-Tejopriya/OpenMemory/releases/latest/download/OpenMemory-Windows.zip"
                       className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all"
                       style={{ background: 'rgba(91,152,136,0.10)', color: '#1a6650' }}
                       onClick={() => setShowDesktopDownload(false)}
                     >
                       <Download className="w-3.5 h-3.5 flex-shrink-0" />
-                      <span>Windows (.exe)</span>
+                      <span>Windows (.zip)</span>
                     </a>
                     <a
                       href="https://github.com/Chebrolu-Tejopriya/OpenMemory/releases/latest/download/OpenMemory.dmg"

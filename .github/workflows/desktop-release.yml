@@ -78,8 +78,9 @@ jobs:
 
       - name: Rename artifacts to stable names
         run: |
-          find artifacts -name "*.exe" -exec mv {} artifacts/OpenMemory-Setup.exe \;
-          find artifacts -name "*.dmg" -exec mv {} artifacts/OpenMemory.dmg \;
+          find artifacts -name "*.zip" -exec mv {} artifacts/OpenMemory-Windows.zip \; 2>/dev/null || true
+          find artifacts -name "*.exe" -exec mv {} artifacts/OpenMemory-Setup.exe \; 2>/dev/null || true
+          find artifacts -name "*.dmg" -exec mv {} artifacts/OpenMemory.dmg \; 2>/dev/null || true
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -94,7 +95,7 @@ jobs:
 
             No backend setup needed — connects to the cloud automatically.
           files: |
-            artifacts/OpenMemory-Setup.exe
+            artifacts/OpenMemory-Windows.zip
             artifacts/OpenMemory.dmg
           make_latest: true
           prerelease: false
