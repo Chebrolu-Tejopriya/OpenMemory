@@ -771,8 +771,8 @@ export default function Home() {
         />
       )}
 
-      {/* Veo watermark blur */}
-      <div className="absolute z-10 pointer-events-none" style={{ bottom: '3%', left: '18%', width: 80, height: 36, backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', borderRadius: 4 }} />
+      {/* Veo watermark blur — feathered so it's invisible unless covering text */}
+      <div className="absolute z-10 pointer-events-none" style={{ bottom: '3%', left: '18%', width: 100, height: 44, backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', WebkitMaskImage: 'radial-gradient(ellipse at center, black 30%, transparent 75%)', maskImage: 'radial-gradient(ellipse at center, black 30%, transparent 75%)' }} />
 
       {/* Top Gradient */}
       <div className="hidden sm:block absolute top-[-36px] left-0 right-0 h-[142px] z-10 pointer-events-none">
