@@ -772,7 +772,7 @@ export default function Home() {
       )}
 
       {/* Veo watermark blur */}
-      <div className="absolute z-10 pointer-events-none" style={{ bottom: '12%', right: '2%', width: 120, height: 48, backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', borderRadius: 6 }} />
+      <div className="absolute z-10 pointer-events-none" style={{ bottom: '2%', right: '1%', width: 140, height: 52, backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', borderRadius: 6 }} />
 
       {/* Top Gradient */}
       <div className="hidden sm:block absolute top-[-36px] left-0 right-0 h-[142px] z-10 pointer-events-none">
