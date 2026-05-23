@@ -1038,49 +1038,7 @@ export default function Home() {
               <span>{showNotesArchive ? 'Close' : 'Archive'}</span>
               {!showNotesArchive && archivedNotes.length > 0 && <span className="text-[10px] bg-[#5b9888] text-white rounded-full px-1.5 py-0.5 leading-none">{archivedNotes.length}</span>}
             </button>
-            {/* Desktop app download */}
-            <div className="relative flex-shrink-0 ml-2" style={{ fontFamily: "var(--font-geist), sans-serif" }}>
-              <button
-                onClick={() => setShowDesktopDownload(v => !v)}
-                className="flex items-center gap-1.5 text-xs font-medium transition-all rounded-lg px-2.5 py-1.5"
-                style={{ background: 'rgba(91,152,136,0.10)', color: '#5b9888', border: '1px solid rgba(91,152,136,0.2)' }}
-                title="Get desktop app"
-              >
-                <Monitor className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Desktop</span>
-              </button>
-              {showDesktopDownload && (
-                <div className="absolute right-0 top-full mt-2 z-50 rounded-xl shadow-xl overflow-hidden" style={{ background: 'rgba(242,249,247,0.98)', border: '1px solid rgba(91,152,136,0.18)', backdropFilter: 'blur(12px)', minWidth: 240 }}>
-                  <div className="px-4 pt-3 pb-2">
-                    <p className="text-xs font-semibold text-[#1a1a1a]">OpenMemory Desktop</p>
-                    <p className="text-[11px] text-[#3a3a3a]/50 mt-0.5">Pin notes to float on your desktop</p>
-                  </div>
-                  <div className="px-3 pb-3 flex flex-col gap-1.5">
-                    <a
-                      href="https://github.com/Chebrolu-Tejopriya/OpenMemory/releases/latest/download/OpenMemory-Windows.zip"
-                      className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all"
-                      style={{ background: 'rgba(91,152,136,0.10)', color: '#1a6650' }}
-                      onClick={() => setShowDesktopDownload(false)}
-                    >
-                      <Download className="w-3.5 h-3.5 flex-shrink-0" />
-                      <span>Windows (.zip)</span>
-                    </a>
-                    <a
-                      href="https://github.com/Chebrolu-Tejopriya/OpenMemory/releases/latest/download/OpenMemory.dmg"
-                      className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all"
-                      style={{ background: 'rgba(91,152,136,0.10)', color: '#1a6650' }}
-                      onClick={() => setShowDesktopDownload(false)}
-                    >
-                      <Download className="w-3.5 h-3.5 flex-shrink-0" />
-                      <span>macOS (.dmg)</span>
-                    </a>
-                  </div>
-                  <div className="px-4 pb-3">
-                    <p className="text-[10px] text-[#3a3a3a]/35 leading-relaxed">Install once — pinned notes float on your desktop automatically. No setup required.</p>
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* Desktop app download — hidden for now */}
           </div>
 
           <div className="flex-1 overflow-auto custom-scrollbar relative">
