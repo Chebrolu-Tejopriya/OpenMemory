@@ -771,8 +771,8 @@ export default function Home() {
         />
       )}
 
-      {/* Veo watermark — fade out bottom-right corner to match video bg */}
-      <div className="absolute bottom-0 right-0 z-10 pointer-events-none" style={{ width: '25%', height: '18%', background: 'radial-gradient(ellipse at bottom right, rgba(235,253,255,0.92) 30%, transparent 75%)' }} />
+      {/* Veo watermark — fade out bottom-left corner to match video bg */}
+      <div className="absolute bottom-0 left-0 z-10 pointer-events-none" style={{ width: '25%', height: '18%', background: 'radial-gradient(ellipse at bottom left, rgba(235,253,255,0.95) 35%, transparent 75%)' }} />
 
       {/* Top Gradient */}
       <div className="hidden sm:block absolute top-[-36px] left-0 right-0 h-[142px] z-10 pointer-events-none">
