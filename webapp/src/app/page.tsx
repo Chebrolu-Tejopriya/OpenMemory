@@ -771,8 +771,8 @@ export default function Home() {
         />
       )}
 
-      {/* Veo watermark blur — covers bottom-right corner of video */}
-      <div className="absolute bottom-0 right-0 z-10 pointer-events-none" style={{ width: 80, height: 36, backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }} />
+      {/* Veo watermark blur */}
+      <div className="absolute z-10 pointer-events-none" style={{ bottom: '12%', right: '2%', width: 120, height: 48, backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', borderRadius: 6 }} />
 
       {/* Top Gradient */}
       <div className="hidden sm:block absolute top-[-36px] left-0 right-0 h-[142px] z-10 pointer-events-none">
