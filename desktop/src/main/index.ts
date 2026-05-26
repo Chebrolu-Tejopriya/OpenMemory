@@ -3,7 +3,7 @@ import { join } from 'path'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 
 const BACKEND_URL = process.env.BACKEND_URL || 'https://openmemory-backend-j775.onrender.com'
-const POLL_INTERVAL = 30000
+const POLL_INTERVAL = 60000
 
 // ── Simple JSON store ─────────────────────────────────────────
 type PinPositions = Record<string, { x: number; y: number }>

@@ -484,7 +484,7 @@ app.get('/notes/pinned', async (req, res) => {
       );
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
-      await setCache('notes:pinned', data, 20);
+      await setCache('notes:pinned', data, 300); // 5 min — must be longer than poll interval
       return data;
     })();
     // ETag: hash of note ids+updated_at so unchanged data returns 304
