@@ -62,8 +62,14 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
  * GET /health
  * Health check endpoint for monitoring and keeping Render awake
  */
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/health', async (req, res) => {
+  let redisOk = false;
+  try {
+    await setCache('__ping', 1, 10);
+    const v = await getCache<number>('__ping');
+    redisOk = v === 1;
+  } catch {}
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), redis: redisOk ? 'ok' : 'FAIL' });
 });
 
 /**
