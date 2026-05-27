@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Pencil, Upload, Plus, ArchiveRestore, Trash2, Pause, Play, GripHorizontal, ListTodo, Square, CheckSquare2, Pin, PinOff, Download, Monitor } from "lucide-react";
+import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Pencil, Upload, Plus, ArchiveRestore, Trash2, Pause, Play, GripHorizontal, ListTodo, Square, CheckSquare2 } from "lucide-react";
 import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
@@ -52,7 +52,7 @@ const NOTE_COLORS = [
 
 type NoteColor = typeof NOTE_COLORS[number];
 type TodoItem = { id: string; text: string; done: boolean };
-type Note = { id: string; title: string; body: string; createdAt: string; color: NoteColor; x: number; y: number; images?: string[]; todos?: TodoItem[]; pinned?: boolean };
+type Note = { id: string; title: string; body: string; createdAt: string; color: NoteColor; x: number; y: number; images?: string[]; todos?: TodoItem[] };
 
 function getDefaultPosition(index: number): { x: number; y: number } {
   const cols = 4;
@@ -137,13 +137,6 @@ export default function Home() {
   const [showLinksArchive, setShowLinksArchive] = useState(false);
   const [videoPaused, setVideoPaused] = useState(false);
   const [noteSearch, setNoteSearch] = useState("");
-  const [showDesktopDownload, setShowDesktopDownload] = useState(false);
-  useEffect(() => {
-    if (!showDesktopDownload) return;
-    const close = () => setShowDesktopDownload(false);
-    document.addEventListener('click', close, { capture: true, once: true });
-    return () => document.removeEventListener('click', close, { capture: true });
-  }, [showDesktopDownload]);
 
   // Activity / home widgets state
   const [activityData, setActivityData] = useState<{
@@ -223,7 +216,7 @@ export default function Home() {
       color: { bg: n.color_bg, text: n.color_text },
       x: n.pos_x ?? getDefaultPosition(i).x,
       y: n.pos_y ?? getDefaultPosition(i).y,
-      pinned: n.pinned ?? false,
+
       ...(n.image_data ? { images: (() => { try { const p = JSON.parse(n.image_data); return Array.isArray(p) ? p : [n.image_data]; } catch { return [n.image_data]; } })() } : {}),
       ...(n.todos ? { todos: (() => { try { return JSON.parse(n.todos!); } catch { return []; } })() } : {}),
     });
@@ -621,18 +614,6 @@ export default function Home() {
     } catch {}
   };
 
-  const pinNote = async (id: string, pinned: boolean) => {
-    setNotes(prev => prev.map(n => n.id === id ? { ...n, pinned } : n));
-    const note = notes.find(n => n.id === id);
-    if (!note) return;
-    try {
-      await fetch(`${BACKEND_URL}/notes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, title: note.title, body: note.body, color: note.color, pinned }),
-      });
-    } catch {}
-  };
 
   const deleteNote = async (id: string) => {
     const note = notes.find(n => n.id === id);
@@ -1101,9 +1082,6 @@ export default function Home() {
                   onDoubleClick={() => openNoteForEdit(note)}
                 >
                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg" style={{ padding: '3px 5px', background: note.images?.length ? 'rgba(0,0,0,0.32)' : 'transparent' }}>
-                    <button onClick={() => pinNote(note.id, !note.pinned)} title={note.pinned ? 'Remove from desktop' : 'Pin to desktop'} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.images?.length ? 'white' : (note.color?.text ?? '#78350f') }}>
-                      {note.pinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
-                    </button>
                     <button onClick={() => openNoteForEdit(note)} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.images?.length ? 'white' : (note.color?.text ?? '#78350f') }}>
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
@@ -1111,9 +1089,6 @@ export default function Home() {
                       <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
-                  {note.pinned && (
-                    <Pin className="absolute top-2 left-2 w-3 h-3 opacity-40" style={{ color: note.color?.text ?? '#78350f' }} />
-                  )}
                   {note.images && note.images.length > 0 && (
                     <div className={`grid gap-1 mb-1 ${note.images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
                       {note.images.slice(0, 4).map((img, idx) => (
@@ -1158,9 +1133,6 @@ export default function Home() {
                     <GripHorizontal className="w-4 h-4" />
                   </div>
                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg" style={{ padding: '3px 5px', background: note.images?.length ? 'rgba(0,0,0,0.32)' : 'transparent' }}>
-                    <button onPointerDown={(e) => e.stopPropagation()} onClick={() => pinNote(note.id, !note.pinned)} title={note.pinned ? 'Remove from desktop' : 'Pin to desktop'} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.images?.length ? 'white' : (note.color?.text ?? '#78350f') }}>
-                      {note.pinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
-                    </button>
                     <button onPointerDown={(e) => e.stopPropagation()} onClick={() => openNoteForEdit(note)} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.images?.length ? 'white' : (note.color?.text ?? '#78350f') }}>
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
