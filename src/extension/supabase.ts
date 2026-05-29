@@ -102,7 +102,7 @@ async function supabaseRequest<T>(
     'apikey': config.anonKey,
     'Authorization': `Bearer ${config.anonKey}`,
     'Content-Type': 'application/json',
-    'Prefer': 'return=representation',
+    'Prefer': 'return=minimal',
     ...(options.headers as Record<string, string> || {})
   };
 
@@ -217,7 +217,7 @@ export async function upsertBookmark(
     // First, check if bookmark exists and if title changed
     console.log('[Supabase] Checking if bookmark exists...');
     const { data: existing, error: fetchError } = await supabaseRequest<SupabaseBookmark[]>(
-      `bookmarks?url=eq.${encodeURIComponent(bookmark.url)}&select=id,title,embedding`
+      `bookmarks?url=eq.${encodeURIComponent(bookmark.url)}&select=id,title`
     );
 
     if (fetchError) {
@@ -260,7 +260,7 @@ export async function upsertBookmark(
       {
         method: 'POST',
         headers: {
-          'Prefer': 'resolution=merge-duplicates,return=representation'
+          'Prefer': 'resolution=merge-duplicates,return=minimal'
         },
         body: JSON.stringify(payload)
       }
@@ -704,7 +704,7 @@ export async function upsertPinterestPin(
   try {
     // Check if pin exists and if title changed
     const { data: existing } = await supabaseRequest<SupabasePinterestPin[]>(
-      `pinterest_pins?pin_url=eq.${encodeURIComponent(pin.pin_url)}&select=id,title,embedding`
+      `pinterest_pins?pin_url=eq.${encodeURIComponent(pin.pin_url)}&select=id,title`
     );
 
     const existingPin = existing?.[0];
@@ -767,7 +767,7 @@ Keywords: fintech, finance, dashboard, banking UI, mobile app`;
       {
         method: 'POST',
         headers: {
-          'Prefer': 'resolution=merge-duplicates,return=representation'
+          'Prefer': 'resolution=merge-duplicates,return=minimal'
         },
         body: JSON.stringify(requestPayload)
       }
