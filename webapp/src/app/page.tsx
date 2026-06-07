@@ -1098,7 +1098,14 @@ export default function Home() {
                     </div>
                   )}
                   {note.title && <p className="text-sm font-semibold pr-5 leading-snug break-words" style={{ color: note.color?.text ?? '#78350f' }}>{note.title}</p>}
-                  {note.body && <p className="text-xs whitespace-pre-wrap leading-relaxed opacity-80 mt-1 break-words pr-5" style={{ color: note.color?.text ?? '#78350f' }}>{note.body}</p>}
+                  {note.body && (
+                    <div
+                      className="mt-1 max-h-44 overflow-y-auto overscroll-contain custom-scrollbar pr-1"
+                      onPointerDown={(e) => e.stopPropagation()}
+                    >
+                      <p className="text-xs whitespace-pre-wrap leading-relaxed opacity-80 break-words pr-4" style={{ color: note.color?.text ?? '#78350f' }}>{note.body}</p>
+                    </div>
+                  )}
                   {note.todos && note.todos.length > 0 && (
                     <div className="flex flex-col gap-1 mt-2">
                       {note.todos.map(todo => (
@@ -1149,7 +1156,14 @@ export default function Home() {
                     </div>
                   )}
                   {note.title && <p className="text-sm font-semibold pr-5 leading-snug break-words" style={{ color: note.color?.text ?? '#78350f' }}>{note.title}</p>}
-                  {note.body && <p className="text-xs whitespace-pre-wrap leading-relaxed opacity-80 mt-1 break-words pr-5" style={{ color: note.color?.text ?? '#78350f' }}>{note.body}</p>}
+                  {note.body && (
+                    <div
+                      className="mt-1 max-h-44 overflow-y-auto overscroll-contain custom-scrollbar pr-1"
+                      onPointerDown={(e) => e.stopPropagation()}
+                    >
+                      <p className="text-xs whitespace-pre-wrap leading-relaxed opacity-80 break-words pr-4" style={{ color: note.color?.text ?? '#78350f' }}>{note.body}</p>
+                    </div>
+                  )}
                   {note.todos && note.todos.length > 0 && (
                     <div className="flex flex-col gap-1 mt-2">
                       {note.todos.map(todo => (
@@ -1345,7 +1359,7 @@ export default function Home() {
           return (
             <div className="absolute inset-0 z-20 flex items-center justify-center p-6" onClick={(e) => { if (e.target === e.currentTarget) saveOrClose(); }}>
               <div
-                className="w-full max-w-[420px] rounded-2xl shadow-2xl p-6 flex flex-col gap-3"
+                className="w-full max-w-[420px] max-h-[calc(100dvh-3rem)] overflow-y-auto overscroll-contain custom-scrollbar rounded-2xl shadow-2xl p-6 flex flex-col gap-3"
                 style={{ background: noteColor.bg, transition: 'background 0.2s ease' }}
               >
 
@@ -1393,12 +1407,12 @@ export default function Home() {
                 />
                 <textarea
                   value={noteBody}
-                  onChange={(e) => { setNoteBody(e.target.value); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
+                  onChange={(e) => setNoteBody(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) saveOrClose(); if (e.key === "Escape") closeModal(); }}
                   placeholder="Type anything..."
-                  rows={1}
-                  className="w-full bg-transparent outline-none text-sm resize-none placeholder:opacity-40 leading-relaxed"
-                  style={{ color: noteColor.text, fontFamily: "var(--font-geist), sans-serif", overflow: 'hidden' }}
+                  rows={6}
+                  className="w-full min-h-28 max-h-[40dvh] overflow-y-auto overscroll-contain custom-scrollbar bg-transparent outline-none text-sm resize-none placeholder:opacity-40 leading-relaxed"
+                  style={{ color: noteColor.text, fontFamily: "var(--font-geist), sans-serif" }}
                 />
                 {/* Todo checklist — Notion-style */}
                 {noteTodos.length > 0 && (
