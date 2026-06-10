@@ -2,8 +2,6 @@
 
 A personal inspiration memory system — search your Chrome bookmarks and Pinterest pins using natural language and browse them visually in a drag-to-explore infinite canvas.
 
-**Live:** [open-memory-nine.vercel.app](https://open-memory-nine.vercel.app)
-
 ---
 
 ## Features
