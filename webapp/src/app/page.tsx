@@ -1105,9 +1105,9 @@ export default function Home() {
                         <div className="h-px bg-gray-200 mx-2" />
                         <button
                           onClick={(e) => { e.stopPropagation(); setOpenNoteMenuId(null); deleteNote(note.id); }}
-                          className="flex items-center gap-2 px-3 py-2.5 text-sm text-red-500 active:bg-red-50"
+                          className="flex items-center gap-2 px-3 py-2.5 text-sm text-gray-700 active:bg-gray-100"
                         >
-                          <Trash2 className="w-3.5 h-3.5" /> Delete
+                          <ArchiveRestore className="w-3.5 h-3.5" /> Archive
                         </button>
                       </div>
                     )}
