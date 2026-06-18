@@ -1707,7 +1707,7 @@ export default function Home() {
                       }}
                       aria-label={LABELS[view]}
                       onMouseEnter={() => setHoveredDockItem(view)}
-                      onMouseLeave={() => { setHoveredDockItem(null); }}
+                      onMouseLeave={() => setHoveredDockItem(null)}
                       style={{
                         position: "relative",
                         zIndex: 1,
@@ -1717,18 +1717,25 @@ export default function Home() {
                         alignItems: "center",
                         justifyContent: "center",
                         borderRadius: 14,
-                        background: "transparent",
                         border: "none",
                         cursor: "pointer",
-                        color: isActive ? "rgba(255,255,255,0.95)" : isHovered ? "rgba(255,255,255,0.80)" : "rgba(255,255,255,0.45)",
-                        transform: isHovered ? "translateY(-14px) scale(1.45)" : "translateY(0) scale(1)",
-                        transition: "color 0.2s ease, transform 0.25s cubic-bezier(0.34,1.56,0.64,1)",
+                        color: isActive || isHovered ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.45)",
+                        background: isHovered
+                          ? "linear-gradient(160deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.14) 100%)"
+                          : "transparent",
+                        backdropFilter: isHovered ? "blur(8px)" : "none",
+                        WebkitBackdropFilter: isHovered ? "blur(8px)" : "none",
+                        boxShadow: isHovered
+                          ? "inset 0 1.5px 0 rgba(255,255,255,0.5), 0 6px 20px rgba(0,0,0,0.22)"
+                          : "none",
+                        transform: isHovered ? "translateY(-12px) scale(1.35)" : "translateY(0) scale(1)",
+                        transition: "color 0.2s ease, transform 0.25s cubic-bezier(0.34,1.56,0.64,1), background 0.15s ease, box-shadow 0.15s ease",
                         WebkitTapHighlightColor: "transparent",
                       }}
-                      onMouseDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.88)"; }}
-                      onMouseUp={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = isHovered ? "translateY(-14px) scale(1.45)" : "scale(1)"; }}
+                      onMouseDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-8px) scale(0.92)"; }}
+                      onMouseUp={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = isHovered ? "translateY(-12px) scale(1.35)" : "scale(1)"; }}
                     >
-                      <Icon size={20} strokeWidth={isActive ? 2.2 : 1.8} />
+                      <Icon size={20} strokeWidth={isActive || isHovered ? 2.2 : 1.8} />
                     </button>
                   </div>
                 );
