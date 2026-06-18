@@ -1720,12 +1720,12 @@ export default function Home() {
                         border: "none",
                         cursor: "pointer",
                         color: isActive ? "rgba(255,255,255,0.95)" : isHovered ? "rgba(255,255,255,0.80)" : "rgba(255,255,255,0.45)",
-                        transform: isHovered ? "translateY(-2px) scale(1.08)" : "translateY(0) scale(1)",
-                        transition: "color 0.2s ease, transform 0.18s cubic-bezier(0.34,1.56,0.64,1)",
+                        transform: isHovered ? "translateY(-6px) scale(1.18)" : "translateY(0) scale(1)",
+                        transition: "color 0.2s ease, transform 0.22s cubic-bezier(0.34,1.56,0.64,1)",
                         WebkitTapHighlightColor: "transparent",
                       }}
                       onMouseDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.88)"; }}
-                      onMouseUp={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = isHovered ? "translateY(-2px) scale(1.08)" : "scale(1)"; }}
+                      onMouseUp={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = isHovered ? "translateY(-6px) scale(1.18)" : "scale(1)"; }}
                     >
                       <Icon size={20} strokeWidth={isActive ? 2.2 : 1.8} />
                     </button>
