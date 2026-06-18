@@ -1674,9 +1674,9 @@ export default function Home() {
                         position: "absolute",
                         bottom: "calc(100% + 22px)",
                         left: "50%",
-                        transform: `translateX(-50%) translateY(${isHovered ? 0 : 8}px)`,
+                        transform: `translateX(-50%) translateY(${isHovered && !isActive ? 0 : 8}px)`,
                         pointerEvents: "none",
-                        opacity: isHovered ? 1 : 0,
+                        opacity: isHovered && !isActive ? 1 : 0,
                         transition: "opacity 0.15s ease, transform 0.15s ease",
                         whiteSpace: "nowrap",
                         zIndex: 10,
@@ -1720,15 +1720,15 @@ export default function Home() {
                         border: "none",
                         cursor: "pointer",
                         color: isActive || isHovered ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.45)",
-                        background: isHovered
+                        background: isHovered && !isActive
                           ? "linear-gradient(160deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.14) 100%)"
                           : "transparent",
-                        backdropFilter: isHovered ? "blur(8px)" : "none",
-                        WebkitBackdropFilter: isHovered ? "blur(8px)" : "none",
-                        boxShadow: isHovered
+                        backdropFilter: isHovered && !isActive ? "blur(8px)" : "none",
+                        WebkitBackdropFilter: isHovered && !isActive ? "blur(8px)" : "none",
+                        boxShadow: isHovered && !isActive
                           ? "inset 0 1.5px 0 rgba(255,255,255,0.5), 0 6px 20px rgba(0,0,0,0.22)"
                           : "none",
-                        transform: isHovered ? "translateY(-12px) scale(1.35)" : "translateY(0) scale(1)",
+                        transform: isHovered && !isActive ? "translateY(-12px) scale(1.35)" : "translateY(0) scale(1)",
                         transition: "color 0.2s ease, transform 0.25s cubic-bezier(0.34,1.56,0.64,1), background 0.15s ease, box-shadow 0.15s ease",
                         WebkitTapHighlightColor: "transparent",
                       }}
