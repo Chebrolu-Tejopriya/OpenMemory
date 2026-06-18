@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Pencil, Upload, Plus, ArchiveRestore, Trash2, Pause, Play, GripHorizontal, ListTodo, Square, CheckSquare2 } from "lucide-react";
+import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Pencil, Upload, Plus, ArchiveRestore, Trash2, Pause, Play, GripHorizontal, ListTodo, Square, CheckSquare2, MoreVertical } from "lucide-react";
 import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
@@ -137,6 +137,7 @@ export default function Home() {
   const [showLinksArchive, setShowLinksArchive] = useState(false);
   const [videoPaused, setVideoPaused] = useState(false);
   const [noteSearch, setNoteSearch] = useState("");
+  const [openNoteMenuId, setOpenNoteMenuId] = useState<string | null>(null);
 
   // Activity / home widgets state
   const [activityData, setActivityData] = useState<{
@@ -1073,7 +1074,7 @@ export default function Home() {
             </div>
           ) : isMobile ? (
             /* ── Mobile: 2-column grid, LIFO, no drag ── */
-            <div style={{ columns: 2, columnGap: 12, padding: 16, paddingBottom: 128 }}>
+            <div style={{ columns: 2, columnGap: 12, padding: 16, paddingBottom: 128 }} onClick={() => setOpenNoteMenuId(null)}>
               {filteredNotes.map((note) => (
                 <div
                   key={note.id}
@@ -1081,13 +1082,35 @@ export default function Home() {
                   style={{ breakInside: 'avoid', marginBottom: 12, background: note.color?.bg ?? '#fde68a', padding: 14, boxShadow: '0 2px 10px rgba(0,0,0,0.08)' }}
                   onDoubleClick={() => openNoteForEdit(note)}
                 >
-                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg" style={{ padding: '3px 5px', background: note.images?.length ? 'rgba(0,0,0,0.32)' : 'transparent' }}>
-                    <button onClick={() => openNoteForEdit(note)} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.images?.length ? 'white' : (note.color?.text ?? '#78350f') }}>
-                      <Pencil className="w-3.5 h-3.5" />
+                  {/* Mobile action menu — always-visible ⋮ button */}
+                  <div className="absolute top-2 right-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setOpenNoteMenuId(openNoteMenuId === note.id ? null : note.id); }}
+                      className="p-0.5 rounded opacity-50 active:opacity-100"
+                      style={{ color: note.images?.length ? 'white' : (note.color?.text ?? '#78350f') }}
+                    >
+                      <MoreVertical className="w-4 h-4" />
                     </button>
-                    <button onClick={() => deleteNote(note.id)} className="opacity-70 hover:opacity-100 transition-opacity" style={{ color: note.images?.length ? 'white' : (note.color?.text ?? '#78350f') }}>
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                    {openNoteMenuId === note.id && (
+                      <div
+                        className="absolute right-0 top-6 z-50 flex flex-col rounded-xl overflow-hidden shadow-lg"
+                        style={{ background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(8px)', minWidth: 110 }}
+                      >
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setOpenNoteMenuId(null); openNoteForEdit(note); }}
+                          className="flex items-center gap-2 px-3 py-2.5 text-sm text-gray-700 active:bg-gray-100"
+                        >
+                          <Pencil className="w-3.5 h-3.5" /> Edit
+                        </button>
+                        <div className="h-px bg-gray-200 mx-2" />
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setOpenNoteMenuId(null); deleteNote(note.id); }}
+                          className="flex items-center gap-2 px-3 py-2.5 text-sm text-red-500 active:bg-red-50"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> Delete
+                        </button>
+                      </div>
+                    )}
                   </div>
                   {note.images && note.images.length > 0 && (
                     <div className={`grid gap-1 mb-1 ${note.images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
