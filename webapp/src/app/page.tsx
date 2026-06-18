@@ -97,6 +97,7 @@ interface ActiveScope { type: "folder" | "board"; value: string }
 
 export default function Home() {
   const [activeView, setActiveView] = useState<ActiveView>("search");
+  const [hoveredDockItem, setHoveredDockItem] = useState<ActiveView | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -1662,40 +1663,73 @@ export default function Home() {
               {VIEWS.map((view) => {
                 const Icon = ICONS[view];
                 const isActive = activeView === view;
+                const isHovered = hoveredDockItem === view;
                 return (
-                  <button
-                    key={view}
-                    onClick={() => {
-                      if (view === "save") {
-                        setSavePopoverOpen(prev => !prev);
-                      } else {
-                        handleViewSwitch(view);
-                        setSavePopoverOpen(false);
-                      }
-                    }}
-                    aria-label={LABELS[view]}
-                    style={{
-                      position: "relative",
-                      zIndex: 1,
-                      width: BTN,
-                      height: BTN,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      borderRadius: 14,
-                      background: "transparent",
-                      border: "none",
-                      cursor: "pointer",
-                      color: isActive ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.45)",
-                      transition: "color 0.25s ease, transform 0.12s ease",
-                      WebkitTapHighlightColor: "transparent",
-                    }}
-                    onMouseDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.88)"; }}
-                    onMouseUp={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
-                  >
-                    <Icon size={20} strokeWidth={isActive ? 2.2 : 1.8} />
-                  </button>
+                  <div key={view} style={{ position: "relative" }}>
+                    {/* Tooltip label */}
+                    <div
+                      aria-hidden
+                      style={{
+                        position: "absolute",
+                        bottom: "calc(100% + 10px)",
+                        left: "50%",
+                        transform: `translateX(-50%) translateY(${isHovered ? 0 : 6}px)`,
+                        pointerEvents: "none",
+                        opacity: isHovered ? 1 : 0,
+                        transition: "opacity 0.15s ease, transform 0.15s ease",
+                        whiteSpace: "nowrap",
+                        zIndex: 10,
+                        background: "rgba(18,18,18,0.88)",
+                        backdropFilter: "blur(12px)",
+                        WebkitBackdropFilter: "blur(12px)",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        borderRadius: 20,
+                        padding: "5px 12px",
+                        fontSize: 12,
+                        fontWeight: 500,
+                        color: "rgba(255,255,255,0.92)",
+                        letterSpacing: "0.01em",
+                        boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+                      }}
+                    >
+                      {LABELS[view]}
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        if (view === "save") {
+                          setSavePopoverOpen(prev => !prev);
+                        } else {
+                          handleViewSwitch(view);
+                          setSavePopoverOpen(false);
+                        }
+                      }}
+                      aria-label={LABELS[view]}
+                      onMouseEnter={() => setHoveredDockItem(view)}
+                      onMouseLeave={() => { setHoveredDockItem(null); }}
+                      style={{
+                        position: "relative",
+                        zIndex: 1,
+                        width: BTN,
+                        height: BTN,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderRadius: 14,
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        color: isActive ? "rgba(255,255,255,0.95)" : isHovered ? "rgba(255,255,255,0.80)" : "rgba(255,255,255,0.45)",
+                        transform: isHovered ? "translateY(-2px) scale(1.08)" : "translateY(0) scale(1)",
+                        transition: "color 0.2s ease, transform 0.18s cubic-bezier(0.34,1.56,0.64,1)",
+                        WebkitTapHighlightColor: "transparent",
+                      }}
+                      onMouseDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.88)"; }}
+                      onMouseUp={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = isHovered ? "translateY(-2px) scale(1.08)" : "scale(1)"; }}
+                    >
+                      <Icon size={20} strokeWidth={isActive ? 2.2 : 1.8} />
+                    </button>
+                  </div>
                 );
               })}
             </div>
