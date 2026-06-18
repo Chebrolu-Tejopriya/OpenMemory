@@ -1621,6 +1621,7 @@ export default function Home() {
                 padding: PAD,
                 gap: GAP,
                 borderRadius: 22,
+                overflow: "visible",
                 // Dark-neutral base — visible on ANY background (light or dark)
                 background: "linear-gradient(160deg, rgba(10,10,10,0.35) 0%, rgba(10,10,10,0.28) 100%)",
                 backdropFilter: "blur(40px) saturate(160%)",
@@ -1671,9 +1672,9 @@ export default function Home() {
                       aria-hidden
                       style={{
                         position: "absolute",
-                        bottom: "calc(100% + 10px)",
+                        bottom: "calc(100% + 22px)",
                         left: "50%",
-                        transform: `translateX(-50%) translateY(${isHovered ? 0 : 6}px)`,
+                        transform: `translateX(-50%) translateY(${isHovered ? 0 : 8}px)`,
                         pointerEvents: "none",
                         opacity: isHovered ? 1 : 0,
                         transition: "opacity 0.15s ease, transform 0.15s ease",
@@ -1720,12 +1721,12 @@ export default function Home() {
                         border: "none",
                         cursor: "pointer",
                         color: isActive ? "rgba(255,255,255,0.95)" : isHovered ? "rgba(255,255,255,0.80)" : "rgba(255,255,255,0.45)",
-                        transform: isHovered ? "translateY(-6px) scale(1.18)" : "translateY(0) scale(1)",
-                        transition: "color 0.2s ease, transform 0.22s cubic-bezier(0.34,1.56,0.64,1)",
+                        transform: isHovered ? "translateY(-14px) scale(1.45)" : "translateY(0) scale(1)",
+                        transition: "color 0.2s ease, transform 0.25s cubic-bezier(0.34,1.56,0.64,1)",
                         WebkitTapHighlightColor: "transparent",
                       }}
                       onMouseDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.88)"; }}
-                      onMouseUp={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = isHovered ? "translateY(-6px) scale(1.18)" : "scale(1)"; }}
+                      onMouseUp={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = isHovered ? "translateY(-14px) scale(1.45)" : "scale(1)"; }}
                     >
                       <Icon size={20} strokeWidth={isActive ? 2.2 : 1.8} />
                     </button>
