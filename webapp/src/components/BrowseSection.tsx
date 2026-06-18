@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Bookmark, Pin, FolderOpen } from "lucide-react";
 import SearchResultCard, { SearchResult } from "./SearchResultCard";
+import { FluidNav } from "./FluidNav";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
@@ -112,20 +113,24 @@ export default function BrowseSection({ folders, boards, loading = false, constr
     </div>
   );
 
+  const tabItems = [
+    { key: "bookmarks", label: "Bookmarks", icon: <Bookmark className="w-3 h-3" /> },
+    { key: "pinterest", label: "Pinterest", icon: <Pin className="w-3 h-3" /> },
+  ];
+
   const tabSwitch = (
-    <div className="flex bg-white/60 backdrop-blur-sm border border-[#5b9888]/20 rounded-xl p-1 gap-1">
-      {(["bookmarks", "pinterest"] as BrowseTab[]).map((tab) => (
-        <button
-          key={tab}
-          onClick={() => setActiveTab(tab)}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
-            activeTab === tab ? "bg-white shadow-sm text-[#3a3a3a]" : "text-[#3a3a3a]/50 hover:text-[#3a3a3a]/70"
-          }`}
-        >
-          {tab === "bookmarks" ? <Bookmark className="w-3 h-3" /> : <Pin className="w-3 h-3" />}
-          {tab === "bookmarks" ? "Bookmarks" : "Pinterest"}
-        </button>
-      ))}
+    <div className="bg-white/60 backdrop-blur-sm border border-[#5b9888]/20 rounded-xl p-1">
+      <FluidNav
+        items={tabItems}
+        selectedKey={activeTab}
+        onSelect={(key) => setActiveTab(key as BrowseTab)}
+        orientation="horizontal"
+        selectedColor="#3a3a3a"
+        selectedBg="bg-white shadow-sm"
+        hoverBg="bg-black/[0.04]"
+        className="gap-1"
+        itemClassName="flex-1 justify-center py-1.5 px-2 text-xs font-medium"
+      />
     </div>
   );
 
@@ -185,25 +190,23 @@ export default function BrowseSection({ folders, boards, loading = false, constr
           {tabSwitch}
 
           {/* Folder/board list */}
-          <div className={`flex flex-col gap-0.5 overflow-y-auto custom-scrollbar pr-1 ${constrained ? "flex-1" : "max-h-[70vh]"}`}>
+          <div className={`overflow-y-auto custom-scrollbar pr-1 ${constrained ? "flex-1" : "max-h-[70vh]"}`}>
             {loading ? skeletonList : list.length === 0 ? (
               <p className="text-xs text-[#3a3a3a]/30 px-2 py-3 text-center">
                 No {activeTab === "bookmarks" ? "folders" : "boards"} found
               </p>
-            ) : list.map((item) => (
-              <button
-                key={item}
-                onClick={() => setSelectedItem(item)}
-                title={item}
-                className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all duration-150 ${
-                  selectedItem === item
-                    ? "bg-white shadow-sm text-[#3d7a64] font-medium"
-                    : "text-[#3a3a3a]/60 hover:bg-white/60 hover:text-[#3a3a3a]/80"
-                }`}
-              >
-                <span className="truncate block">{displayName(item)}</span>
-              </button>
-            ))}
+            ) : (
+              <FluidNav
+                items={list.map((item) => ({ key: item, label: displayName(item) }))}
+                selectedKey={selectedItem}
+                onSelect={setSelectedItem}
+                orientation="vertical"
+                selectedColor="#3d7a64"
+                selectedBg="bg-white shadow-sm"
+                hoverBg="bg-white/60"
+                itemClassName="w-full px-3 py-2 text-xs"
+              />
+            )}
           </div>
         </div>
 
