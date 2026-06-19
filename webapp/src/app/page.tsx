@@ -1664,33 +1664,33 @@ export default function Home() {
               {VIEWS.map((view) => {
                 const Icon = ICONS[view];
                 const isActive = activeView === view;
-                const isHovered = hoveredDockItem === view;
+                const isHovered = hoveredDockItem === view && !isActive;
                 return (
-                  <div key={view} style={{ position: "relative" }}>
-                    {/* Tooltip label */}
+                  <div key={view} style={{ position: "relative", zIndex: isHovered ? 20 : 1 }}>
+                    {/* Tooltip — positioned to float above the lifted icon */}
                     <div
                       aria-hidden
                       style={{
                         position: "absolute",
-                        bottom: "calc(100% + 22px)",
+                        bottom: "calc(100% + 38px)",
                         left: "50%",
-                        transform: `translateX(-50%) translateY(${isHovered && !isActive ? 0 : 8}px)`,
+                        transform: `translateX(-50%) translateY(${isHovered ? 0 : 6}px)`,
                         pointerEvents: "none",
-                        opacity: isHovered && !isActive ? 1 : 0,
-                        transition: "opacity 0.15s ease, transform 0.15s ease",
+                        opacity: isHovered ? 1 : 0,
+                        transition: "opacity 0.14s ease, transform 0.14s ease",
                         whiteSpace: "nowrap",
-                        zIndex: 10,
-                        background: "rgba(18,18,18,0.88)",
+                        zIndex: 30,
+                        background: "rgba(18,18,18,0.92)",
                         backdropFilter: "blur(12px)",
                         WebkitBackdropFilter: "blur(12px)",
-                        border: "1px solid rgba(255,255,255,0.12)",
+                        border: "1px solid rgba(255,255,255,0.10)",
                         borderRadius: 20,
                         padding: "5px 12px",
                         fontSize: 12,
                         fontWeight: 500,
                         color: "rgba(255,255,255,0.92)",
                         letterSpacing: "0.01em",
-                        boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+                        boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
                       }}
                     >
                       {LABELS[view]}
@@ -1710,30 +1710,29 @@ export default function Home() {
                       onMouseLeave={() => setHoveredDockItem(null)}
                       style={{
                         position: "relative",
-                        zIndex: 1,
                         width: BTN,
                         height: BTN,
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
                         borderRadius: 14,
-                        border: "none",
+                        border: isHovered ? "1px solid rgba(255,255,255,0.35)" : "1px solid transparent",
                         cursor: "pointer",
-                        color: isActive || isHovered ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.45)",
-                        background: isHovered && !isActive
-                          ? "linear-gradient(160deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.14) 100%)"
+                        color: isActive ? "rgba(255,255,255,0.95)" : isHovered ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.45)",
+                        background: isHovered
+                          ? "linear-gradient(160deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.30) 100%)"
                           : "transparent",
-                        backdropFilter: isHovered && !isActive ? "blur(8px)" : "none",
-                        WebkitBackdropFilter: isHovered && !isActive ? "blur(8px)" : "none",
-                        boxShadow: isHovered && !isActive
-                          ? "inset 0 1.5px 0 rgba(255,255,255,0.5), 0 6px 20px rgba(0,0,0,0.22)"
+                        backdropFilter: isHovered ? "blur(20px) saturate(200%)" : "none",
+                        WebkitBackdropFilter: isHovered ? "blur(20px) saturate(200%)" : "none",
+                        boxShadow: isHovered
+                          ? "inset 0 1.5px 0 rgba(255,255,255,0.75), inset 0 -1px 0 rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.32), 0 4px 12px rgba(0,0,0,0.20)"
                           : "none",
-                        transform: isHovered && !isActive ? "translateY(-12px) scale(1.35)" : "translateY(0) scale(1)",
-                        transition: "color 0.2s ease, transform 0.25s cubic-bezier(0.34,1.56,0.64,1), background 0.15s ease, box-shadow 0.15s ease",
+                        transform: isHovered ? "translateY(-16px) scale(1.5)" : "translateY(0) scale(1)",
+                        transition: "color 0.18s ease, transform 0.26s cubic-bezier(0.34,1.56,0.64,1), background 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease",
                         WebkitTapHighlightColor: "transparent",
                       }}
-                      onMouseDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-8px) scale(0.92)"; }}
-                      onMouseUp={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = isHovered ? "translateY(-12px) scale(1.35)" : "scale(1)"; }}
+                      onMouseDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-10px) scale(0.92)"; }}
+                      onMouseUp={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = isHovered ? "translateY(-16px) scale(1.5)" : "scale(1)"; }}
                     >
                       <Icon size={20} strokeWidth={isActive || isHovered ? 2.2 : 1.8} />
                     </button>
