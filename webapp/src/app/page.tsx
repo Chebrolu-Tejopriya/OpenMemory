@@ -97,7 +97,6 @@ interface ActiveScope { type: "folder" | "board"; value: string }
 
 export default function Home() {
   const [activeView, setActiveView] = useState<ActiveView>("search");
-  const [hoveredDockItem, setHoveredDockItem] = useState<ActiveView | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -1621,7 +1620,6 @@ export default function Home() {
                 padding: PAD,
                 gap: GAP,
                 borderRadius: 22,
-                overflow: "visible",
                 // Dark-neutral base — visible on ANY background (light or dark)
                 background: "linear-gradient(160deg, rgba(10,10,10,0.35) 0%, rgba(10,10,10,0.28) 100%)",
                 backdropFilter: "blur(40px) saturate(160%)",
@@ -1664,79 +1662,40 @@ export default function Home() {
               {VIEWS.map((view) => {
                 const Icon = ICONS[view];
                 const isActive = activeView === view;
-                const isHovered = hoveredDockItem === view && !isActive;
                 return (
-                  <div key={view} style={{ position: "relative", zIndex: isHovered ? 20 : 1 }}>
-                    {/* Tooltip — positioned to float above the lifted icon */}
-                    <div
-                      aria-hidden
-                      style={{
-                        position: "absolute",
-                        bottom: "calc(100% + 38px)",
-                        left: "50%",
-                        transform: `translateX(-50%) translateY(${isHovered ? 0 : 6}px)`,
-                        pointerEvents: "none",
-                        opacity: isHovered ? 1 : 0,
-                        transition: "opacity 0.14s ease, transform 0.14s ease",
-                        whiteSpace: "nowrap",
-                        zIndex: 30,
-                        background: "rgba(18,18,18,0.92)",
-                        backdropFilter: "blur(12px)",
-                        WebkitBackdropFilter: "blur(12px)",
-                        border: "1px solid rgba(255,255,255,0.10)",
-                        borderRadius: 20,
-                        padding: "5px 12px",
-                        fontSize: 12,
-                        fontWeight: 500,
-                        color: "rgba(255,255,255,0.92)",
-                        letterSpacing: "0.01em",
-                        boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
-                      }}
-                    >
-                      {LABELS[view]}
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        if (view === "save") {
-                          setSavePopoverOpen(prev => !prev);
-                        } else {
-                          handleViewSwitch(view);
-                          setSavePopoverOpen(false);
-                        }
-                      }}
-                      aria-label={LABELS[view]}
-                      onMouseEnter={() => setHoveredDockItem(view)}
-                      onMouseLeave={() => setHoveredDockItem(null)}
-                      style={{
-                        position: "relative",
-                        width: BTN,
-                        height: BTN,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        borderRadius: 14,
-                        border: isHovered ? "1px solid rgba(255,255,255,0.35)" : "1px solid transparent",
-                        cursor: "pointer",
-                        color: isActive ? "rgba(255,255,255,0.95)" : isHovered ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.45)",
-                        background: isHovered
-                          ? "linear-gradient(160deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.30) 100%)"
-                          : "transparent",
-                        backdropFilter: isHovered ? "blur(20px) saturate(200%)" : "none",
-                        WebkitBackdropFilter: isHovered ? "blur(20px) saturate(200%)" : "none",
-                        boxShadow: isHovered
-                          ? "inset 0 1.5px 0 rgba(255,255,255,0.75), inset 0 -1px 0 rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.32), 0 4px 12px rgba(0,0,0,0.20)"
-                          : "none",
-                        transform: isHovered ? "translateY(-16px) scale(1.5)" : "translateY(0) scale(1)",
-                        transition: "color 0.18s ease, transform 0.26s cubic-bezier(0.34,1.56,0.64,1), background 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease",
-                        WebkitTapHighlightColor: "transparent",
-                      }}
-                      onMouseDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-10px) scale(0.92)"; }}
-                      onMouseUp={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = isHovered ? "translateY(-16px) scale(1.5)" : "scale(1)"; }}
-                    >
-                      <Icon size={20} strokeWidth={isActive || isHovered ? 2.2 : 1.8} />
-                    </button>
-                  </div>
+                  <button
+                    key={view}
+                    onClick={() => {
+                      if (view === "save") {
+                        setSavePopoverOpen(prev => !prev);
+                      } else {
+                        handleViewSwitch(view);
+                        setSavePopoverOpen(false);
+                      }
+                    }}
+                    aria-label={LABELS[view]}
+                    style={{
+                      position: "relative",
+                      zIndex: 1,
+                      width: BTN,
+                      height: BTN,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 14,
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      color: isActive ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.45)",
+                      transition: "color 0.25s ease, transform 0.12s ease",
+                      WebkitTapHighlightColor: "transparent",
+                    }}
+                    onMouseDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.88)"; }}
+                    onMouseUp={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
+                  >
+                    <Icon size={20} strokeWidth={isActive ? 2.2 : 1.8} />
+                  </button>
                 );
               })}
             </div>
