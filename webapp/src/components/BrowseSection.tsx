@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Bookmark, Pin, FolderOpen } from "lucide-react";
+import { Bookmark, Pin, FolderOpen, Search, X } from "lucide-react";
 import SearchResultCard, { SearchResult } from "./SearchResultCard";
 import { FluidNav } from "./FluidNav";
 
@@ -22,11 +22,17 @@ export default function BrowseSection({ folders, boards, loading = false, constr
   const [selectedItem, setSelectedItem] = useState<string>("");
   const [cards, setCards] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  // Which result folder the user drilled into, "" = show every match
+  const [searchFolder, setSearchFolder] = useState("");
   const chipRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   useEffect(() => {
     const raw = activeTab === "bookmarks" ? folders : boards;
     const sorted = raw.slice().sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    setQuery("");
     if (sorted.length > 0) setSelectedItem(sorted[0]);
     else { setSelectedItem(""); setCards([]); }
   }, [activeTab, folders, boards]);
@@ -68,6 +74,45 @@ export default function BrowseSection({ folders, boards, loading = false, constr
   useEffect(() => {
     if (selectedItem && active) fetchCards(selectedItem);
   }, [selectedItem, fetchCards, active]);
+
+  // Content search across every collection in the active tab. The sidebar then
+  // narrows to just the folders that produced matches.
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!active || trimmed.length < 2) {
+      setSearchResults(null);
+      setIsSearching(false);
+      return;
+    }
+    setIsSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ q: trimmed, limit: "100" });
+        params.set("source", activeTab === "bookmarks" ? "chrome_bookmarks" : "pinterest");
+        const res = await fetch(`${BACKEND_URL}/search?${params.toString()}`);
+        if (!res.ok) throw new Error("Search failed");
+        const data = await res.json();
+        setSearchResults(
+          data.results.map((r: { title: string; url: string; folder: string | null; source: string; imageUrl: string | null }, i: number) => ({
+            id: `csearch-${i}-${r.url}`,
+            title: r.title,
+            folder: r.folder || "",
+            url: r.url,
+            source: r.source.includes("chrome") ? "chrome" : "pinterest",
+            imageUrl: r.imageUrl || undefined,
+          }))
+        );
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [query, activeTab, active]);
+
+  // A new query invalidates whichever result folder was drilled into
+  useEffect(() => { setSearchFolder(""); }, [query, activeTab]);
 
   const list = (activeTab === "bookmarks" ? folders : boards)
     .slice()
@@ -134,6 +179,61 @@ export default function BrowseSection({ folders, boards, loading = false, constr
     </div>
   );
 
+  // >= 2 chars puts the panel into search mode; below that it browses.
+  const isSearchMode = query.trim().length >= 2;
+  const searchLoading = isSearching || searchResults === null;
+
+  // Folders that actually produced matches — this is the sidebar during a search
+  const resultFolders = !isSearchMode || !searchResults
+    ? []
+    : Array.from(new Set(searchResults.map((r) => r.folder).filter(Boolean)))
+        .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+
+  const visibleResults = !searchResults
+    ? []
+    : searchFolder
+      ? searchResults.filter((r) => r.folder === searchFolder)
+      : searchResults;
+
+  // While searching, "" is a real row ("All results") so there is a way back
+  // to the full match set without clearing the query.
+  const navItems = isSearchMode
+    ? [
+        { key: "", label: `All results (${searchResults?.length ?? 0})` },
+        ...resultFolders.map((f) => ({ key: f, label: displayName(f) })),
+      ]
+    : list.map((item) => ({ key: item, label: displayName(item) }));
+  const sidebarSelected = isSearchMode ? searchFolder : selectedItem;
+  const sidebarLoading = loading || (isSearchMode && searchLoading);
+  const onSidebarSelect = isSearchMode ? setSearchFolder : setSelectedItem;
+
+  const panelCards = isSearchMode ? visibleResults : cards;
+  const panelLoading = isSearchMode ? searchLoading : isLoading || !selectedItem;
+
+  const searchBox = (
+    <div className="relative">
+      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 z-10 w-3.5 h-3.5 text-[#3a3a3a]/45 pointer-events-none" />
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
+        placeholder={activeTab === "bookmarks" ? "Search bookmarks" : "Search pins"}
+        aria-label={activeTab === "bookmarks" ? "Search bookmarks" : "Search pins"}
+        className="w-full bg-white/60 backdrop-blur-sm border border-[#5b9888]/20 rounded-xl pl-8 pr-7 py-1.5 text-xs text-[#3a3a3a] placeholder:text-[#3a3a3a]/30 outline-none transition-colors focus:border-[#5b9888]/45 focus:bg-white/80"
+      />
+      {query && (
+        <button
+          onClick={() => setQuery("")}
+          aria-label="Clear search"
+          className="absolute right-2 top-1/2 -translate-y-1/2 z-10 text-[#3a3a3a]/45 hover:text-[#3a3a3a]/75 transition-colors"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <div className={`flex flex-col gap-4 ${constrained ? "h-full" : ""}`}>
       {/* Section header */}
@@ -188,18 +288,21 @@ export default function BrowseSection({ folders, boards, loading = false, constr
         {/* Left panel — sticky when not constrained, flex when constrained */}
         <div className={`w-52 shrink-0 flex flex-col gap-2 ${constrained ? "self-stretch" : "sticky top-6 self-start"}`}>
           {tabSwitch}
+          {searchBox}
 
           {/* Folder/board list */}
           <div className={`overflow-y-auto custom-scrollbar pr-1 ${constrained ? "flex-1" : "max-h-[70vh]"}`}>
-            {loading ? skeletonList : list.length === 0 ? (
-              <p className="text-xs text-[#3a3a3a]/30 px-2 py-3 text-center">
-                No {activeTab === "bookmarks" ? "folders" : "boards"} found
+            {sidebarLoading ? skeletonList : navItems.length === 0 ? (
+              <p className="text-xs text-[#3a3a3a]/30 px-2 py-3 text-center break-words">
+                {isSearchMode
+                  ? `No matches for "${query.trim()}"`
+                  : `No ${activeTab === "bookmarks" ? "folders" : "boards"} found`}
               </p>
             ) : (
               <FluidNav
-                items={list.map((item) => ({ key: item, label: displayName(item) }))}
-                selectedKey={selectedItem}
-                onSelect={setSelectedItem}
+                items={navItems}
+                selectedKey={sidebarSelected}
+                onSelect={onSidebarSelect}
                 orientation="vertical"
                 selectedColor="#3d7a64"
                 selectedBg="bg-white shadow-sm"
@@ -212,11 +315,23 @@ export default function BrowseSection({ folders, boards, loading = false, constr
 
         {/* Right panel — cards */}
         <div className={`flex-1 min-w-0 ${constrained ? "overflow-y-auto custom-scrollbar" : ""}`}>
-          {isLoading || !selectedItem ? skeletonCards : cards.length === 0 ? (
-            <div className="flex items-center justify-center h-32 text-sm text-[#3a3a3a]/30">No items found</div>
+          {isSearchMode && !panelLoading && panelCards.length > 0 && (
+            <p className="text-xs text-[#3a3a3a]/40 px-1 pb-2">
+              {panelCards.length} {panelCards.length === 1 ? "result" : "results"}
+              {searchFolder ? (
+                <> in <span className="text-[#3d7a64]/70 font-medium">{displayName(searchFolder)}</span></>
+              ) : (
+                <> across {resultFolders.length} {resultFolders.length === 1 ? (activeTab === "bookmarks" ? "folder" : "board") : (activeTab === "bookmarks" ? "folders" : "boards")}</>
+              )}
+            </p>
+          )}
+          {panelLoading ? skeletonCards : panelCards.length === 0 ? (
+            <div className="flex items-center justify-center h-32 text-sm text-[#3a3a3a]/30">
+              {isSearchMode ? `No results for "${query.trim()}"` : "No items found"}
+            </div>
           ) : (
             <div className="grid grid-cols-3 gap-3 pb-2 items-start">
-              {cards.map((card, i) => <SearchResultCard key={card.id} result={card} revealDelay={Math.min(i, 5) * 60} />)}
+              {panelCards.map((card, i) => <SearchResultCard key={card.id} result={card} revealDelay={Math.min(i, 5) * 60} />)}
             </div>
           )}
         </div>

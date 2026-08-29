@@ -383,16 +383,20 @@ app.get('/search', async (req, res) => {
     const query = req.query.q as string;
     const limit = parseInt(req.query.limit as string) || 100;
     const source = req.query.source as string | undefined;
+    const folder = req.query.folder as string | undefined;
+    const board = req.query.board as string | undefined;
 
     if (!query || typeof query !== 'string') {
       return res.status(400).json({ error: 'q parameter is required' });
     }
 
-    const cacheKey = `search:${query.toLowerCase().trim()}:${source ?? 'all'}:${limit}`;
+    // folder/board belong in the key: the same query scoped to a different
+    // collection is a different result set.
+    const cacheKey = `search:${query.toLowerCase().trim()}:${source ?? 'all'}:${folder ?? ''}:${board ?? ''}:${limit}`;
     const cached = await getCache<object>(cacheKey);
     if (cached) return res.json(cached);
 
-    const result = await searchSupabase(query, limit, source);
+    const result = await searchSupabase(query, limit, source, folder, board);
     await setCache(cacheKey, result, TTL.SEARCH);
     res.json(result);
   } catch (err) {
