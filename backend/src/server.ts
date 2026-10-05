@@ -153,12 +153,18 @@ app.get('/browse', async (req, res) => {
     }
 
     const folderOrBoard = (source === 'chrome' ? folder : board) ?? '';
-    const cacheKey = `browse:${source}:${folderOrBoard}`;
-    const cached = await getCache<{ results: unknown[] }>(cacheKey);
-    if (cached && cached.results?.length > 0) return res.json(cached);
+    // Chrome writes directly to Supabase, so backend cache invalidation cannot
+    // observe new bookmarks, moves or deletions. Always read fresh collections.
+    const cacheKey = `browse:${source}:${folderOrBoard}:${maxItems}`;
+    const cacheable = source === 'pinterest';
+    res.setHeader('Cache-Control', 'no-store');
+    if (cacheable) {
+      const cached = await getCache<{ results: unknown[] }>(cacheKey);
+      if (cached && cached.results?.length > 0) return res.json(cached);
+    }
 
     const result = await browseSupabase(source, folderOrBoard, maxItems);
-    if (result.results.length > 0) await setCache(cacheKey, result, TTL.BROWSE);
+    if (cacheable && result.results.length > 0) await setCache(cacheKey, result, TTL.BROWSE);
     res.json(result);
   } catch (err) {
     console.error('Browse error:', err);
