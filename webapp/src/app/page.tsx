@@ -6,6 +6,7 @@ import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, Sti
 import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
+import LeafIcon from "@/components/icons/LeafIcon";
 import BrowseSection from "@/components/BrowseSection";
 import CanvasView from "@/components/CanvasView";
 import HomeWidgets from "@/components/HomeWidgets";
@@ -801,7 +802,7 @@ export default function Home() {
             <h1 className="gradient-text font-semibold text-xl sm:text-[36px] text-center whitespace-nowrap" style={{ fontFamily: "var(--font-baloo-2), sans-serif" }}>
               Find what inspires you
             </h1>
-            <Image src="/images/logo.png" alt="OpenMemory" width={48} height={48} priority className="w-8 h-8 sm:w-12 sm:h-12 rounded-lg object-contain" />
+            <LeafIcon className="w-5 h-5 sm:w-[30px] sm:h-[30px]" />
           </div>
         </div>
 
