@@ -42,7 +42,9 @@ function FilterSelect({ select }: { select: HTMLSelectElement }) {
       </SelectPrimitive.Trigger>
       <SelectPrimitive.Portal>
         <SelectPrimitive.Content className="select-content" data-filter-select-content="" position="popper" sideOffset={5} collisionPadding={12}>
-          <SelectPrimitive.ScrollUpButton className="select-scroll" aria-label="Scroll up">⌃</SelectPrimitive.ScrollUpButton>
+          <SelectPrimitive.ScrollUpButton className="select-scroll" aria-label="Scroll up">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>
+          </SelectPrimitive.ScrollUpButton>
           <SelectPrimitive.Viewport className="select-viewport">
             {options.map((option, index) => (
               <SelectPrimitive.Item key={option.value} value={String(index)} disabled={option.disabled} className="select-item" title={option.text}>
@@ -51,7 +53,9 @@ function FilterSelect({ select }: { select: HTMLSelectElement }) {
               </SelectPrimitive.Item>
             ))}
           </SelectPrimitive.Viewport>
-          <SelectPrimitive.ScrollDownButton className="select-scroll" aria-label="Scroll down">⌄</SelectPrimitive.ScrollDownButton>
+          <SelectPrimitive.ScrollDownButton className="select-scroll" aria-label="Scroll down">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+          </SelectPrimitive.ScrollDownButton>
         </SelectPrimitive.Content>
       </SelectPrimitive.Portal>
     </SelectPrimitive.Root>
