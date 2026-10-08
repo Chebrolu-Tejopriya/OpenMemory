@@ -119,6 +119,7 @@
     }
 
     .filters-bar {
+      position: relative;
       display: flex;
       align-items: center;
       flex-wrap: wrap;
@@ -131,9 +132,12 @@
       flex-wrap: wrap;
       gap: 6px;
       min-height: 24px;
+      max-width: 100%;
     }
 
     .filter-chip {
+      max-width: 100%;
+      overflow-wrap: anywhere;
       display: inline-flex;
       align-items: center;
       gap: 6px;
@@ -176,14 +180,15 @@
     }
 
     .filter-dropdown {
-      position: relative;
+      position: static;
     }
 
     .filter-menu {
       position: absolute;
-      top: 32px;
+      top: calc(100% + 8px);
       left: 0;
-      min-width: 220px;
+      width: min(280px, 100%);
+      min-width: 0;
       background: #0a0a0a;
       border: 1px solid #333333;
       border-radius: 8px;
@@ -215,6 +220,8 @@
     }
 
     .filter-menu-section select {
+      width: 100%;
+      min-width: 0;
       background: #000000;
       border: 1px solid #333333;
       color: #ffffff;
