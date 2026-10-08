@@ -96,6 +96,16 @@ Your webapp URL will be: `https://openmemory.vercel.app`
 
 ## Keeping Backend Awake (Optional)
 
+The repository includes `.github/workflows/backend-health.yml`, which requests
+the deployed backend's `/health` endpoint every five minutes. It also runs when
+the workflow is changed on `main`, and can be started manually from GitHub Actions.
+Check the **Backend health check** workflow to confirm it is enabled and passing.
+
+This reduces idle cold starts on Render's free plan, but GitHub scheduled runs
+can be delayed. Public repositories also disable schedules after 60 days without
+repository activity. For guaranteed availability without idle spin-down, use an
+always-on backend instance instead.
+
 To avoid cold starts, set up a free cron job to ping your backend every 14 minutes:
 
 ### Using cron-job.org (Free)

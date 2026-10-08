@@ -1,0 +1,31 @@
+name: Backend health check
+
+on:
+  schedule:
+    # Keep traffic within Render's 15-minute idle window, away from minute zero.
+    - cron: '3-58/5 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/backend-health.yml']
+
+permissions: {}
+
+concurrency:
+  group: backend-health
+  cancel-in-progress: false
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check Render backend
+        env:
+          HEALTH_URL: https://openmemory-backend-j775.onrender.com/health
+        run: |
+          curl --fail --silent --show-error \
+            --connect-timeout 10 --max-time 90 \
+            --retry 1 --retry-delay 5 \
+            "$HEALTH_URL" --output health.json
+          node -e 'const fs = require("fs"); const data = JSON.parse(fs.readFileSync("health.json", "utf8")); if (data.status !== "ok") throw new Error("Backend health check failed"); console.log("Backend is responding; Redis: " + data.redis);'
