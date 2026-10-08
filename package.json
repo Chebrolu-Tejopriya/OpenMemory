@@ -7,7 +7,7 @@
     "build": "npm run build:clean && npm run build:ts && npm run build:copy && npm run build:icons",
     "build:clean": "node -e \"const fs = require('fs'); if(fs.existsSync('dist')){fs.rmSync('dist',{recursive:true})}; fs.mkdirSync('dist')\"",
     "build:ts": "node scripts/build-search.cjs && esbuild src/extension/background.ts --bundle --outfile=dist/background.js --format=iife --external:chrome && esbuild src/extension/offscreen.ts --bundle --outfile=dist/offscreen.js --format=iife && esbuild src/extension/pinterest_active.ts --bundle --outfile=dist/pinterest_active.js --format=iife",
-    "build:copy": "node -e \"const fs=require('fs'); fs.copyFileSync('src/extension/sidepanel.html','dist/sidepanel.html'); fs.copyFileSync('src/extension/manifest.json','dist/manifest.json'); fs.copyFileSync('src/extension/offscreen.html','dist/offscreen.html'); if(!fs.existsSync('dist/data.json')){fs.writeFileSync('dist/data.json',JSON.stringify({items:[],folders:[]}))}\"",
+    "build:copy": "node -e \"const fs=require('fs'); fs.copyFileSync('src/extension/sidepanel.html','dist/sidepanel.html'); fs.copyFileSync('src/extension/manifest.json','dist/manifest.json'); fs.copyFileSync('src/extension/offscreen.html','dist/offscreen.html'); fs.cpSync('src/extension/fonts','dist/fonts',{recursive:true}); if(!fs.existsSync('dist/data.json')){fs.writeFileSync('dist/data.json',JSON.stringify({items:[],folders:[]}))}\"",
     "build:icons": "node scripts/generate-icons.cjs",
     "typecheck": "tsc --noEmit",
     "dev": "npm run build -- --watch",

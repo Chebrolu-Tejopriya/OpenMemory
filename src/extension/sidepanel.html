@@ -51,6 +51,14 @@ SOFTWARE.
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OpenMemory</title>
   <style>
+    @font-face {
+      font-family: 'Outfit';
+      src: url('fonts/outfit-latin-variable.woff2') format('woff2');
+      font-style: normal;
+      font-weight: 100 900;
+      font-display: swap;
+    }
+
     * {
       margin: 0;
       padding: 0;
@@ -58,12 +66,14 @@ SOFTWARE.
     }
 
     body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
       background: #000000;
       color: #FFFFFF;
       min-height: 100vh;
       width: 100%;
     }
+
+    button, input, select, textarea { font-family: inherit; }
 
     /* Fixed Header */
     .header {
@@ -520,7 +530,7 @@ SOFTWARE.
       font-size: 11px;
       color: #6b7280;
       margin-top: 4px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-family: inherit;
     }
 
     /* Integrations Toggle */
