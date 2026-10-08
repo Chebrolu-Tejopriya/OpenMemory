@@ -7,12 +7,14 @@ const rows=[structuredClone(existing),{id:'2',title:'Imported earlier',board_nam
  {id:'3',title:'Unavailable image',board_name:'tracker',board_url:board,embedding:null,image_embedding:null,image_url:'https://i.pinimg.com/unavailable.jpg'}];
 process.env.SUPABASE_URL='https://fixture.supabase.co';process.env.SUPABASE_ANON_KEY='fixture';
 let textRequests=0;
+let transportFailures=0;
 global.fetch=async(url,init={})=>{
  const u=new URL(url);
  if(u.pathname==='/health')return {ok:true};
  if(u.pathname==='/embed/texts'){textRequests++;return {ok:true,json:async()=>({embeddings:JSON.parse(init.body).texts.map(()=>vector(384))})};}
  if(u.pathname==='/embed/images')return {ok:true,json:async()=>({embeddings:JSON.parse(init.body).urls.map(url=>url.includes('unavailable')?null:vector(512))})};
  assert.equal(u.hostname,'fixture.supabase.co');
+ if(transportFailures>0){transportFailures--;throw new Error('fixture network timeout');}
  let filtered=rows.filter(row=>row.board_url===u.searchParams.get('board_url').slice(3));
  // PATCH has an exact ID and a NULL guard; existing vectors cannot be overwritten.
  if(init.method==='PATCH'){
@@ -36,5 +38,8 @@ const mod={exports:{}};new Function('module','exports',output.outputFiles[0].tex
  assert.deepEqual(rows[0],existing);
  assert.equal(rows[2].image_embedding,null);
  assert.deepEqual(await mod.exports.pinterestEmbeddingCounts(board),{total:3,textMissing:0,imageMissing:1});
+ transportFailures=1;
+ assert.deepEqual(await mod.exports.pinterestEmbeddingCounts(board),{total:3,textMissing:0,imageMissing:1});
+ assert.equal(transportFailures,0);
  console.log('Passed: old NULL rows get embeddings, batched text inference, existing vectors preserved, failed image stays NULL, accurate progress counts.');
 })().catch(error=>{console.error(error);process.exitCode=1});

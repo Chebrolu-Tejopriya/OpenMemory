@@ -11,7 +11,7 @@ export async function requestPinterestEmbeddingJob(boardUrl: string): Promise<{ 
   try {
     const response = await fetch(`${await embeddingBackendUrl()}/run-embeddings`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ board_url: canonicalPinterestBoardUrl(boardUrl) }), signal: AbortSignal.timeout(20000)
+      body: JSON.stringify({ board_url: canonicalPinterestBoardUrl(boardUrl) }), signal: AbortSignal.timeout(75000)
     });
     const result = await response.json();
     // Old deployments returned success without doing any work; don't accept that response.

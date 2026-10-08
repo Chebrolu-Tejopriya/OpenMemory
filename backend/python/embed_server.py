@@ -28,6 +28,7 @@ _model_lock = threading.RLock()
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), ".cache")
 PORT = int(os.environ.get("EMBED_SERVER_PORT", "3002"))
+MODEL_THREADS = max(1, int(os.environ.get("EMBED_MODEL_THREADS", "1")))
 
 
 def load_model():
@@ -40,7 +41,8 @@ def load_model():
             from fastembed import TextEmbedding
             _text_model = TextEmbedding(
                 model_name="BAAI/bge-small-en-v1.5",
-                cache_dir=CACHE_DIR
+                cache_dir=CACHE_DIR,
+                threads=MODEL_THREADS
             )
             print("[EmbedServer] Model loaded and ready.", flush=True)
     return _text_model
@@ -68,8 +70,10 @@ def embed_images(urls):
                     _text_model = None
                     gc.collect()
                     from fastembed import ImageEmbedding
-                    _image_model = ImageEmbedding(model_name='Qdrant/clip-ViT-B-32-vision', cache_dir=CACHE_DIR)
-                for (index, _), embedding in zip(valid, _image_model.embed([path for _, path in valid], batch_size=4)):
+                    print('[EmbedServer] Loading image model...', flush=True)
+                    _image_model = ImageEmbedding(model_name='Qdrant/clip-ViT-B-32-vision', cache_dir=CACHE_DIR, threads=MODEL_THREADS)
+                    print('[EmbedServer] Image model ready.', flush=True)
+                for (index, _), embedding in zip(valid, _image_model.embed([path for _, path in valid], batch_size=1)):
                     results[index] = embedding.tolist()
         return results
     finally:
@@ -109,7 +113,7 @@ class EmbedHandler(BaseHTTPRequestHandler):
                     self.send_json(400, {'error': 'Provide between 1 and 30 texts'})
                     return
                 with _model_lock:
-                    embeddings = [embedding.tolist() for embedding in load_model().embed(texts)]
+                    embeddings = [embedding.tolist() for embedding in load_model().embed(texts, batch_size=1)]
                 self.send_json(200, {'embeddings': embeddings, 'dimension': 384})
                 return
             if self.path == '/embed/images':
