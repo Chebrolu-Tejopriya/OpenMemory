@@ -646,6 +646,15 @@ SOFTWARE.
     .integration-group > summary::-webkit-details-marker { display: none; }
     .integration-group > summary svg { transition: transform .15s ease; }
     .integration-group[open] > summary svg { transform: rotate(180deg); }
+    .integration-summary-actions { display: inline-flex; align-items: center; gap: 12px; }
+    .integration-avatars { display: inline-flex; align-items: center; padding-left: 8px; }
+    .integration-avatar {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px; margin-left: -8px;
+      border: 2px solid #0a0a0a; border-radius: 50%; background: #1b1b1b;
+    }
+    .integration-avatar svg { width: 17px; height: 17px; }
+    .integration-group[open] .integration-avatars { display: none; }
     .integration-group > summary:focus-visible { outline: 2px solid #888; outline-offset: 2px; border-radius: 4px; }
 
     .integration-card {
@@ -1277,7 +1286,15 @@ SOFTWARE.
     </div>
 
     <details class="integration-group">
-      <summary>Integrations<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+      <summary><span>Integrations</span><span class="integration-summary-actions"><span class="integration-avatars" role="img" aria-label="Supabase, Pinterest and Chrome Bookmarks"><span class="integration-avatar" title="Supabase" aria-hidden="true"><svg viewBox="0 0 109 113" width="32" height="32">
+          <path fill="#3ECF8E" d="M63.7076 110.284C60.8481 113.885 55.0502 111.912 54.9813 107.314L53.9738 40.0627L99.1935 40.0627C107.384 40.0627 111.952 49.5228 106.859 55.9374L63.7076 110.284Z"/>
+          <path fill="#3ECF8E" fill-opacity="0.2" d="M63.7076 110.284C60.8481 113.885 55.0502 111.912 54.9813 107.314L53.9738 40.0627L99.1935 40.0627C107.384 40.0627 111.952 49.5228 106.859 55.9374L63.7076 110.284Z"/>
+          <path fill="#3ECF8E" d="M45.317 2.07103C48.1765 -1.53037 53.9745 0.442937 54.0434 5.041L54.4849 72.2922H9.83113C1.64038 72.2922 -2.9279 62.8321 2.1655 56.4175L45.317 2.07103Z"/>
+        </svg></span><span class="integration-avatar" title="Pinterest" aria-hidden="true"><svg viewBox="0 0 24 24" width="32" height="32">
+          <path fill="#E60023" d="M12 0C5.4 0 0 5.4 0 12c0 5.1 3.2 9.4 7.6 11.2-.1-.9-.2-2.4 0-3.4.2-.9 1.4-6 1.4-6s-.4-.7-.4-1.8c0-1.7 1-2.9 2.2-2.9 1 0 1.5.8 1.5 1.7 0 1-.7 2.6-1 4-.3 1.2.6 2.2 1.8 2.2 2.1 0 3.8-2.2 3.8-5.5 0-2.9-2.1-4.9-5-4.9-3.4 0-5.4 2.6-5.4 5.2 0 1 .4 2.1.9 2.7.1.1.1.2.1.3-.1.4-.3 1.2-.3 1.4-.1.2-.2.3-.4.2-1.5-.7-2.4-2.9-2.4-4.6 0-3.8 2.8-7.3 8-7.3 4.2 0 7.5 3 7.5 7 0 4.2-2.6 7.5-6.3 7.5-1.2 0-2.4-.6-2.8-1.4l-.8 3c-.3 1.1-.9 2.2-1.4 3 1 .3 2.1.5 3.3.5 6.6 0 12-5.4 12-12S18.6 0 12 0z"/>
+        </svg></span><span class="integration-avatar" title="Chrome Bookmarks" aria-hidden="true"><svg viewBox="0 0 24 24" width="32" height="32">
+          <path fill="#4285F4" d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
+        </svg></span></span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span></summary>
     <!-- Supabase Settings -->
     <div class="integration-card" id="supabase-card" style="margin-bottom: 8px;">
       <div class="integration-icon">
