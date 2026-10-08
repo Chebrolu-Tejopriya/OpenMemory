@@ -4,6 +4,7 @@
  */
 
 import { db, IndexedBookmark, IndexingQueueItem } from './db';
+import { PINTEREST_IMPORT_LIMIT } from './pinterest-import-policy';
 import {
   checkPinterestLogin,
   processPin,
@@ -1610,7 +1611,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // Send import request to content script
         const result = await chrome.tabs.sendMessage(tab.id, {
           type: 'PINTEREST_IMPORT_BOARD',
-          maxPins: message.maxPins || 2000
+          maxPins: message.maxPins || PINTEREST_IMPORT_LIMIT
         });
 
         if (!result || !result.success) {
@@ -1925,7 +1926,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try {
         const boardUrl = message.boardUrl as string | undefined;
         const boardName = message.boardName as string | undefined;
-        const maxPins = typeof message.maxPins === 'number' ? message.maxPins : 400;
+        const maxPins = typeof message.maxPins === 'number' ? message.maxPins : PINTEREST_IMPORT_LIMIT;
 
         if (!boardUrl) {
           sendResponse({ success: false, error: 'Missing boardUrl' });
@@ -2011,7 +2012,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           } catch (error) {
             console.log('[Pinterest Resync] Embedding trigger failed:', error);
           }
-          sendResponse({ success: true, ...result });
+          sendResponse({ success: true, ...result, stats: pinsResponse.stats, pinsExtracted: pins.length });
         } finally {
           chrome.tabs.remove(tabId).catch(() => undefined);
         }

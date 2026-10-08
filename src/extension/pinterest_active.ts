@@ -3,6 +3,8 @@
  * Handles pin extraction with progress tracking, efficient scrolling, and robust extraction
  */
 
+import { PINTEREST_IMPORT_LIMIT, hasExtractionProgress, isBoardComplete } from './pinterest-import-policy';
+
 // ============== TYPES ==============
 interface ExtractedPin {
   pinId: string;
@@ -49,7 +51,7 @@ interface BoardInfo {
 // ============== CONSTANTS ==============
 const SCROLL_WAIT_MS = 2500; // Wait 2.5 seconds after each scroll for content to load
 const MAX_SCROLLS = 500; // High limit
-const MAX_PINS = 5000; // High max pins
+const MAX_PINS = PINTEREST_IMPORT_LIMIT;
 const STABLE_HEIGHT_ITERATIONS = 4; // Stop after page height unchanged for 4 iterations
 const SCROLL_UP_AMOUNT = 500; // Pixels to scroll up before scrolling down again
 
@@ -867,7 +869,7 @@ async function performScrollExtraction(
 
     // ============== DETECT TRUE END ==============
     // Check if page height has changed
-    if (currentHeight === previousHeight) {
+    if (!hasExtractionProgress(previousHeight, currentHeight, beforeExtract, collectedPinIds.size)) {
       stableHeightCount++;
       console.log(`[Pinterest] Page height unchanged (${stableHeightCount}/${STABLE_HEIGHT_ITERATIONS})`);
 
@@ -910,7 +912,7 @@ async function performScrollExtraction(
         extractFromDomIncremental(collectedPinIds, allPins);
         mergeApiPins(collectedPinIds, allPins);
 
-        if (document.body.scrollHeight === currentHeight) {
+        if (!hasExtractionProgress(currentHeight, document.body.scrollHeight, beforeExtract, collectedPinIds.size)) {
           console.log(`[Pinterest] Confirmed end of content`);
           break;
         } else {
@@ -953,7 +955,6 @@ async function extractPinsWithProgress(
 ): Promise<ExtractionResult> {
   const startTime = Date.now();
   const MAX_RETRY_ATTEMPTS = 3;
-  const SYNC_THRESHOLD = 0.85;
 
   // Clear any previously captured API pins and ensure interception is active
   clearApiCapturedPins();
@@ -1048,8 +1049,8 @@ async function extractPinsWithProgress(
         lastCount = collectedPinIds.size;
 
         // Check if we have enough
-        if (expectedPinCount && collectedPinIds.size >= expectedPinCount * SYNC_THRESHOLD) {
-          console.log(`[Pinterest] Reached ${((collectedPinIds.size / expectedPinCount) * 100).toFixed(1)}% of expected, stopping`);
+        if (isBoardComplete(collectedPinIds.size, expectedPinCount)) {
+          console.log('[Pinterest] Reached the full expected board count, stopping');
           break;
         }
         if (collectedPinIds.size >= maxPins) {
@@ -1095,9 +1096,7 @@ async function extractPinsWithProgress(
     const timeMs = Date.now() - startTime;
 
     // Determine sync status
-    const isSyncComplete = expectedPinCount === null
-      ? true
-      : (validPins.length / expectedPinCount) >= SYNC_THRESHOLD;
+    const isSyncComplete = isBoardComplete(validPins.length, expectedPinCount);
 
     // Log final results with source breakdown
     const apiTotal = apiCapturedPins.size;
@@ -1335,7 +1334,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // Fetch pins for a board
   if (message.type === 'PINTEREST_ACTIVE_FETCH_PINS') {
-    const maxPins = message.maxPins || 200;
+    const maxPins = message.maxPins || MAX_PINS;
     (async () => {
       const result = await extractPinsWithProgress((progress) => {
         console.log(`[Pinterest Pins] ${progress.message}`);

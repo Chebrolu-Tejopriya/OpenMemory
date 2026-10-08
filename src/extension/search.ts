@@ -5,6 +5,7 @@
  */
 
 import MiniSearch from 'minisearch';
+import { PINTEREST_IMPORT_LIMIT } from './pinterest-import-policy';
 import { mountFilterSelects, refreshFilterSelects } from './filter-select';
 import { db, IndexedBookmark, PinterestPin } from './db';
 
@@ -1869,6 +1870,20 @@ pinterestConnect.addEventListener('click', async () => {
 });
 
 // ============== PINTEREST IMPORT CURRENT BOARD ==============
+function pinterestImportWarning(result: { pinsExtracted?: number; stats?: { expectedCount?: number | null; syncComplete?: boolean } }, html = true): string {
+  const count = result.pinsExtracted ?? 0;
+  const expected = result.stats?.expectedCount;
+  let warning = '';
+  if (typeof expected === 'number' && count < expected) {
+    warning = `Partial import: collected ${count} of ${expected} pins. Keep the board open and retry.`;
+  } else if (count >= PINTEREST_IMPORT_LIMIT && !result.stats?.syncComplete) {
+    warning = `Reached the ${PINTEREST_IMPORT_LIMIT}-pin safety limit; this board may be incomplete.`;
+  } else if (expected == null) {
+    warning = 'Pinterest did not provide a board total; completeness could not be verified.';
+  }
+  return warning ? `${html ? '<br>' : '. '}${warning}` : '';
+}
+
 pinterestImportBtn?.addEventListener('click', async () => {
   console.log('[OpenMemory] Pinterest import current board clicked');
 
@@ -1882,8 +1897,7 @@ pinterestImportBtn?.addEventListener('click', async () => {
   pinterestImportBtn.textContent = 'Importing...';
 
   try {
-    const deepSync = pinterestDeepSync?.checked ?? true;
-    const maxPins = deepSync ? 2000 : 1200;
+    const maxPins = PINTEREST_IMPORT_LIMIT;
     const result = await chrome.runtime.sendMessage({
       type: 'PINTEREST_IMPORT_CURRENT_BOARD',
       maxPins
@@ -1896,11 +1910,12 @@ pinterestImportBtn?.addEventListener('click', async () => {
       pinterestImportResult.style.background = 'rgba(74, 222, 128, 0.1)';
       pinterestImportResult.style.color = '#4ade80';
       pinterestImportResult.innerHTML = `
-        <strong>Import successful!</strong><br>
+        <strong>Import saved!</strong><br>
         Board: ${result.boardName || 'Unknown'}<br>
         Pins extracted: ${result.pinsExtracted}<br>
         Pins uploaded: ${result.pinsUploaded}
         ${result.pinsFailed > 0 ? `<br>Failed: ${result.pinsFailed}` : ''}
+        ${pinterestImportWarning(result)}
       `;
 
       // Refresh the search data
@@ -2713,7 +2728,7 @@ pinterestBoardsList?.addEventListener('click', async (event) => {
     });
 
     if (result?.success) {
-      pinterestBoardsMessage.textContent = `Added ${result.added} new pins`;
+      pinterestBoardsMessage.textContent = `Added ${result.added} new pins${pinterestImportWarning(result, false)}`;
       pinterestBoardsMessage.style.color = '#4ade80';
       pinterestBoardsMessage.style.display = 'block';
       await initializeSearch();
@@ -2767,9 +2782,10 @@ pinterestResyncBtn?.addEventListener('click', async () => {
       pinterestImportResult.style.background = 'rgba(74, 222, 128, 0.1)';
       pinterestImportResult.style.color = '#4ade80';
       pinterestImportResult.innerHTML = `
-        <strong>Resync complete!</strong><br>
+        <strong>Resync saved!</strong><br>
         Added ${result.added} new pins<br>
         Total stored: ${result.total}
+        ${pinterestImportWarning(result)}
       `;
 
       await initializeSearch();
