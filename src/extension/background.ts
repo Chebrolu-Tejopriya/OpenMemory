@@ -5,6 +5,7 @@
 
 import { db, IndexedBookmark, IndexingQueueItem } from './db';
 import { PINTEREST_IMPORT_LIMIT } from './pinterest-import-policy';
+import { requestPinterestEmbeddingJob, pinterestEmbeddingStatus } from './embedding-jobs';
 import {
   checkPinterestLogin,
   processPin,
@@ -1320,7 +1321,7 @@ async function uploadPinsToSupabase(
   boardName: string,
   boardUrl: string,
   totalPins?: number | null
-): Promise<{ added: number; total: number; failed: number; alreadyStored: number; rejected: number }> {
+): Promise<{ added: number; total: number; failed: number; alreadyStored: number; rejected: number; embeddings: {accepted: boolean; error?: string} }> {
   // Save to local DB
   for (const pin of pins) {
     try {
@@ -1351,7 +1352,8 @@ async function uploadPinsToSupabase(
     .filter(pin => isValidSupabasePinPayload(pin));
 
   const result = await resyncPinterestBoard(boardUrl, payloads, boardName, totalPins ?? null);
-  return { ...result, rejected: pins.length - payloads.length };
+  const embeddings = await requestPinterestEmbeddingJob(boardUrl);
+  return { ...result, rejected: pins.length - payloads.length, embeddings };
 }
 
 // ============== PINTEREST PINS SUPABASE SYNC ==============
@@ -1504,6 +1506,11 @@ async function generateEmbeddingsForAllBookmarks(): Promise<{ success: number; f
 
 // ============== MESSAGE HANDLING FOR UI ==============
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'PINTEREST_EMBEDDING_STATUS') {
+    pinterestEmbeddingStatus(message.boardUrl).then(status => sendResponse({success: true, ...status}))
+      .catch(error => sendResponse({success: false, error: error.message}));
+    return true;
+  }
   // Local embedding generation for search
   if (message.type === 'GENERATE_EMBEDDING_LOCAL') {
     generateEmbeddingLocal(message.text).then(embedding => {
@@ -1643,13 +1650,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           totalPins
         );
 
-        try {
-          fetch('http://localhost:3000/run-embeddings', { method: 'POST' }).catch(error => {
-            console.log('[Pinterest Import] Embedding trigger failed:', error);
-          });
-        } catch (error) {
-          console.log('[Pinterest Import] Embedding trigger failed:', error);
-        }
 
         sendResponse({
           success: true,
@@ -1659,8 +1659,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           alreadyStored: uploadResult.alreadyStored,
           rejected: uploadResult.rejected,
           totalStored: uploadResult.total,
+          embeddings: uploadResult.embeddings,
           totalPins: uploadResult.total,
           boardName,
+          boardUrl,
           stats: result.stats
         });
 
@@ -1720,13 +1722,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         const uploadResult = await uploadPinsToSupabase(result.pins, boardName, boardUrl);
 
-        try {
-          fetch('http://localhost:3000/run-embeddings', { method: 'POST' }).catch(error => {
-            console.log('[Pinterest Import] Embedding trigger failed:', error);
-          });
-        } catch (error) {
-          console.log('[Pinterest Import] Embedding trigger failed:', error);
-        }
 
         sendResponse({
           success: true,
@@ -1966,13 +1961,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const totalPins = typeof pinsResponse?.stats?.expectedCount === 'number'
             ? pinsResponse.stats.expectedCount : null;
           const result = await uploadPinsToSupabase(pins, boardName || pinsResponse.boardInfo?.name || 'Pinterest', boardUrl, totalPins);
-          try {
-            fetch('http://localhost:3000/run-embeddings', { method: 'POST' }).catch(error => {
-              console.log('[Pinterest Resync] Embedding trigger failed:', error);
-            });
-          } catch (error) {
-            console.log('[Pinterest Resync] Embedding trigger failed:', error);
-          }
           sendResponse({ success: true, ...result, stats: pinsResponse.stats, pinsExtracted: pins.length });
         } finally {
           chrome.tabs.remove(tabId).catch(() => undefined);

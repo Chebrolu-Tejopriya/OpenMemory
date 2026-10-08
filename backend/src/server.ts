@@ -10,6 +10,7 @@ import { searchSupabase, getSupabaseFolders, getSupabaseBoards, browseSupabase }
 import { getAllFolders, getPinterestBoards, getPinterestPinsCountByBoard, upsertPinterestBoard, upsertPinterestPins, getExistingPinterestPinUrls, deletePinterestBoard, PinterestPinRow, PinterestBoardRow } from './db.js';
 import { StandardizedItem } from './types.js';
 import { generateEmbeddings } from './embeddings.js';
+import { startPinterestEmbeddingJob, getPinterestEmbeddingJob, pinterestEmbeddingCounts } from './pinterest-embeddings.js';
 import { scrapePageMetadata, buildEmbeddingText } from './scraper.js';
 import { getCache, setCache, invalidate } from './redis.js';
 
@@ -300,17 +301,32 @@ app.delete('/board', (req, res) => {
 
 /**
  * POST /run-embeddings
- * Response: { success: true }
+ * Queues missing text and image vectors for a canonical Pinterest board.
+ * Response: { accepted: true, running: true, ... }
  */
 app.post('/run-embeddings', async (req, res) => {
   try {
-    res.json({ success: true });
+    const boardUrl = req.body?.board_url;
+    if (typeof boardUrl !== 'string' || !/^https:\/\/www\.pinterest\.com\/[^/]+\/[^/]+\/$/.test(boardUrl)) {
+      return res.status(400).json({ error: 'A canonical Pinterest board_url is required' });
+    }
+    const job = startPinterestEmbeddingJob(boardUrl);
+    res.status(202).json({ accepted: true, ...job });
   } catch (err) {
     console.error('Embedding backfill error:', err);
     res.status(500).json({
       error: err instanceof Error ? err.message : 'Unknown error'
     });
   }
+});
+
+app.get('/embedding-status', async (req, res) => {
+  try {
+    const boardUrl = req.query.board_url;
+    if (typeof boardUrl !== 'string' || !/^https:\/\/www\.pinterest\.com\/[^/]+\/[^/]+\/$/.test(boardUrl)) return res.status(400).json({ error: 'A canonical Pinterest board_url is required' });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ ...await pinterestEmbeddingCounts(boardUrl), job: getPinterestEmbeddingJob(boardUrl) || null });
+  } catch (error) { res.status(500).json({ error: error instanceof Error ? error.message : 'Could not check embeddings' }); }
 });
 
 /**

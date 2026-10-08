@@ -15,7 +15,7 @@
     "embeddings:migrate": "tsx scripts/migrateEmbeddings.ts",
     "fix:pinterest-images": "tsx scripts/fixPinterestImages.ts",
     "test:filters": "node scripts/filter-select.test.cjs && node scripts/filter-panel.test.cjs",
-    "test:pinterest": "node scripts/pinterest-import.test.cjs && node scripts/pinterest-feed.test.cjs && node scripts/pinterest-storage.test.cjs"
+    "test:pinterest": "node scripts/pinterest-import.test.cjs && node scripts/pinterest-feed.test.cjs && node scripts/pinterest-storage.test.cjs && node scripts/pinterest-embeddings.test.cjs"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.268",

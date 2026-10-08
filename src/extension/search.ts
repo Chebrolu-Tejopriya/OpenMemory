@@ -1870,7 +1870,33 @@ pinterestConnect.addEventListener('click', async () => {
 });
 
 // ============== PINTEREST IMPORT CURRENT BOARD ==============
-function pinterestImportWarning(result: { pinsExtracted?: number; totalStored?: number; total?: number; failed?: number; pinsFailed?: number; rejected?: number; stats?: { expectedCount?: number | null; syncComplete?: boolean; apiError?: string } }, html = true): string {
+let embeddingProgressVersion = 0;
+function followEmbeddingProgress(boardUrl: string, queued?: {accepted: boolean; error?: string}): void {
+  const element = document.getElementById('pinterest-embedding-progress');
+  if (!element || !queued) return;
+  const version = ++embeddingProgressVersion;
+  element.style.display = 'block';
+  element.textContent = queued.accepted ? 'Checking text and image embeddings...' : `Embeddings not started: ${queued.error || 'Backend unavailable'}`;
+  if (!queued.accepted) return;
+  let checks = 0;
+  const check = async (): Promise<void> => {
+    if (version !== embeddingProgressVersion) return;
+    try {
+      const status = await chrome.runtime.sendMessage({type: 'PINTEREST_EMBEDDING_STATUS', boardUrl});
+      if (!status?.success) throw new Error(status?.error || 'Could not check embedding progress');
+      element.textContent = `Text embeddings: ${status.total - status.textMissing}/${status.total}. Image embeddings: ${status.total - status.imageMissing}/${status.total}.`;
+      if (!status.textMissing && !status.imageMissing) { await initializeSearch(); return; }
+      if (!status.job?.running) {
+        element.textContent += ` ${status.job?.error || 'Some embeddings remain pending; resync to retry.'}`;
+        return;
+      }
+      if (++checks < 180) window.setTimeout(check, 5000);
+    } catch (error) { element.textContent = error instanceof Error ? error.message : 'Could not check embedding progress'; }
+  };
+  void check();
+}
+
+function pinterestImportWarning(result: { pinsExtracted?: number; totalStored?: number; total?: number; failed?: number; pinsFailed?: number; rejected?: number; embeddings?: {accepted: boolean; error?: string}; stats?: { expectedCount?: number | null; syncComplete?: boolean; apiError?: string } }, html = true): string {
   const count = result.pinsExtracted ?? 0;
   const expected = result.stats?.expectedCount;
   const stored = result.totalStored ?? result.total;
@@ -1885,6 +1911,7 @@ function pinterestImportWarning(result: { pinsExtracted?: number; totalStored?: 
   if ((result.failed ?? result.pinsFailed ?? 0) > 0) warning += ` Upload failures: ${result.failed ?? result.pinsFailed}. Retry resync.`;
   if ((result.rejected ?? 0) > 0) warning += ` Pins without usable images: ${result.rejected}.`;
   if (warning && result.stats?.apiError) warning += ` Feed: ${result.stats.apiError}`;
+  if (result.embeddings) warning += result.embeddings.accepted ? ' Missing text and image embeddings are queued.' : ` Embeddings not started: ${result.embeddings.error || 'Backend unavailable'}`;
   if (html) warning = warning.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return warning ? `${html ? '<br>' : '. '}${warning}` : '';
 }
@@ -1925,6 +1952,7 @@ pinterestImportBtn?.addEventListener('click', async () => {
         ${pinterestImportWarning(result)}
       `;
 
+      followEmbeddingProgress(result.boardUrl, result.embeddings);
       // Refresh the search data
       await initializeSearch();
       updatePinterestUI();
@@ -2736,6 +2764,7 @@ pinterestBoardsList?.addEventListener('click', async (event) => {
 
     if (result?.success) {
       pinterestBoardsMessage.textContent = `Collected ${result.pinsExtracted}; already stored ${result.alreadyStored}; added ${result.added}; total stored ${result.total}${pinterestImportWarning(result, false)}`;
+      followEmbeddingProgress(boardUrl, result.embeddings);
       pinterestBoardsMessage.style.color = '#4ade80';
       pinterestBoardsMessage.style.display = 'block';
       await initializeSearch();
@@ -2799,6 +2828,7 @@ pinterestResyncBtn?.addEventListener('click', async () => {
 
       await initializeSearch();
       updatePinterestUI();
+      followEmbeddingProgress(tab.url, result.embeddings);
     } else {
       pinterestImportResult.style.display = 'block';
       pinterestImportResult.style.background = 'rgba(248, 113, 113, 0.1)';

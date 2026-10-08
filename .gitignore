@@ -18,3 +18,4 @@ Thumbs.db
 .vscode/
 .idea/
 backend/python/.cache/
+__pycache__/

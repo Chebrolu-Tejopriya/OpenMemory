@@ -48,6 +48,31 @@ export async function generateEmbedding(text: string): Promise<number[] | null> 
   return callEmbedServer('/embed/text', text);
 }
 
+export async function generateImageEmbeddings(urls: string[]): Promise<(number[] | null)[]> {
+  try {
+    const response = await fetch(`${EMBED_SERVER_URL}/embed/images`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ urls }),
+      signal: AbortSignal.timeout(90000)
+    });
+    if (!response.ok) throw new Error(`Image embed server returned ${response.status}`);
+    const data = await response.json() as { embeddings: (number[] | null)[] };
+    return data.embeddings;
+  } catch (error) {
+    console.error('[Embeddings] Image generation failed:', error);
+    return urls.map(() => null);
+  }
+}
+
+export async function generateTextEmbeddings(texts: string[]): Promise<(number[] | null)[]> {
+  const response = await fetch(`${EMBED_SERVER_URL}/embed/texts`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texts }),
+    signal: AbortSignal.timeout(90000)
+  });
+  if (!response.ok) throw new Error(`Text embed server returned ${response.status}`);
+  const data = await response.json() as { embeddings: number[][] };
+  return data.embeddings;
+}
+
 /**
  * Generate batch text embeddings
  */

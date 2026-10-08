@@ -5,6 +5,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { canonicalPinterestBoardUrl } from './pinterest-import-policy';
+import { embeddingBackendUrl } from './embedding-jobs';
 
 // Supabase configuration - set these in chrome.storage.local
 interface SupabaseConfig {
@@ -128,27 +129,27 @@ async function supabaseRequest<T>(
   }
 }
 
-// Generate embedding via local backend (localhost:3000/embed)
-// Falls back to Supabase Edge Function if local backend is not available
+// Generate embeddings through the configured backend, with an Edge Function fallback.
 async function generateEmbedding(text: string): Promise<number[] | null> {
   if (!text || text.trim().length === 0) {
     console.log('[Supabase] Empty text, skipping embedding');
     return null;
   }
 
-  // Try local backend first (faster, more reliable)
+  // Try the configured backend first.
   try {
-    console.log('[Supabase] Generating embedding via local backend...');
-    const response = await fetch('http://localhost:3000/embed', {
+    console.log('[Supabase] Generating embedding via backend...');
+    const response = await fetch(`${await embeddingBackendUrl()}/embed`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: text.substring(0, 512) })
+      body: JSON.stringify({ text: text.substring(0, 512) }),
+      signal: AbortSignal.timeout(20000)
     });
 
     if (response.ok) {
       const result = await response.json();
       if (Array.isArray(result.embedding) && result.embedding.length === 384) {
-        console.log('[Supabase] Embedding generated via local backend:', result.embedding.length);
+        console.log('[Supabase] Embedding generated via backend:', result.embedding.length);
         return result.embedding;
       }
     }
@@ -878,7 +879,6 @@ export async function bulkInsertPinterestPins(
   const BATCH_SIZE = 50;
   let success = 0;
   let failed = 0;
-  const insertedIds: string[] = [];
 
   for (let i = 0; i < pins.length; i += BATCH_SIZE) {
     const batch = pins.slice(i, i + BATCH_SIZE);
@@ -898,70 +898,10 @@ export async function bulkInsertPinterestPins(
       batch.forEach(pin => console.log({ pin_url: pin.pin_url, error: error.message }));
     } else {
       success += data ? data.length : 0;
-      if (data) {
-        insertedIds.push(...data.map((d: { id: string }) => d.id));
-      }
     }
-  }
-
-  // Generate embeddings for inserted pins in the background
-  if (insertedIds.length > 0) {
-    console.log(`[Supabase] Generating embeddings for ${insertedIds.length} new pins...`);
-    generateEmbeddingsForPins(insertedIds).catch(err => {
-      console.error('[Supabase] Background embedding generation failed:', err);
-    });
   }
 
   return { success, failed };
-}
-
-/**
- * Generate embeddings for pins that don't have them (background task)
- */
-async function generateEmbeddingsForPins(pinIds: string[]): Promise<void> {
-  const client = await getSupabaseClient();
-  if (!client) return;
-
-  const BATCH_SIZE = 10;
-
-  for (let i = 0; i < pinIds.length; i += BATCH_SIZE) {
-    const batchIds = pinIds.slice(i, i + BATCH_SIZE);
-
-    // Fetch pins without embeddings
-    const { data: pins, error } = await client
-      .from('pinterest_pins')
-      .select('id, title, description, board_name')
-      .in('id', batchIds)
-      .is('embedding', null);
-
-    if (error || !pins) continue;
-
-    for (const pin of pins) {
-      try {
-        const textForEmbedding = [
-          pin.title || '',
-          pin.description || '',
-          pin.board_name || ''
-        ].filter(Boolean).join(' ').trim();
-
-        if (textForEmbedding.length === 0) continue;
-
-        const embedding = await generateEmbedding(textForEmbedding);
-        if (embedding) {
-          await client
-            .from('pinterest_pins')
-            .update({ embedding })
-            .eq('id', pin.id);
-          console.log(`[Supabase] Generated embedding for pin ${pin.id}`);
-        }
-      } catch (err) {
-        console.error(`[Supabase] Failed to generate embedding for pin ${pin.id}:`, err);
-      }
-    }
-
-    // Small delay between batches to avoid overwhelming the API
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }
 }
 
 export async function resyncPinterestBoard(
