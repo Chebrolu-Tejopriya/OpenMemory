@@ -2205,7 +2205,7 @@ async function updatePinterestUI(): Promise<void> {
     } else if (status.connected) {
       const lastSync = status.lastSyncAt ? new Date(status.lastSyncAt).toLocaleDateString() : 'Never';
       const pinCount = status.totalPins || 0;
-      pinterestStatus.textContent = `${status.username || 'Connected'} - ${pinCount} pins (Last: ${lastSync})`;
+      pinterestStatus.textContent = `${status.username || 'Connected'}${pinCount > 0 ? ` - ${pinCount} pins` : ''} (Last: ${lastSync})`;
       pinterestStatus.className = 'integration-status connected';
       setPinterestCtaText('Sync Pinterest');
       pinterestConnect.className = 'connect-btn';
