@@ -1870,17 +1870,22 @@ pinterestConnect.addEventListener('click', async () => {
 });
 
 // ============== PINTEREST IMPORT CURRENT BOARD ==============
-function pinterestImportWarning(result: { pinsExtracted?: number; stats?: { expectedCount?: number | null; syncComplete?: boolean } }, html = true): string {
+function pinterestImportWarning(result: { pinsExtracted?: number; totalStored?: number; total?: number; failed?: number; pinsFailed?: number; rejected?: number; stats?: { expectedCount?: number | null; syncComplete?: boolean; apiError?: string } }, html = true): string {
   const count = result.pinsExtracted ?? 0;
   const expected = result.stats?.expectedCount;
+  const stored = result.totalStored ?? result.total;
   let warning = '';
-  if (typeof expected === 'number' && count < expected) {
-    warning = `Partial import: collected ${count} of ${expected} pins. Keep the board open and retry.`;
+  if (typeof expected === 'number' && (count < expected || (stored !== undefined && stored < expected) || !result.stats?.syncComplete)) {
+    warning = `Partial import: collected ${count}/${expected}${stored !== undefined ? `; stored ${stored}/${expected}` : ''}.`;
   } else if (count >= PINTEREST_IMPORT_LIMIT && !result.stats?.syncComplete) {
     warning = `Reached the ${PINTEREST_IMPORT_LIMIT}-pin safety limit; this board may be incomplete.`;
   } else if (expected == null) {
-    warning = 'Pinterest did not provide a board total; completeness could not be verified.';
+    warning = result.stats?.syncComplete ? '' : 'Pinterest did not provide a board total; completeness could not be verified.';
   }
+  if ((result.failed ?? result.pinsFailed ?? 0) > 0) warning += ` Upload failures: ${result.failed ?? result.pinsFailed}. Retry resync.`;
+  if ((result.rejected ?? 0) > 0) warning += ` Pins without usable images: ${result.rejected}.`;
+  if (warning && result.stats?.apiError) warning += ` Feed: ${result.stats.apiError}`;
+  if (html) warning = warning.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return warning ? `${html ? '<br>' : '. '}${warning}` : '';
 }
 
@@ -1914,6 +1919,8 @@ pinterestImportBtn?.addEventListener('click', async () => {
         Board: ${result.boardName || 'Unknown'}<br>
         Pins extracted: ${result.pinsExtracted}<br>
         Pins uploaded: ${result.pinsUploaded}
+        <br>Already stored: ${result.alreadyStored ?? 0}
+        <br>Total stored: ${result.totalStored ?? result.totalPins}
         ${result.pinsFailed > 0 ? `<br>Failed: ${result.pinsFailed}` : ''}
         ${pinterestImportWarning(result)}
       `;
@@ -2728,7 +2735,7 @@ pinterestBoardsList?.addEventListener('click', async (event) => {
     });
 
     if (result?.success) {
-      pinterestBoardsMessage.textContent = `Added ${result.added} new pins${pinterestImportWarning(result, false)}`;
+      pinterestBoardsMessage.textContent = `Collected ${result.pinsExtracted}; already stored ${result.alreadyStored}; added ${result.added}; total stored ${result.total}${pinterestImportWarning(result, false)}`;
       pinterestBoardsMessage.style.color = '#4ade80';
       pinterestBoardsMessage.style.display = 'block';
       await initializeSearch();
@@ -2784,6 +2791,8 @@ pinterestResyncBtn?.addEventListener('click', async () => {
       pinterestImportResult.innerHTML = `
         <strong>Resync saved!</strong><br>
         Added ${result.added} new pins<br>
+        Collected: ${result.pinsExtracted}<br>
+        Already stored: ${result.alreadyStored}<br>
         Total stored: ${result.total}
         ${pinterestImportWarning(result)}
       `;

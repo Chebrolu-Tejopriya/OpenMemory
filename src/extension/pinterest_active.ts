@@ -4,6 +4,7 @@
  */
 
 import { PINTEREST_IMPORT_LIMIT, hasExtractionProgress, isBoardComplete } from './pinterest-import-policy';
+import { fetchBoardFeed, mergeFeedPin } from './pinterest-feed';
 
 // ============== TYPES ==============
 interface ExtractedPin {
@@ -31,6 +32,9 @@ interface ExtractionResult {
     totalFound: number;
     expectedCount: number | null;
     syncComplete: boolean;
+    apiPages?: number;
+    apiError?: string;
+    missingImages?: number;
     fromApi: number;
     fromDom: number;
     duplicatesRemoved: number;
@@ -59,189 +63,10 @@ const SCROLL_UP_AMOUNT = 500; // Pixels to scroll up before scrolling down again
 let isExtracting = false;
 let progressCallback: ((progress: ExtractionProgress) => void) | null = null;
 
-// ============== NETWORK INTERCEPTION STATE ==============
-// Store pins captured from API responses
+// API records are collected by authenticated, same-origin requests, not page monkeypatches.
 const apiCapturedPins: Map<string, ExtractedPin> = new Map();
-let networkInterceptionActive = false;
-
-// ============== NETWORK INTERCEPTION ==============
-/**
- * Parse Pinterest API response and extract pin objects
- */
-function extractPinsFromApiResponse(data: any): ExtractedPin[] {
-  const pins: ExtractedPin[] = [];
-
-  const extractPin = (obj: any): ExtractedPin | null => {
-    if (!obj || typeof obj !== 'object') return null;
-
-    // Check if this looks like a pin object
-    const id = obj.id;
-    const images = obj.images;
-
-    if (!id || !images) return null;
-
-    // Get the best image URL
-    const imageUrl = images.orig?.url ||
-      images['736x']?.url ||
-      images['564x']?.url ||
-      images['474x']?.url ||
-      images['236x']?.url;
-
-    if (!imageUrl) return null;
-
-    return {
-      pinId: String(id),
-      title: obj.title || obj.grid_title || obj.description || '',
-      description: obj.description || obj.closeup_description || '',
-      imageUrl: imageUrl,
-      pinUrl: obj.link || `https://www.pinterest.com/pin/${id}/`,
-      source: 'pinterest',
-      type: 'image'
-    };
-  };
-
-  const traverse = (obj: any, depth = 0): void => {
-    if (!obj || typeof obj !== 'object' || depth > 20) return;
-
-    // Check if this is a pin object
-    const pin = extractPin(obj);
-    if (pin) {
-      pins.push(pin);
-      return; // Don't recurse into pin objects
-    }
-
-    // Traverse arrays and objects
-    if (Array.isArray(obj)) {
-      for (const item of obj) {
-        traverse(item, depth + 1);
-      }
-    } else {
-      for (const value of Object.values(obj)) {
-        traverse(value, depth + 1);
-      }
-    }
-  };
-
-  // Common locations for pins in Pinterest API responses
-  if (data?.resource_response?.data) {
-    traverse(data.resource_response.data);
-  }
-  if (data?.resource?.data) {
-    traverse(data.resource.data);
-  }
-  if (data?.data) {
-    traverse(data.data);
-  }
-  // Also traverse the whole response in case pins are elsewhere
-  traverse(data);
-
-  return pins;
-}
-
-/**
- * Process intercepted API response
- */
-function processApiResponse(url: string, responseText: string): void {
-  try {
-    const data = JSON.parse(responseText);
-    const pins = extractPinsFromApiResponse(data);
-
-    if (pins.length > 0) {
-      let newCount = 0;
-      for (const pin of pins) {
-        if (!apiCapturedPins.has(pin.pinId)) {
-          apiCapturedPins.set(pin.pinId, pin);
-          newCount++;
-        }
-      }
-      if (newCount > 0) {
-        console.log(`[Pinterest API] Captured ${newCount} new pins from ${url.substring(0, 80)}... (total: ${apiCapturedPins.size})`);
-      }
-    }
-  } catch (e) {
-    // Ignore parse errors - not all responses are JSON
-  }
-}
-
-/**
- * Set up network interception to capture Pinterest API responses
- */
-function setupNetworkInterception(): void {
-  if (networkInterceptionActive) return;
-  networkInterceptionActive = true;
-
-  console.log('[Pinterest] Setting up network interception...');
-
-  // Intercept fetch
-  const originalFetch = window.fetch;
-  window.fetch = async function (...args) {
-    const response = await originalFetch.apply(this, args);
-
-    try {
-      const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request).url;
-
-      // Check if this is a Pinterest resource request
-      if (url.includes('/resource/') || url.includes('pinterest.com/resource')) {
-        // Clone response to read body without consuming it
-        const clone = response.clone();
-        clone.text().then(text => {
-          processApiResponse(url, text);
-        }).catch(() => { });
-      }
-    } catch (e) {
-      // Ignore errors
-    }
-
-    return response;
-  };
-
-  // Intercept XMLHttpRequest
-  const originalXHROpen = XMLHttpRequest.prototype.open;
-  const originalXHRSend = XMLHttpRequest.prototype.send;
-
-  XMLHttpRequest.prototype.open = function (method: string, url: string | URL, ...rest: any[]) {
-    (this as any)._pinterestUrl = url.toString();
-    return originalXHROpen.apply(this, [method, url, ...rest] as any);
-  };
-
-  XMLHttpRequest.prototype.send = function (...args) {
-    const xhr = this;
-    const url = (xhr as any)._pinterestUrl || '';
-
-    if (url.includes('/resource/') || url.includes('pinterest.com/resource')) {
-      xhr.addEventListener('load', function () {
-        try {
-          if (xhr.responseText) {
-            processApiResponse(url, xhr.responseText);
-          }
-        } catch (e) {
-          // Ignore errors
-        }
-      });
-    }
-
-    return originalXHRSend.apply(this, args);
-  };
-
-  console.log('[Pinterest] Network interception active');
-}
-
-/**
- * Get all pins captured from API
- */
-function getApiCapturedPins(): ExtractedPin[] {
-  return Array.from(apiCapturedPins.values());
-}
-
-/**
- * Clear captured API pins
- */
-function clearApiCapturedPins(): void {
-  apiCapturedPins.clear();
-}
-
-// Set up interception immediately when script loads
-setupNetworkInterception();
+function getApiCapturedPins(): ExtractedPin[] { return Array.from(apiCapturedPins.values()); }
+function clearApiCapturedPins(): void { apiCapturedPins.clear(); }
 
 // ============== UTILITY FUNCTIONS ==============
 function sleep(ms: number): Promise<void> {
@@ -367,7 +192,12 @@ function extractFromDomIncremental(
       const pinId = pinIdMatch[1];
 
       // Check if we already collected this pin (use pin ID for deduplication)
-      if (collectedPinIds.has(pinId)) return;
+      if (collectedPinIds.has(pinId)) {
+        // Lazy-loaded pins may now have an image even though their ID was seen earlier.
+        const existing = resultsArray.find(pin => pin.pinId === pinId);
+        if (existing && !existing.imageUrl) fillMissingImages(collectedPinIds, [existing]);
+        return;
+      }
 
       // Find image - check multiple locations
       let img: HTMLImageElement | null = null;
@@ -758,7 +588,10 @@ function mergeApiPins(
   const apiPins = getApiCapturedPins();
 
   for (const pin of apiPins) {
-    if (!collectedPinIds.has(pin.pinId)) {
+    const existing = allPins.find(item => item.pinId === pin.pinId);
+    if (existing) {
+      mergeFeedPin(existing, pin);
+    } else if (!collectedPinIds.has(pin.pinId)) {
       collectedPinIds.add(pin.pinId);
       allPins.push(pin);
       newCount++;
@@ -786,8 +619,7 @@ async function performScrollExtraction(
   let stableHeightCount = 0;
   let previousHeight = 0;
 
-  // Ensure network interception is active
-  setupNetworkInterception();
+  // Collect images while scrolling as a fallback for an incomplete feed.
 
   // Scroll to top first
   window.scrollTo({ top: 0, behavior: 'instant' });
@@ -941,10 +773,10 @@ async function performScrollExtraction(
 }
 
 /**
- * Main extraction function with network interception and retry logic
+ * Main extraction function with authenticated feed pagination and DOM fallback
  *
  * IMPORTANT: This uses multiple extraction strategies:
- * 1. Network interception - captures pins from Pinterest API responses
+ * 1. Paginated board and section feeds - independent of lazy-loaded DOM images
  * 2. DOM extraction - captures pins from visible elements
  * 3. PWS data extraction - captures pins from initial page data
  * 4. All sources are merged and deduplicated
@@ -956,14 +788,13 @@ async function extractPinsWithProgress(
   const startTime = Date.now();
   const MAX_RETRY_ATTEMPTS = 3;
 
-  // Clear any previously captured API pins and ensure interception is active
+  // Reset feed records for this import.
   clearApiCapturedPins();
-  setupNetworkInterception();
 
   // Get expected pin count from board (for progress display only)
-  const expectedPinCount = getBoardPinCount();
+  let expectedPinCount = getBoardPinCount();
   console.log(`[Pinterest] ====================================`);
-  console.log(`[Pinterest] Starting extraction with API interception`);
+  console.log(`[Pinterest] Starting extraction with board feed pagination`);
   console.log(`[Pinterest] Expected pin count: ${expectedPinCount ?? 'unknown'}`);
   console.log(`[Pinterest] Max pins limit: ${maxPins}`);
   console.log(`[Pinterest] ====================================`);
@@ -989,18 +820,38 @@ async function extractPinsWithProgress(
         : 'Starting extraction...'
     });
 
-    // Initial extraction from PWS data
-    const pwsPins = extractFromPwsData(seenIds);
-    pwsPins.forEach(pin => {
-      if (!collectedPinIds.has(pin.pinId)) {
-        collectedPinIds.add(pin.pinId);
-        allPins.push(pin);
-      }
+    onProgress({ status: 'extracting', pinsCollected: 0, scrollCount: 0, message: 'Fetching board pages and sections...' });
+    const feed = await fetchBoardFeed(location.href, maxPins, (count, expected) => {
+      onProgress({ status: 'extracting', pinsCollected: count, scrollCount: 0,
+        message: expected ? `Fetching ${count}/${expected} pins...` : `Fetching ${count} pins...` });
     });
-    console.log(`[Pinterest] Initial PWS extraction: ${allPins.length} pins`);
+    expectedPinCount = feed.expectedCount ?? expectedPinCount;
+    for (const pin of feed.pins) {
+      apiCapturedPins.set(pin.pinId, pin);
+      const existing = allPins.find(item => item.pinId === pin.pinId);
+      if (existing) mergeFeedPin(existing, pin);
+      else { collectedPinIds.add(pin.pinId); allPins.push(pin); }
+    }
+    if (feed.error) console.warn('[Pinterest] Feed incomplete:', feed.error);
 
-    // Initial DOM extraction
-    extractFromDomIncremental(collectedPinIds, allPins);
+    const feedComplete = feed.finished && feed.pins.every(pin => isValidUrl(pin.imageUrl)) &&
+      (expectedPinCount === null || isBoardComplete(feed.pins.length, expectedPinCount));
+    // A complete feed is authoritative; DOM recommendations are not board members.
+    if (!feedComplete) {
+      // Initial extraction from PWS data
+      const pwsPins = extractFromPwsData(seenIds);
+      pwsPins.forEach(pin => {
+        if (!collectedPinIds.has(pin.pinId)) {
+          collectedPinIds.add(pin.pinId);
+          allPins.push(pin);
+        }
+      });
+      console.log(`[Pinterest] Initial PWS extraction: ${allPins.length} pins`);
+
+      // Initial DOM extraction
+      extractFromDomIncremental(collectedPinIds, allPins);
+
+    }
 
     // Merge any already-captured API pins
     const initialApiMerge = mergeApiPins(collectedPinIds, allPins);
@@ -1009,7 +860,7 @@ async function extractPinsWithProgress(
     // Main extraction loop with retries
     let lastCount = 0;
 
-    while (retryAttempts < MAX_RETRY_ATTEMPTS) {
+    while (!feedComplete && retryAttempts < MAX_RETRY_ATTEMPTS) {
       const attemptNum = retryAttempts + 1;
       console.log(`[Pinterest] ========== Pass ${attemptNum}/${MAX_RETRY_ATTEMPTS} ==========`);
 
@@ -1049,7 +900,7 @@ async function extractPinsWithProgress(
         lastCount = collectedPinIds.size;
 
         // Check if we have enough
-        if (isBoardComplete(collectedPinIds.size, expectedPinCount)) {
+        if (isBoardComplete(allPins.filter(pin => isValidUrl(pin.imageUrl)).length, expectedPinCount)) {
           console.log('[Pinterest] Reached the full expected board count, stopping');
           break;
         }
@@ -1096,10 +947,12 @@ async function extractPinsWithProgress(
     const timeMs = Date.now() - startTime;
 
     // Determine sync status
-    const isSyncComplete = isBoardComplete(validPins.length, expectedPinCount);
+    const isSyncComplete = expectedPinCount === null
+      ? feed.finished && pinsWithImages.length === validPins.length
+      : isBoardComplete(pinsWithImages.length, expectedPinCount);
 
     // Log final results with source breakdown
-    const apiTotal = apiCapturedPins.size;
+    const apiTotal = feed.pins.length;
     console.log(`[Pinterest] ========== FINAL RESULT ==========`);
     console.log(`[Pinterest] Collected: ${validPins.length} pins (${pinsWithImages.length} with images)`);
     console.log(`[Pinterest] Sources: ${apiTotal} from API, rest from DOM/PWS`);
@@ -1125,6 +978,9 @@ async function extractPinsWithProgress(
         totalFound: validPins.length,
         expectedCount: expectedPinCount,
         syncComplete: isSyncComplete,
+        apiPages: feed.pages,
+        apiError: feed.error,
+        missingImages: validPins.length - pinsWithImages.length,
         fromApi: apiTotal,
         fromDom: validPins.length - apiTotal,
         duplicatesRemoved: allPins.length - validPins.length,
@@ -1257,6 +1113,10 @@ const progressUI = {
 
 // ============== MESSAGE HANDLERS ==============
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'PINTEREST_ACTIVE_PING') { sendResponse({ ready: true }); return false; }
+  if (isExtracting && ['PINTEREST_IMPORT_BOARD', 'PINTEREST_ACTIVE_FETCH_PINS'].includes(message.type)) {
+    sendResponse({ success: false, error: 'This board is already being imported.' }); return false;
+  }
   // Import current board with progress
   if (message.type === 'PINTEREST_IMPORT_BOARD') {
     const maxPins = message.maxPins || MAX_PINS;
@@ -1280,7 +1140,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }, maxPins);
 
       if (result.success && result.pins.length > 0) {
-        progressUI.update(100, `Imported ${result.pins.length} pins!`);
+        progressUI.update(100, `Collected ${result.pins.length} pins${result.stats.syncComplete ? '' : ' (partial)'}`);
       } else if (result.pins.length === 0) {
         progressUI.update(0, 'No pins found on this page');
       } else {
@@ -1343,7 +1203,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({
         pins: result.pins,
         error: result.error,
-        stats: result.stats
+        stats: result.stats,
+        boardInfo: extractBoardInfo()
       });
     })();
     return true;

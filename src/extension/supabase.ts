@@ -4,6 +4,7 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { canonicalPinterestBoardUrl } from './pinterest-import-policy';
 
 // Supabase configuration - set these in chrome.storage.local
 interface SupabaseConfig {
@@ -840,7 +841,7 @@ export async function getPinterestPinsCountByBoard(boardUrl: string): Promise<nu
     .select('pin_url', { count: 'exact', head: true })
     .eq('board_url', boardUrl);
 
-  if (error) return 0;
+  if (error) throw new Error(error.message);
   return count ?? 0;
 }
 
@@ -858,7 +859,8 @@ export async function getExistingPinterestPinUrls(pinUrls: string[]): Promise<Se
       .select('pin_url')
       .in('pin_url', chunk);
 
-    if (!error && data) {
+    if (error) throw new Error(error.message);
+    if (data) {
       data.forEach((row: { pin_url: string }) => existing.add(row.pin_url));
     }
   }
@@ -880,16 +882,22 @@ export async function bulkInsertPinterestPins(
 
   for (let i = 0; i < pins.length; i += BATCH_SIZE) {
     const batch = pins.slice(i, i + BATCH_SIZE);
-    const { error, data } = await client
-      .from('pinterest_pins')
-      .insert(batch)
-      .select('id');
+    let writeResult = await client.from('pinterest_pins')
+      .upsert(batch, { onConflict: 'pin_url', ignoreDuplicates: true }).select('id');
+    for (let attempt = 0; writeResult.error && attempt < 2; attempt++) {
+      // Retrying must never overwrite an existing pin's embedding or metadata.
+      if (writeResult.error.code && !writeResult.error.code.startsWith('PGRST') && !writeResult.error.code.startsWith('08')) break;
+      await new Promise(resolve => setTimeout(resolve, 500 * 2 ** attempt));
+      writeResult = await client.from('pinterest_pins')
+        .upsert(batch, { onConflict: 'pin_url', ignoreDuplicates: true }).select('id');
+    }
+    const { error, data } = writeResult;
 
     if (error) {
       failed += batch.length;
       batch.forEach(pin => console.log({ pin_url: pin.pin_url, error: error.message }));
     } else {
-      success += data ? data.length : batch.length;
+      success += data ? data.length : 0;
       if (data) {
         insertedIds.push(...data.map((d: { id: string }) => d.id));
       }
@@ -961,27 +969,54 @@ export async function resyncPinterestBoard(
   pins: PinterestPinInsert[],
   boardName?: string,
   totalPins?: number | null
-): Promise<{ added: number; total: number }>
+): Promise<{ added: number; total: number; failed: number; alreadyStored: number }>
 {
+  const client = await getSupabaseClient();
+  if (!client) throw new Error('Supabase not configured');
+  const canonicalUrl = canonicalPinterestBoardUrl(boardUrl);
+  const { data: boards, error: boardError } = await client.from('pinterest_boards').select('board_url');
+  if (boardError) throw new Error(boardError.message);
+  const aliases = new Set<string>([boardUrl]);
+  for (const board of boards || []) {
+    try { if (canonicalPinterestBoardUrl(board.board_url) === canonicalUrl) aliases.add(board.board_url); } catch { /* Other sources. */ }
+  }
+  aliases.delete(canonicalUrl);
+  for (const alias of aliases) {
+    // Reassign only board identity. Titles, descriptions and embeddings remain untouched.
+    const { error } = await client.from('pinterest_pins').update({ board_url: canonicalUrl }).eq('board_url', alias);
+    if (error) throw new Error(error.message);
+    const { count, error: verifyError } = await client.from('pinterest_pins')
+      .select('id', { count: 'exact', head: true }).eq('board_url', alias);
+    if (verifyError || count !== 0) throw new Error(verifyError?.message || 'Could not consolidate the board URL; original board records were retained.');
+  }
+  boardUrl = canonicalUrl;
+  pins = pins.map(pin => ({ ...pin, board_url: canonicalUrl }));
   const existingUrls = await getExistingPinterestPinUrls(pins.map(pin => pin.pin_url));
   const newPins = pins.filter(pin => !existingUrls.has(pin.pin_url));
 
   let added = 0;
+  let failed = 0;
   if (newPins.length > 0) {
     const result = await bulkInsertPinterestPins(newPins);
     added = result.success;
+    failed = result.failed;
   }
 
   const total = await getPinterestPinsCountByBoard(boardUrl);
-  await upsertPinterestBoard({
+  const boardResult = await upsertPinterestBoard({
     board_name: boardName || null,
     board_url: boardUrl,
     total_pins: totalPins ?? null,
     imported_pins: total,
     last_synced_at: new Date().toISOString()
   });
+  if (!boardResult.success) throw new Error(boardResult.error || 'Could not update board totals');
+  for (const alias of aliases) {
+    const { error } = await client.from('pinterest_boards').delete().eq('board_url', alias);
+    if (error) throw new Error(error.message);
+  }
 
-  return { added, total };
+  return { added, total, failed, alreadyStored: pins.length - added - failed };
 }
 
 export async function getPinterestNullEmbeddingCount(): Promise<number> {

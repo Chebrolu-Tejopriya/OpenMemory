@@ -1306,12 +1306,21 @@ interface ExtractedPin {
   type: 'image';
 }
 
+async function ensurePinterestContentScript(tabId: number): Promise<void> {
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, { type: 'PINTEREST_ACTIVE_PING' });
+    if (response?.ready) return;
+  } catch { /* Not injected yet. */ }
+  await chrome.scripting.executeScript({ target: { tabId }, files: ['pinterest_active.js'] });
+  await delay(400);
+}
+
 async function uploadPinsToSupabase(
-  pins: ExtractedPin[],
+  pins: Array<Pick<ExtractedPin, 'pinId' | 'pinUrl' | 'imageUrl' | 'title' | 'description'>>,
   boardName: string,
   boardUrl: string,
   totalPins?: number | null
-): Promise<{ added: number; total: number; failed: number }> {
+): Promise<{ added: number; total: number; failed: number; alreadyStored: number; rejected: number }> {
   // Save to local DB
   for (const pin of pins) {
     try {
@@ -1342,8 +1351,7 @@ async function uploadPinsToSupabase(
     .filter(pin => isValidSupabasePinPayload(pin));
 
   const result = await resyncPinterestBoard(boardUrl, payloads, boardName, totalPins ?? null);
-  const failed = Math.max(0, payloads.length - result.added);
-  return { added: result.added, total: result.total, failed };
+  return { ...result, rejected: pins.length - payloads.length };
 }
 
 // ============== PINTEREST PINS SUPABASE SYNC ==============
@@ -1595,18 +1603,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
 
-        // Inject content script if needed
-        try {
-          await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            files: ['pinterest_active.js']
-          });
-        } catch (e) {
-          // Script might already be injected
-        }
-
-        // Wait for script to load
-        await delay(500);
+        await ensurePinterestContentScript(tab.id);
 
         // Send import request to content script
         const result = await chrome.tabs.sendMessage(tab.id, {
@@ -1625,7 +1622,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (result.pins.length === 0) {
           sendResponse({
             success: false,
-            error: 'No pins found on this page'
+            error: result.stats?.apiError || 'No pins found on this page'
           });
           return;
         }
@@ -1659,6 +1656,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           pinsExtracted: result.pins.length,
           pinsUploaded: uploadResult.added,
           pinsFailed: uploadResult.failed,
+          alreadyStored: uploadResult.alreadyStored,
+          rejected: uploadResult.rejected,
+          totalStored: uploadResult.total,
           totalPins: uploadResult.total,
           boardName,
           stats: result.stats
@@ -1949,16 +1949,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           await waitForTabLoad(tabId);
           await delay(1000);
 
-          try {
-            await chrome.scripting.executeScript({
-              target: { tabId },
-              files: ['pinterest_active.js']
-            });
-          } catch (error) {
-            // Script might already be injected
-          }
-
-          await delay(400);
+          await ensurePinterestContentScript(tabId);
 
           const pinsResponse = await chrome.tabs.sendMessage(tabId, {
             type: 'PINTEREST_ACTIVE_FETCH_PINS',
@@ -1968,43 +1959,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
           const pins = (pinsResponse?.pins || []) as Array<{ pinId: string; title: string; description?: string; imageUrl: string; pinUrl: string }>;
           if (!pins.length) {
-            sendResponse({ success: false, error: 'No pins found for this board' });
+            sendResponse({ success: false, error: pinsResponse?.stats?.apiError || 'No pins found for this board' });
             return;
           }
 
-          for (const pin of pins) {
-            try {
-              await processPin({
-                pinId: pin.pinId,
-                title: pin.title,
-                description: pin.description,
-                imageUrl: pin.imageUrl,
-                pinUrl: pin.pinUrl
-              }, boardName || 'Pinterest', boardUrl);
-            } catch (error) {
-              // Skip duplicates
-            }
-          }
-
           const totalPins = typeof pinsResponse?.stats?.expectedCount === 'number'
-            ? pinsResponse.stats.expectedCount
-            : null;
-
-          const now = new Date().toISOString();
-          const payloads: PinterestPinInsert[] = pins
-            .map(pin => ({
-              pin_id: extractPinId(pin.pinUrl),
-              pin_url: pin.pinUrl,
-              image_url: pin.imageUrl,
-              title: pin.title || '',
-              description: pin.description || null,
-              board_name: boardName || 'Pinterest',
-              board_url: boardUrl,
-              created_at: now
-            }))
-            .filter(pin => isValidSupabasePinPayload(pin));
-
-          const result = await resyncPinterestBoard(boardUrl, payloads, boardName, totalPins ?? null);
+            ? pinsResponse.stats.expectedCount : null;
+          const result = await uploadPinsToSupabase(pins, boardName || pinsResponse.boardInfo?.name || 'Pinterest', boardUrl, totalPins);
           try {
             fetch('http://localhost:3000/run-embeddings', { method: 'POST' }).catch(error => {
               console.log('[Pinterest Resync] Embedding trigger failed:', error);

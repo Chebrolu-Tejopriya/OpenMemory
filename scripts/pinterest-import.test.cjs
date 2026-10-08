@@ -7,7 +7,11 @@ const bundle = esbuild.buildSync({
 });
 const policyModule = { exports: {} };
 new Function('module', 'exports', bundle.outputFiles[0].text)(policyModule, policyModule.exports);
-const { hasExtractionProgress, isBoardComplete, PINTEREST_IMPORT_LIMIT } = policyModule.exports;
+const { hasExtractionProgress, isBoardComplete, PINTEREST_IMPORT_LIMIT, canonicalPinterestBoardUrl } = policyModule.exports;
+assert.equal(canonicalPinterestBoardUrl('https://in.pinterest.com/Tejopriya_Chebrolu/tracker/?request_params=x'),
+  canonicalPinterestBoardUrl('https://www.pinterest.com/tejopriya_chebrolu/tracker/'));
+assert.notEqual(canonicalPinterestBoardUrl('https://in.pinterest.com/test/tracker/'),canonicalPinterestBoardUrl('https://in.pinterest.com/test/other/'));
+assert.throws(()=>canonicalPinterestBoardUrl('https://evil.example/test/tracker/'));
 
 // Virtualized boards can load more pins without increasing the document height.
 assert.equal(hasExtractionProgress(2000, 2000, 400, 425), true);
