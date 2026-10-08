@@ -1818,16 +1818,32 @@ resultsEl.addEventListener('error', (e) => {
 // ============== INTEGRATIONS UI ==============
 let pinterestPollingInterval: number | null = null;
 
+function setSettingsOpen(open: boolean): void {
+  integrationsSection.classList.toggle('active', open);
+  document.body.classList.toggle('settings-open', open);
+  integrationsToggle.setAttribute('aria-expanded', String(open));
+  const header = document.querySelector('header') as HTMLElement;
+  const main = document.querySelector('main') as HTMLElement;
+  header.inert = open;
+  main.inert = open;
+  if (open) closeIntegrations.focus();
+  else integrationsToggle.focus();
+}
+
 integrationsToggle.addEventListener('click', () => {
-  integrationsSection.classList.toggle('active');
-  if (integrationsSection.classList.contains('active')) {
-    updatePinterestUI();
-    updatePinterestBoardsUI();
-  }
+  setSettingsOpen(true);
+  updatePinterestUI();
+  updatePinterestBoardsUI();
 });
 
 closeIntegrations.addEventListener('click', () => {
-  integrationsSection.classList.remove('active');
+  setSettingsOpen(false);
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && integrationsSection.classList.contains('active')) {
+    setSettingsOpen(false);
+  }
 });
 
 // Close board selection
@@ -1991,7 +2007,7 @@ async function discoverAndShowBoards(): Promise<void> {
   pinterestStatus.className = 'integration-status syncing';
   pinterestConnect.textContent = 'Connecting...';
   pinterestConnect.className = 'connect-btn syncing';
-  integrationsSection.classList.add('active');
+  setSettingsOpen(true);
 
   try {
     // First check if logged in
@@ -2577,7 +2593,6 @@ async function updatePinterestBoardsUI(): Promise<void> {
       const lastSynced = board.last_synced_at
         ? formatRelativeTime(board.last_synced_at)
         : 'Never';
-      const totalPins = typeof board.total_pins === 'number' ? board.total_pins : '-';
       const importedPins = typeof board.imported_pins === 'number' ? board.imported_pins : 0;
       const encodedBoardUrl = encodeURIComponent(board.board_url);
       const encodedBoardName = encodeURIComponent(board.board_name || 'Pinterest');
@@ -2586,13 +2601,12 @@ async function updatePinterestBoardsUI(): Promise<void> {
         <div class="board-row" data-board-url="${encodedBoardUrl}">
           <div class="board-meta">
             <div class="board-name" title="${escapeHtml(board.board_name || 'Untitled')}">${escapeHtml(board.board_name || 'Untitled')}</div>
-            <div class="board-stats">Total: ${totalPins}</div>
             <div class="board-stats">Imported: ${importedPins}</div>
             <div class="board-sync">Last synced: ${escapeHtml(lastSynced)}</div>
           </div>
           <div class="board-action">
-            <button class="resync-btn" data-board-url="${encodedBoardUrl}" data-board-name="${encodedBoardName}">Resync</button>
-            <button class="delete-board-btn" data-board-url="${encodedBoardUrl}" data-board-name="${encodedBoardName}" title="Delete all pins from this board">Delete</button>
+            <button class="resync-btn" data-board-url="${encodedBoardUrl}" data-board-name="${encodedBoardName}" title="Sync board" aria-label="Sync board"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-2l2 2M4 17l2 2a7 7 0 0 0 12-2"/></svg></button>
+            <button class="delete-board-btn" data-board-url="${encodedBoardUrl}" data-board-name="${encodedBoardName}" title="Delete all pins from this board" aria-label="Delete board"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg></button>
           </div>
         </div>
       `;
@@ -2632,7 +2646,8 @@ pinterestBoardsList?.addEventListener('click', async (event) => {
     if (!confirm(`Delete all pins from "${boardName}"?\nThis cannot be undone.`)) return;
 
     deleteBtn.disabled = true;
-    deleteBtn.textContent = 'Deleting...';
+    deleteBtn.setAttribute('aria-busy', 'true');
+    deleteBtn.setAttribute('aria-label', 'Deleting board');
     pinterestBoardsMessage.style.display = 'none';
 
     try {
@@ -2668,7 +2683,8 @@ pinterestBoardsList?.addEventListener('click', async (event) => {
       pinterestBoardsMessage.style.color = '#f87171';
       pinterestBoardsMessage.style.display = 'block';
       deleteBtn.disabled = false;
-      deleteBtn.textContent = 'Delete';
+      deleteBtn.removeAttribute('aria-busy');
+      deleteBtn.setAttribute('aria-label', 'Delete board');
     }
     return;
   }
@@ -2682,7 +2698,8 @@ pinterestBoardsList?.addEventListener('click', async (event) => {
   if (!boardUrl) return;
 
   button.disabled = true;
-  button.textContent = 'Resyncing...';
+  button.setAttribute('aria-busy', 'true');
+  button.setAttribute('aria-label', 'Syncing board');
   pinterestBoardsMessage.style.display = 'none';
 
   try {
@@ -2709,7 +2726,8 @@ pinterestBoardsList?.addEventListener('click', async (event) => {
     pinterestBoardsMessage.style.display = 'block';
   } finally {
     button.disabled = false;
-    button.textContent = 'Resync';
+    button.removeAttribute('aria-busy');
+    button.setAttribute('aria-label', 'Sync board');
   }
 });
 

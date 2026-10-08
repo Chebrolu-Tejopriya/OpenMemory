@@ -509,11 +509,14 @@
 
     /* Integrations Section */
     .integrations-section {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
       padding: 16px;
       border-bottom: 1px solid #333333;
       background: #0a0a0a;
       display: none;
-      max-height: 420px;
+      height: 100dvh;
       overflow-y: auto;
     }
 
@@ -522,6 +525,11 @@
     }
 
     .integrations-header {
+      position: sticky;
+      top: -16px;
+      padding: 16px 0;
+      background: #0a0a0a;
+      z-index: 1;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -754,10 +762,26 @@
 
     .board-action {
       display: flex;
-      flex-direction: column;
+      flex-direction: row;
+      flex-shrink: 0;
       gap: 6px;
       align-items: flex-end;
     }
+
+    .board-action button {
+      width: 34px;
+      height: 34px;
+      padding: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+    }
+
+    button:focus-visible { outline: 2px solid #4ade80; outline-offset: 3px; }
+    .board-action button[aria-busy="true"] { opacity: 0.5; cursor: wait; }
+    .settings-back { display: inline-flex; align-items: center; gap: 6px; padding: 8px; color: #ffffff; font-size: 12px; }
+    body.settings-open { overflow: hidden; }
 
     .resync-btn {
       padding: 6px 10px;
@@ -1084,9 +1108,9 @@
     <nav class="nav">
       <div class="logo"><img src="icon48.png" alt="" width="32" height="32" style="border-radius: 8px;">OpenMemory</div>
       <div style="display: flex; align-items: center; gap: 8px;">
-                <button class="integrations-toggle" id="integrations-toggle" title="Integrations">
-          <svg viewBox="0 0 24 24" width="14" height="14">
-            <path fill="currentColor" d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7 1.49 0 2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"/>
+                <button class="integrations-toggle" id="integrations-toggle" title="Settings and integrations" aria-label="Open settings and integrations" aria-expanded="false" aria-controls="integrations-section">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="m9 3-.6 2.4-1.8 1L4.2 6 2 10l1.8 1.6v2L2 15l2.2 4 2.4-.4 1.8 1L9 22h5l.6-2.4 1.8-1 2.4.4 2.2-4-1.8-1.4v-2L21 10l-2.2-4-2.4.4-1.8-1L14 3Z"/><circle cx="11.5" cy="12.5" r="3"/>
           </svg>
         </button>
         <span class="nav-link" id="item-count">Loading...</span>
@@ -1140,11 +1164,12 @@
         </div>
       </div>
     </div>
-    <!-- Integrations Section - Inside header so it appears below nav -->
+  </header>
+    <!-- Separate settings view inside the side panel -->
     <div class="integrations-section" id="integrations-section">
     <div class="integrations-header">
-      <h3>Integrations</h3>
-      <button class="close-btn" id="close-integrations">&times;</button>
+      <button class="close-btn settings-back" id="close-integrations" aria-label="Back to search"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m12 5-7 7 7 7M5 12h14"/></svg>Back</button>
+      <h3>Settings &amp; integrations</h3>
     </div>
 
     <!-- Supabase Settings -->
@@ -1278,8 +1303,6 @@
       </div>
     </div>
   </div>
-  </header>
-
   <main class="container">
     <div id="status" class="status"></div>
     <div id="results" class="results"></div>
