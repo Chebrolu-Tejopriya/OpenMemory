@@ -2605,7 +2605,7 @@ async function updatePinterestBoardsUI(): Promise<void> {
             <div class="board-sync">Last synced: ${escapeHtml(lastSynced)}</div>
           </div>
           <div class="board-action">
-            <button class="resync-btn" data-board-url="${encodedBoardUrl}" data-board-name="${encodedBoardName}" title="Sync board" aria-label="Sync board"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-2l2 2M4 17l2 2a7 7 0 0 0 12-2"/></svg></button>
+            <button class="resync-btn" data-board-url="${encodedBoardUrl}" data-board-name="${encodedBoardName}" title="Sync board" aria-label="Sync board"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></button>
             <button class="delete-board-btn" data-board-url="${encodedBoardUrl}" data-board-name="${encodedBoardName}" title="Delete all pins from this board" aria-label="Delete board"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg></button>
           </div>
         </div>
@@ -2743,7 +2743,8 @@ pinterestResyncBtn?.addEventListener('click', async () => {
   pinterestImportStatus.textContent = 'Resyncing board...';
   pinterestImportStatus.style.color = '#fbbf24';
   pinterestResyncBtn.disabled = true;
-  pinterestResyncBtn.textContent = 'Resyncing...';
+  pinterestResyncBtn.setAttribute('aria-busy', 'true');
+  pinterestResyncBtn.setAttribute('aria-label', 'Resyncing current board');
 
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -2784,7 +2785,8 @@ pinterestResyncBtn?.addEventListener('click', async () => {
     pinterestImportResult.textContent = error instanceof Error ? error.message : 'Resync failed';
   } finally {
     pinterestResyncBtn.disabled = false;
-    pinterestResyncBtn.textContent = 'Resync';
+    pinterestResyncBtn.removeAttribute('aria-busy');
+    pinterestResyncBtn.setAttribute('aria-label', 'Resync current board');
   }
 });
 
