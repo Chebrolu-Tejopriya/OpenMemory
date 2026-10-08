@@ -13,6 +13,7 @@
     "dev": "npm run build -- --watch",
     "embeddings:backfill": "tsx scripts/generateEmbeddings.ts",
     "embeddings:migrate": "tsx scripts/migrateEmbeddings.ts",
+    "embeddings:images": "tsx scripts/pinterestImageWorker.ts",
     "fix:pinterest-images": "tsx scripts/fixPinterestImages.ts",
     "test:filters": "node scripts/filter-select.test.cjs && node scripts/filter-panel.test.cjs",
     "test:pinterest": "node scripts/pinterest-import.test.cjs && node scripts/pinterest-feed.test.cjs && node scripts/pinterest-storage.test.cjs && node scripts/pinterest-embeddings.test.cjs"

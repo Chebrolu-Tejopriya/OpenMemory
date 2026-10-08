@@ -8,11 +8,12 @@ const rows=[structuredClone(existing),{id:'2',title:'Imported earlier',board_nam
 process.env.SUPABASE_URL='https://fixture.supabase.co';process.env.SUPABASE_ANON_KEY='fixture';
 let textRequests=0;
 let transportFailures=0;
+let imageServiceError=false;
 global.fetch=async(url,init={})=>{
  const u=new URL(url);
  if(u.pathname==='/health')return {ok:true};
  if(u.pathname==='/embed/texts'){textRequests++;return {ok:true,json:async()=>({embeddings:JSON.parse(init.body).texts.map(()=>vector(384))})};}
- if(u.pathname==='/embed/images')return {ok:true,json:async()=>({embeddings:JSON.parse(init.body).urls.map(url=>url.includes('unavailable')?null:vector(512))})};
+ if(u.pathname==='/embed/images')return imageServiceError ? {ok:false,status:503,json:async()=>({error:'Image embeddings paused: 512 MB budget'})} : {ok:true,json:async()=>({embeddings:JSON.parse(init.body).urls.map(url=>url.includes('unavailable')?null:vector(512))})};
  assert.equal(u.hostname,'fixture.supabase.co');
  if(transportFailures>0){transportFailures--;throw new Error('fixture network timeout');}
  let filtered=rows.filter(row=>row.board_url===u.searchParams.get('board_url').slice(3));
@@ -41,5 +42,12 @@ const mod={exports:{}};new Function('module','exports',output.outputFiles[0].tex
  transportFailures=1;
  assert.deepEqual(await mod.exports.pinterestEmbeddingCounts(board),{total:3,textMissing:0,imageMissing:1});
  assert.equal(transportFailures,0);
+ const previousTextRequests=textRequests;
+ rows[1].image_embedding=null;
+ const imageOnly=await mod.exports.runPinterestEmbeddingJob(board,undefined,{imagesOnly:true});
+ assert.equal(imageOnly.textGenerated,0);assert.equal(imageOnly.imageGenerated,1);
+ assert.equal(textRequests,previousTextRequests);
+ imageServiceError=true;
+ await assert.rejects(mod.exports.runPinterestEmbeddingJob(board,undefined,{imagesOnly:true}),/Image embeddings paused: 512 MB budget/);
  console.log('Passed: old NULL rows get embeddings, batched text inference, existing vectors preserved, failed image stays NULL, accurate progress counts.');
 })().catch(error=>{console.error(error);process.exitCode=1});

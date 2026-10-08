@@ -1887,8 +1887,8 @@ function followEmbeddingProgress(boardUrl: string, queued?: {accepted: boolean; 
       element.textContent = `Text embeddings: ${status.total - status.textMissing}/${status.total}. Image embeddings: ${status.total - status.imageMissing}/${status.total}.`;
       if (!status.textMissing && !status.imageMissing) { await initializeSearch(); return; }
       if (!status.job?.running) {
-        element.textContent += ` ${status.job?.error || 'Some embeddings remain pending; resync to retry.'}`;
-        return;
+        element.textContent += status.job?.imageWorkerRequired ? ' Waiting for the separate image worker.' : ` ${status.job?.error || 'Some embeddings remain pending; resync to retry.'}`;
+        if (!status.job?.imageWorkerRequired) return;
       }
       if (++checks < 180) window.setTimeout(check, 5000);
     } catch (error) { element.textContent = error instanceof Error ? error.message : 'Could not check embedding progress'; }

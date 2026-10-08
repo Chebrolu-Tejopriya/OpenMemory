@@ -20,7 +20,7 @@ export async function requestPinterestEmbeddingJob(boardUrl: string): Promise<{ 
   } catch (error) { return { accepted: false, error: error instanceof Error ? error.message : 'Could not start embeddings' }; }
 }
 
-export async function pinterestEmbeddingStatus(boardUrl: string): Promise<{ total: number; textMissing: number; imageMissing: number; job?: {running: boolean; error?: string} }> {
+export async function pinterestEmbeddingStatus(boardUrl: string): Promise<{ total: number; textMissing: number; imageMissing: number; job?: {running: boolean; error?: string; imageWorkerRequired?: boolean} }> {
   const response = await fetch(`${await embeddingBackendUrl()}/embedding-status?board_url=${encodeURIComponent(canonicalPinterestBoardUrl(boardUrl))}`, { signal: AbortSignal.timeout(15000), cache: 'no-store' });
   if (!response.ok) throw new Error('Could not check embedding progress');
   return response.json();

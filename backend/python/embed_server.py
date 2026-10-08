@@ -31,6 +31,37 @@ PORT = int(os.environ.get("EMBED_SERVER_PORT", "3002"))
 MODEL_THREADS = max(1, int(os.environ.get("EMBED_MODEL_THREADS", "1")))
 
 
+def memory_limit_mb():
+    configured = os.environ.get('EMBED_MEMORY_LIMIT_MB')
+    if configured:
+        return int(configured)
+    limits = []
+    for filename in ['/sys/fs/cgroup/memory.max', '/sys/fs/cgroup/memory/memory.limit_in_bytes']:
+        try:
+            with open(filename) as handle:
+                value = handle.read().strip()
+            if value.isdigit() and 0 < int(value) < 2 ** 60:
+                limits.append(int(value) // (1024 * 1024))
+        except OSError:
+            pass
+    if limits:
+        return min(limits)
+    # The current Render service is Free. An upgraded service can explicitly
+    # provide its budget if its cgroup limit is not visible to this process.
+    return 512 if os.environ.get('RENDER') == 'true' else None
+
+
+class ImageEmbeddingUnavailable(Exception):
+    pass
+
+
+def image_embedding_error():
+    limit = memory_limit_mb()
+    if limit is not None and limit <= 512:
+        return f'Image embeddings paused: the {limit} MB backend cannot load the CLIP model safely. Use a larger instance or a separate image worker. Text embeddings remain available.'
+    return None
+
+
 def load_model():
     global _text_model, _image_model
     with _model_lock:
@@ -50,6 +81,9 @@ def load_model():
 
 def embed_images(urls):
     global _text_model, _image_model
+    error = image_embedding_error()
+    if error:
+        raise ImageEmbeddingUnavailable(error)
     paths = []
     try:
         def download(url):
@@ -100,7 +134,7 @@ class EmbedHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            self.send_json(200, {"status": "ok", "model": "BAAI/bge-small-en-v1.5"})
+            self.send_json(200, {"status": "ok", "model": "BAAI/bge-small-en-v1.5", "image_error": image_embedding_error()})
         else:
             self.send_json(404, {"error": "Not found"})
 
@@ -142,6 +176,9 @@ class EmbedHandler(BaseHTTPRequestHandler):
             embedding = embeddings[0].tolist()
             self.send_json(200, {"embedding": embedding, "dimension": len(embedding)})
 
+        except ImageEmbeddingUnavailable as e:
+            print(f'[EmbedServer] {e}', flush=True)
+            self.send_json(503, {'error': str(e)})
         except Exception as e:
             print(f"[EmbedServer] Error: {e}", flush=True)
             self.send_json(500, {"error": str(e)})

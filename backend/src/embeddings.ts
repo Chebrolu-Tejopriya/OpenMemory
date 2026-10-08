@@ -54,12 +54,15 @@ export async function generateImageEmbeddings(urls: string[]): Promise<(number[]
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ urls }),
       signal: AbortSignal.timeout(90000)
     });
-    if (!response.ok) throw new Error(`Image embed server returned ${response.status}`);
+    if (!response.ok) {
+      const detail = await response.json().catch(() => ({})) as { error?: string };
+      throw new Error(detail.error || `Image embed server returned ${response.status}`);
+    }
     const data = await response.json() as { embeddings: (number[] | null)[] };
     return data.embeddings;
   } catch (error) {
     console.error('[Embeddings] Image generation failed:', error);
-    return urls.map(() => null);
+    throw error;
   }
 }
 

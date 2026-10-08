@@ -6,6 +6,7 @@ export interface EmbeddingJobStatus {
   imageGenerated: number;
   failed: number;
   phase?: string;
+  imageWorkerRequired?: boolean;
   error?: string;
 }
 const jobs = new Map<string, EmbeddingJobStatus>();
@@ -65,6 +66,7 @@ export function startPinterestEmbeddingJob(boardUrl: string): EmbeddingJobStatus
   jobs.set(boardUrl, status);
   workerQueue = workerQueue.catch(() => undefined).then(() => runPinterestEmbeddingJob(boardUrl, status)).catch(error => {
     status.error = `${status.phase || 'worker'}: ${error instanceof Error ? error.message : 'Embedding worker failed'}`;
+    status.imageWorkerRequired = status.error.includes('Image embeddings paused:');
     console.error('[Pinterest embeddings]', status.error);
   }).finally(() => { status.running = false; });
   return status;
@@ -72,7 +74,7 @@ export function startPinterestEmbeddingJob(boardUrl: string): EmbeddingJobStatus
 
 export function getPinterestEmbeddingJob(boardUrl: string): EmbeddingJobStatus | undefined { return jobs.get(boardUrl); }
 
-export async function runPinterestEmbeddingJob(boardUrl: string, status: EmbeddingJobStatus = { running: true, textGenerated: 0, imageGenerated: 0, failed: 0 }): Promise<EmbeddingJobStatus> {
+export async function runPinterestEmbeddingJob(boardUrl: string, status: EmbeddingJobStatus = { running: true, textGenerated: 0, imageGenerated: 0, failed: 0 }, options: { imagesOnly?: boolean } = {}): Promise<EmbeddingJobStatus> {
   const phase = (value: string) => { status.phase = value; console.log(`[Pinterest embeddings] ${boardUrl}: ${value}`); };
   phase('waiting for model server');
   // A cold backend can accept imports while its Python model is still loading.
@@ -83,6 +85,7 @@ export async function runPinterestEmbeddingJob(boardUrl: string, status: Embeddi
   }
   if (!ready) throw new Error('The embedding model server is not ready; pins remain pending for retry.');
   for (const column of ['embedding', 'image_embedding'] as const) {
+    if (options.imagesOnly && column === 'embedding') continue;
     let cursor = '';
     while (true) {
       const query = new URLSearchParams({ select: 'id,title,description,board_name,image_url', board_url: `eq.${boardUrl}`, [column]: 'is.null', order: 'id.asc', limit: column === 'embedding' ? '30' : '4' });
