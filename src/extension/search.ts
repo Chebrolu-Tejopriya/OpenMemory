@@ -5,6 +5,7 @@
  */
 
 import MiniSearch from 'minisearch';
+import { mountFilterSelects, refreshFilterSelects } from './filter-select';
 import { db, IndexedBookmark, PinterestPin } from './db';
 
 // ============== SUPABASE SEARCH ==============
@@ -1700,6 +1701,7 @@ const sourceFilterEl = document.getElementById('filter-source') as HTMLSelectEle
 const boardFilterEl = document.getElementById('filter-board') as HTMLSelectElement | null;
 const folderFilterEl = document.getElementById('filter-folder') as HTMLSelectElement | null;
 const timeFilterEl = document.getElementById('filter-time') as HTMLSelectElement | null;
+mountFilterSelects();
 
 [sourceFilterEl, boardFilterEl, folderFilterEl, timeFilterEl].forEach((el) => {
   el?.addEventListener('change', () => {
@@ -1718,7 +1720,7 @@ filterAddBtn?.addEventListener('click', (event) => {
 
 document.addEventListener('click', (event) => {
   const target = event.target as HTMLElement;
-  if (!target.closest('.filter-dropdown')) {
+  if (!target.closest('.filter-dropdown, [data-filter-select-content]')) {
     filterMenuEl.classList.remove('active');
   }
 });
@@ -2488,6 +2490,7 @@ function updateFilterOptions(): void {
   }
 
   renderFilterChips();
+  refreshFilterSelects();
 }
 
 function renderFilterChips(): void {

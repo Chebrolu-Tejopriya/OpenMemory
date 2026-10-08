@@ -6,25 +6,32 @@
   "scripts": {
     "build": "npm run build:clean && npm run build:ts && npm run build:copy && npm run build:icons",
     "build:clean": "node -e \"const fs = require('fs'); if(fs.existsSync('dist')){fs.rmSync('dist',{recursive:true})}; fs.mkdirSync('dist')\"",
-    "build:ts": "esbuild src/extension/search.ts --bundle --outfile=dist/search.js --format=iife && esbuild src/extension/background.ts --bundle --outfile=dist/background.js --format=iife --external:chrome && esbuild src/extension/offscreen.ts --bundle --outfile=dist/offscreen.js --format=iife && esbuild src/extension/pinterest_active.ts --bundle --outfile=dist/pinterest_active.js --format=iife",
+    "build:ts": "node scripts/build-search.cjs && esbuild src/extension/background.ts --bundle --outfile=dist/background.js --format=iife --external:chrome && esbuild src/extension/offscreen.ts --bundle --outfile=dist/offscreen.js --format=iife && esbuild src/extension/pinterest_active.ts --bundle --outfile=dist/pinterest_active.js --format=iife",
     "build:copy": "node -e \"const fs=require('fs'); fs.copyFileSync('src/extension/sidepanel.html','dist/sidepanel.html'); fs.copyFileSync('src/extension/manifest.json','dist/manifest.json'); fs.copyFileSync('src/extension/offscreen.html','dist/offscreen.html'); if(!fs.existsSync('dist/data.json')){fs.writeFileSync('dist/data.json',JSON.stringify({items:[],folders:[]}))}\"",
     "build:icons": "node scripts/generate-icons.cjs",
     "typecheck": "tsc --noEmit",
     "dev": "npm run build -- --watch",
     "embeddings:backfill": "tsx scripts/generateEmbeddings.ts",
     "embeddings:migrate": "tsx scripts/migrateEmbeddings.ts",
-    "fix:pinterest-images": "tsx scripts/fixPinterestImages.ts"
+    "fix:pinterest-images": "tsx scripts/fixPinterestImages.ts",
+    "test:filters": "node scripts/filter-select.test.cjs"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.268",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "esbuild": "^0.20.0",
+    "jsdom": "^29.1.1",
     "tsx": "^4.21.0",
     "typescript": "^5.4.0"
   },
   "dependencies": {
+    "@radix-ui/react-select": "^2.3.8",
     "@supabase/supabase-js": "^2.100.1",
     "dexie": "^4.3.0",
     "dotenv": "^17.3.1",
-    "minisearch": "^7.2.0"
+    "minisearch": "^7.2.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   }
 }
