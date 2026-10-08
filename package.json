@@ -14,7 +14,7 @@
     "embeddings:backfill": "tsx scripts/generateEmbeddings.ts",
     "embeddings:migrate": "tsx scripts/migrateEmbeddings.ts",
     "fix:pinterest-images": "tsx scripts/fixPinterestImages.ts",
-    "test:filters": "node scripts/filter-select.test.cjs"
+    "test:filters": "node scripts/filter-select.test.cjs && node scripts/filter-panel.test.cjs"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.268",
