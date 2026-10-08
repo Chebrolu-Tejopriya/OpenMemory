@@ -301,7 +301,8 @@ SOFTWARE.
     }
     .select-trigger > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .select-trigger svg { flex-shrink: 0; color: #999; }
-    .select-trigger[data-state="open"] { border-color: #4ade80; }
+    .select-trigger[data-state="open"] { border-color: #fff; }
+    .select-trigger:focus-visible { outline-color: #fff; }
     .select-trigger:disabled { opacity: .5; cursor: not-allowed; }
     .select-content {
       z-index: 300; width: var(--radix-select-trigger-width);
@@ -318,7 +319,7 @@ SOFTWARE.
       line-height: 1.4; user-select: none;
     }
     .select-item[data-highlighted] { background: #262626; color: #fff; }
-    .select-item[data-state="checked"] { color: #4ade80; }
+    .select-item[data-state="checked"] { color: #fff; }
     .select-item[data-disabled] { opacity: .5; pointer-events: none; }
     .select-check { position: absolute; right: 8px; top: 8px; }
     .select-scroll { display: flex; align-items: center; justify-content: center; height: 24px; color: #999; }
