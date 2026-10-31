@@ -2659,6 +2659,8 @@ let xUiBusy = false;
 let xLoadedCount = -1;
 let xLoadedSync: number | undefined;
 let xPaused = false;
+let xConnected = false;
+let xNeedsAttention = false;
 async function updateXUI() {
   try {
     const state = await chrome.runtime.sendMessage({ type: 'X_STATUS' });
@@ -2666,14 +2668,15 @@ async function updateXUI() {
     const status = document.getElementById('x-status')!;
     xPaused = !!state.paused;
     (document.getElementById('x-cloud-enabled') as HTMLInputElement).checked = !!state.cloudEnabled;
-    document.getElementById('x-cloud-status')!.textContent = !state.cloudEnabled ? 'Cloud sync is off' : state.cloud?.error ||
-      (state.cloud?.uploadedAt ? `Cloud uploaded · ${state.cloud.pending || 0} posts pending upload · ${state.cloud.progress ? `${state.cloud.progress.textMissing} text / ${state.cloud.progress.imageMissing} image embeddings pending` : 'text indexing queued; images use the separate worker'}` : 'Cloud upload queued');
-    status.textContent = state.error || (!state.connected ? 'Not connected' :
-      `${state.username ? `@${state.username}` : 'X'} · ${state.count} saved · ${state.paused ? 'Paused' : state.note || (state.syncing ? 'Reading bookmarks…' : state.lastSyncAt ? `Last checked ${new Date(state.lastSyncAt).toLocaleTimeString()}` : 'Waiting to sync')}`);
-    status.className = `integration-status${state.error ? ' error' : ''}`;
-    document.getElementById('x-connect')!.textContent = state.connected ? 'Open X / reconnect' : 'Enable automatic sync';
+    xConnected = !!state.connected;
+    xNeedsAttention = !!state.error;
+    const activity = state.paused ? 'Paused' : state.syncing ? 'Syncing…' : state.continuing ? 'Continuing…' : 'Auto-sync on';
+    status.textContent = state.error || state.cloud?.error || (!state.connected ? 'Not connected' : `${activity} · ${state.count} saved`);
+    status.title = state.error || state.cloud?.error || `${state.username ? `@${state.username} · ` : ''}${state.count} saved${state.lastSyncAt ? ` · Last synced ${new Date(state.lastSyncAt).toLocaleTimeString()}` : ''}`;
+    status.className = `integration-status${state.error || state.cloud?.error ? ' error' : ''}`;
+    document.getElementById('x-sync')!.textContent = state.error ? 'Reconnect' : state.connected ? 'Sync X' : 'Connect X';
     document.getElementById('x-pause')!.textContent = state.paused ? 'Resume' : 'Pause';
-    for (const id of ['x-sync', 'x-pause', 'x-disconnect']) (document.getElementById(id) as HTMLButtonElement).hidden = !state.connected;
+    (document.getElementById('x-pause') as HTMLButtonElement).disabled = !state.connected || xUiBusy;
     if (xLoadedCount !== state.count || xLoadedSync !== state.lastSyncAt) {
       const first = xLoadedCount === -1;
       xLoadedCount = state.count;
@@ -2682,26 +2685,26 @@ async function updateXUI() {
     }
   } catch { /* The extension may be reloaded while this panel is open. */ }
 }
-document.getElementById('x-settings-toggle')?.addEventListener('click', () => {
-  const settings = document.getElementById('x-settings')!;
-  const open = settings.style.display === 'none';
-  settings.style.display = open ? 'block' : 'none';
-  document.getElementById('x-settings-toggle')!.setAttribute('aria-expanded', String(open));
-});
-for (const [id, type] of [['x-connect', 'X_CONNECT'], ['x-sync', 'X_SYNC'], ['x-pause', 'X_PAUSE'], ['x-disconnect', 'X_DISCONNECT']]) {
+for (const id of ['x-sync', 'x-pause']) {
   document.getElementById(id)?.addEventListener('click', async () => {
     if (xUiBusy) return;
     xUiBusy = true;
-    const buttons = document.querySelectorAll<HTMLButtonElement>('#x-settings button');
+    const type = id === 'x-pause' ? 'X_PAUSE' : xConnected && !xNeedsAttention ? 'X_SYNC' : 'X_CONNECT';
+    const buttons = document.querySelectorAll<HTMLButtonElement>('#x-card button');
     buttons.forEach(button => { button.disabled = true; });
-    document.getElementById('x-status')!.textContent = type === 'X_CONNECT' ? 'Connecting to X…' : 'Updating…';
+    document.getElementById('x-status')!.textContent = type === 'X_CONNECT' ? 'Connecting…' : type === 'X_SYNC' ? 'Starting sync…' : xPaused ? 'Resuming…' : 'Pausing…';
     try {
       const response = await chrome.runtime.sendMessage({ type, paused: !xPaused });
       if (!response?.success) throw new Error(response?.error || 'X operation failed.');
       await updateXUI();
     } catch (error) {
-      document.getElementById('x-status')!.textContent = error instanceof Error ? error.message : 'X connection failed.';
-    } finally { xUiBusy = false; buttons.forEach(button => { button.disabled = false; }); }
+      const status = document.getElementById('x-status')!;
+      status.textContent = error instanceof Error ? error.message : 'X connection failed.';
+      status.className = 'integration-status error';
+    } finally {
+      xUiBusy = false;
+      buttons.forEach(button => { button.disabled = button.id === 'x-pause' && !xConnected; });
+    }
   });
 }
 void updateXUI();
@@ -2713,7 +2716,7 @@ document.getElementById('x-cloud-enabled')?.addEventListener('change', async eve
     if (!result?.success) throw new Error(result?.error || 'Could not change cloud sync');
     await updateXUI();
   } catch (error) {
-    document.getElementById('x-cloud-status')!.textContent = error instanceof Error ? error.message : 'Cloud setup failed';
+    document.getElementById('x-status')!.textContent = error instanceof Error ? error.message : 'Cloud setup failed';
   } finally { input.disabled = false; }
 });
 setInterval(() => { if (!xUiBusy) void updateXUI(); }, 10000);

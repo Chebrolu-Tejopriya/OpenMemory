@@ -8,10 +8,10 @@ API requests, post, like, or change bookmarks on X.
 ## Enable
 
 1. Run `npm run build` and reload the extension from `dist` at `chrome://extensions`.
-2. Open OpenMemory → Settings → Integrations → X bookmarks → Set up.
-3. Choose **Enable automatic sync**. An X bookmarks tab opens in the foreground.
+2. Open OpenMemory → Settings → Integrations → X bookmarks.
+3. Choose **Connect X**. An X bookmarks tab opens in the foreground.
 4. Sign in to X if needed. If login redirected away from bookmarks, choose
-   **Open X / reconnect** in OpenMemory after signing in.
+   **Reconnect** in OpenMemory after signing in.
 5. Keep the tab open during the initial scan. Imported batches appear in the
    extension's X count and are keyword-searchable with Source → X bookmarks.
 
@@ -25,9 +25,9 @@ images can be indexed as thumbnails; this does not analyze full video content.
 
 ## Controls and limits
 
-- **Sync now** starts another scan; only one managed scan runs at a time.
+- **Sync X** starts or restarts the reader immediately from saved progress; only one managed scan runs at a time.
 - **Pause** invalidates the active reader and stops scheduled scans. **Resume**
-  schedules another scan. **Disconnect** also deletes the local imported X library.
+  schedules another scan. The compact card shows only Sync X and Pause/Resume.
 - Changing the signed-in X handle pauses syncing before accepting that account's
   data. Switch back, or disconnect before connecting a different account.
 - Each batch is saved immediately and deduplicated by post ID. The reader saves
@@ -66,7 +66,7 @@ private posts until account-isolated sign-in is implemented.
    and Supabase key. It prefers `SUPABASE_SERVICE_ROLE_KEY`, with the existing
    `SUPABASE_ANON_KEY` supported for the explicitly shared beta. Never put the
    service-role key in the extension.
-5. Enable **Sync X posts and media to my configured Supabase web app** in the X
+5. Enable **Sync to shared web app (public)** in the X
    settings. Existing local X posts are backfilled automatically. Upload failures
    remain pending and retry every minute while Chrome runs and X sync is enabled.
 6. X appears as a source in web-app search, collections and the canvas. The canvas

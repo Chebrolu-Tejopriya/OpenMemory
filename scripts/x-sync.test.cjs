@@ -98,6 +98,11 @@ const load = code => { const mod = { exports: {} }; new Function('module', 'expo
   await sync.attachXReader(1); assert.equal(injected, 1);
   const sender = id => ({ id: 'extension-id', frameId: 0, url: 'https://x.com/i/bookmarks', tab: { id } });
   const message = () => ({ runId: store.xBrowserConnection.run.id, username: 'owner', posts: [post('10')] });
+  const previousRun = message();
+  await sync.syncX(true);
+  assert.equal(tabId, 1, 'Manual sync reuses the active scan tab');
+  assert.notEqual(store.xBrowserConnection.run.id, previousRun.runId, 'Manual sync restarts an unresponsive reader immediately');
+  assert.equal((await sync.handleXBrowserBatch(previousRun, sender(1))).success, false, 'Old readers cannot write after a restart');
   assert.equal((await sync.handleXBrowserBatch(message(), sender(55))).success, false);
   assert.equal(rows.size, 0);
   assert.equal((await sync.handleXBrowserBatch(message(), { ...sender(1), url: 'https://x.com/home' })).success, false);

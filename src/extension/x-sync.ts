@@ -80,9 +80,10 @@ async function startRun(state: Connection, interactive: boolean) {
 export function syncX(manual = false): Promise<void> {
   return exclusive(async () => {
     const state = await read();
-    if (!state?.enabled || state.paused) return;
+    if (!state?.enabled || (state.paused && !manual)) return;
+    if (manual) state.paused = false;
     if (state.run) {
-      if (Date.now() - state.run.startedAt < 12 * 60000) return;
+      if (!manual && Date.now() - state.run.startedAt < 12 * 60000) return;
       state.continuation = { ...state.continuation, tabId: state.run.tabId, owned: state.run.owned };
       state.run = undefined;
     }
