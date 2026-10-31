@@ -280,7 +280,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
         </div>
 
         {/* Horizontally scrollable folder/board chips — scrolls naturally */}
-        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar mt-1">
+        {activeTab !== "x" && <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar mt-1">
           {loading ? skeletonChips : list.length === 0 ? (
             <p className="text-xs text-[#3a3a3a]/30 px-2 py-2">No {activeTab === "bookmarks" ? "folders" : "boards"} found</p>
           ) : list.map((item) => (
@@ -297,7 +297,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
               {displayName(item)}
             </button>
           ))}
-        </div>
+        </div>}
 
         {/* Cards */}
         <div className="mt-3">
@@ -318,7 +318,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
           {searchBox}
 
           {/* Folder/board list */}
-          <div className={`overflow-y-auto custom-scrollbar pr-1 ${constrained ? "flex-1" : "max-h-[70vh]"}`}>
+          {activeTab !== "x" && <div className={`overflow-y-auto custom-scrollbar pr-1 ${constrained ? "flex-1" : "max-h-[70vh]"}`}>
             {sidebarLoading ? skeletonList : navItems.length === 0 ? (
               <p className="text-xs text-[#3a3a3a]/30 px-2 py-3 text-center break-words">
                 {isSearchMode
@@ -337,7 +337,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
                 itemClassName="w-full px-3 py-2 text-xs"
               />
             )}
-          </div>
+          </div>}
         </div>
 
         {/* Right panel — cards */}
@@ -346,7 +346,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
           {isSearchMode && !panelLoading && panelCards.length > 0 && (
             <p className="text-xs text-[#3a3a3a]/40 px-1 pb-2">
               {panelCards.length} {panelCards.length === 1 ? "result" : "results"}
-              {searchFolder ? (
+              {activeTab === "x" ? null : searchFolder ? (
                 <> in <span className="text-[#3d7a64]/70 font-medium">{displayName(searchFolder)}</span></>
               ) : (
                 <> across {resultFolders.length} {resultFolders.length === 1 ? (activeTab === "bookmarks" ? "folder" : "board") : (activeTab === "bookmarks" ? "folders" : "boards")}</>

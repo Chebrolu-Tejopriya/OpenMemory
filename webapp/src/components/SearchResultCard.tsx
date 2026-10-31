@@ -127,12 +127,12 @@ export default function SearchResultCard({ result, revealDelay = 0 }: SearchResu
                         unoptimized
                       />
                     </div>
-                    {domain && (
+                    {domain && result.source !== "x" && (
                       <span className="text-[10px] text-gray-400 font-medium">{domain}</span>
                     )}
                   </div>
                 ) : (
-                  <span className="text-[10px] text-gray-300 font-medium">{domain}</span>
+                  <span className="text-[10px] text-gray-300 font-medium">{result.source === "x" ? "" : domain}</span>
                 )}
               </div>
 
@@ -167,7 +167,7 @@ export default function SearchResultCard({ result, revealDelay = 0 }: SearchResu
         <h3 className="text-[12px] sm:text-[13px] font-semibold text-gray-700 leading-snug truncate">
           {displayTitle}
         </h3>
-        <div className="flex items-center justify-between gap-1">
+        {result.source !== "x" && <div className="flex items-center justify-between gap-1">
           {!isPinterest && (
             <span className="text-[10px] text-gray-400 truncate">{domain}</span>
           )}
@@ -177,7 +177,7 @@ export default function SearchResultCard({ result, revealDelay = 0 }: SearchResu
           <span className="text-[10px] font-medium text-gray-400/70 uppercase tracking-wider truncate text-right flex-1">
             {categoryLabel}
           </span>
-        </div>
+        </div>}
       </div>
     </a>
   );
