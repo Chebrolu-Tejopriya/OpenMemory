@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Bookmark, Pin, FolderOpen, Search, X } from "lucide-react";
+import { ChevronDown, LayoutGrid, List, FolderOpen, Search, X } from "lucide-react";
 import SearchResultCard, { SearchResult } from "./SearchResultCard";
+import XPostFeed from "./XPostFeed";
 import { FluidNav } from "./FluidNav";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
@@ -19,6 +20,7 @@ interface BrowseSectionProps {
 
 export default function BrowseSection({ folders, boards, loading = false, constrained = false, active = true }: BrowseSectionProps) {
   const [activeTab, setActiveTab] = useState<BrowseTab>("bookmarks");
+  const [xLayout, setXLayout] = useState<"grid" | "feed">("feed");
   const [selectedItem, setSelectedItem] = useState<string>("");
   const [cards, setCards] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -44,35 +46,40 @@ export default function BrowseSection({ folders, boards, loading = false, constr
     }
   }, [selectedItem]);
 
-  const fetchCards = useCallback(async (item: string) => {
+  const fetchCards = useCallback(async (item: string, signal: AbortSignal) => {
     if (!item) return;
     setIsLoading(true);
     try {
       const source = activeTab === "x" ? "x" : activeTab === "bookmarks" ? "chrome" : "pinterest";
       const paramKey = activeTab === "bookmarks" ? "folder" : "board";
-      const res = await fetch(`${BACKEND_URL}/browse?source=${source}&${paramKey}=${encodeURIComponent(item)}`);
+      const res = await fetch(`${BACKEND_URL}/browse?source=${source}&${paramKey}=${encodeURIComponent(item)}`, { signal });
       if (!res.ok) throw new Error("Browse failed");
       const data = await res.json();
+      if (signal.aborted) return;
       setCards(
-        data.results.map((r: { title: string; url: string; folder: string | null; source: string; imageUrl: string | null }, i: number) => ({
+        data.results.map((r: { title: string; url: string; folder: string | null; source: string; imageUrl: string | null; description?: string; author?: string }, i: number) => ({
           id: `browse-${i}-${r.url}`,
           title: r.title,
           folder: r.folder || item,
           url: r.url,
           source: r.source === "x" ? "x" : r.source.includes("chrome") ? "chrome" : "pinterest",
           imageUrl: r.imageUrl || undefined,
+          description: r.description,
+          author: r.author,
         }))
       );
     } catch {
-      setCards([]);
+      if (!signal.aborted) setCards([]);
     } finally {
-      setIsLoading(false);
+      if (!signal.aborted) setIsLoading(false);
     }
   }, [activeTab]);
 
   // Fetch when selected item or active state changes
   useEffect(() => {
-    if (selectedItem && active) fetchCards(selectedItem);
+    const controller = new AbortController();
+    if (selectedItem && active) fetchCards(selectedItem, controller.signal);
+    return () => controller.abort();
   }, [selectedItem, fetchCards, active]);
 
   // Content search across every collection in the active tab. The sidebar then
@@ -85,30 +92,34 @@ export default function BrowseSection({ folders, boards, loading = false, constr
       return;
     }
     setIsSearching(true);
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
         const params = new URLSearchParams({ q: trimmed, limit: "100" });
         params.set("source", activeTab === "x" ? "x" : activeTab === "bookmarks" ? "chrome_bookmarks" : "pinterest");
-        const res = await fetch(`${BACKEND_URL}/search?${params.toString()}`);
+        const res = await fetch(`${BACKEND_URL}/search?${params.toString()}`, { signal: controller.signal });
         if (!res.ok) throw new Error("Search failed");
         const data = await res.json();
+        if (controller.signal.aborted) return;
         setSearchResults(
-          data.results.map((r: { title: string; url: string; folder: string | null; source: string; imageUrl: string | null }, i: number) => ({
+          data.results.map((r: { title: string; url: string; folder: string | null; source: string; imageUrl: string | null; description?: string; author?: string }, i: number) => ({
             id: `csearch-${i}-${r.url}`,
             title: r.title,
             folder: r.folder || "",
             url: r.url,
             source: r.source === "x" ? "x" : r.source.includes("chrome") ? "chrome" : "pinterest",
             imageUrl: r.imageUrl || undefined,
+            description: r.description,
+            author: r.author,
           }))
         );
       } catch {
-        setSearchResults([]);
+        if (!controller.signal.aborted) setSearchResults([]);
       } finally {
-        setIsSearching(false);
+        if (!controller.signal.aborted) setIsSearching(false);
       }
     }, 350);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [query, activeTab, active]);
 
   // A new query invalidates whichever result folder was drilled into
@@ -158,27 +169,52 @@ export default function BrowseSection({ folders, boards, loading = false, constr
     </div>
   );
 
-  const tabItems = [
-    { key: "bookmarks", label: "Bookmarks", icon: <Bookmark className="w-3 h-3" /> },
-    { key: "pinterest", label: "Pinterest", icon: <Pin className="w-3 h-3" /> },
-    { key: "x", label: "X", icon: <span aria-hidden="true" className="text-xs">𝕏</span> },
-  ];
+  function changeSource(value: BrowseTab) {
+    setActiveTab(value);
+    setQuery("");
+    setCards([]);
+    setSearchResults(null);
+    setSearchFolder("");
+  }
 
   const tabSwitch = (
-    <div className="bg-white/60 backdrop-blur-sm border border-[#5b9888]/20 rounded-xl p-1">
-      <FluidNav
-        items={tabItems}
-        selectedKey={activeTab}
-        onSelect={(key) => setActiveTab(key as BrowseTab)}
-        orientation="horizontal"
-        selectedColor="#3a3a3a"
-        selectedBg="bg-white shadow-sm"
-        hoverBg="bg-black/[0.04]"
-        className="gap-1"
-        itemClassName="flex-1 justify-center py-1.5 px-2 text-xs font-medium"
-      />
+    <div className="relative">
+      <select aria-label="Collection source" value={activeTab} onChange={event => changeSource(event.target.value as BrowseTab)}
+        className="w-full appearance-none rounded-xl border border-[#5b9888]/20 bg-white/80 py-2.5 pl-3 pr-9 text-sm font-medium text-[#3a3a3a] shadow-sm outline-none focus:border-[#5b9888] focus:ring-2 focus:ring-[#5b9888]/15">
+        <option value="bookmarks">Bookmarks</option>
+        <option value="pinterest">Pinterest</option>
+        <option value="x">X bookmarks</option>
+      </select>
+      <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#65746d]" />
     </div>
   );
+
+  const layoutSwitch = activeTab === "x" && (
+    <div className="mb-3 flex justify-end gap-1" role="group" aria-label="X layout">
+      {(["feed", "grid"] as const).map(layout => (
+        <button key={layout} onClick={() => setXLayout(layout)} aria-pressed={xLayout === layout}
+          className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs transition-colors ${xLayout === layout ? "bg-white text-[#303c37] shadow-sm" : "text-[#65746d] hover:bg-white/60"}`}>
+          {layout === "feed" ? <List className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
+          {layout === "feed" ? "Feed" : "Grid"}
+        </button>
+      ))}
+    </div>
+  );
+  function renderCards(results: SearchResult[], mobile = false) {
+    // A shared library can contain the same post saved by multiple accounts.
+    const seen = new Set<string>();
+    const unique = results.filter(card => {
+      if (card.source !== "x") return true;
+      const key = card.url.match(/\/status\/(\d+)/)?.[1] || card.url;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const feed = activeTab === "x" && xLayout === "feed";
+    return <div className={feed ? "mx-auto flex w-full max-w-[600px] flex-col gap-4 pb-12" : `grid ${mobile ? "grid-cols-2 pb-24" : "grid-cols-3 pb-2"} gap-3 items-start`}>
+      {unique.map((card, i) => feed ? <XPostFeed key={card.url} result={card} /> : <SearchResultCard key={card.id} result={card} revealDelay={Math.min(i, 5) * 60} />)}
+    </div>;
+  }
 
   // >= 2 chars puts the panel into search mode; below that it browses.
   const isSearchMode = query.trim().length >= 2;
@@ -219,8 +255,8 @@ export default function BrowseSection({ folders, boards, loading = false, constr
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
-        placeholder={activeTab === "bookmarks" ? "Search bookmarks" : "Search pins"}
-        aria-label={activeTab === "bookmarks" ? "Search bookmarks" : "Search pins"}
+        placeholder={activeTab === "x" ? "Search X bookmarks" : activeTab === "bookmarks" ? "Search bookmarks" : "Search pins"}
+        aria-label={activeTab === "x" ? "Search X bookmarks" : activeTab === "bookmarks" ? "Search bookmarks" : "Search pins"}
         className="w-full bg-white/60 backdrop-blur-sm border border-[#5b9888]/20 rounded-xl pl-8 pr-7 py-1.5 text-xs text-[#3a3a3a] placeholder:text-[#3a3a3a]/30 outline-none transition-colors focus:border-[#5b9888]/45 focus:bg-white/80"
       />
       {query && (
@@ -274,12 +310,11 @@ export default function BrowseSection({ folders, boards, loading = false, constr
 
         {/* Cards */}
         <div className="mt-3">
+          {layoutSwitch}
           {isLoading || !selectedItem ? skeletonCards : cards.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-sm text-[#3a3a3a]/30">No items found</div>
           ) : (
-            <div className="grid grid-cols-2 gap-3 pb-24 items-start">
-              {cards.map((card, i) => <SearchResultCard key={card.id} result={card} revealDelay={Math.min(i, 5) * 60} />)}
-            </div>
+            renderCards(cards, true)
           )}
         </div>
       </div>
@@ -316,6 +351,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
 
         {/* Right panel — cards */}
         <div className={`flex-1 min-w-0 ${constrained ? "overflow-y-auto custom-scrollbar" : ""}`}>
+          {layoutSwitch}
           {isSearchMode && !panelLoading && panelCards.length > 0 && (
             <p className="text-xs text-[#3a3a3a]/40 px-1 pb-2">
               {panelCards.length} {panelCards.length === 1 ? "result" : "results"}
@@ -331,9 +367,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
               {isSearchMode ? `No results for "${query.trim()}"` : "No items found"}
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-3 pb-2 items-start">
-              {panelCards.map((card, i) => <SearchResultCard key={card.id} result={card} revealDelay={Math.min(i, 5) * 60} />)}
-            </div>
+            renderCards(panelCards)
           )}
         </div>
       </div>

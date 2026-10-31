@@ -12,9 +12,9 @@ export async function xDatabase(path: string, init: RequestInit = {}): Promise<R
 }
 export interface XCloudResult { title: string; url: string; folder: string; source: 'x'; score: number; imageUrl: string | null; description?: string; author?: string; similarity?: number; keyword_score?: number }
 export async function browseXBookmarks(limit = 500): Promise<{ results: XCloudResult[]; total: number }> {
-  const params = new URLSearchParams({ select: 'title,url,account_username,image_url', order: 'created_at.desc,id.desc', limit: String(Math.min(1000, Math.max(1, limit))) });
+  const params = new URLSearchParams({ select: 'title,url,account_username,image_url,description,author', order: 'created_at.desc,id.desc', limit: String(Math.min(1000, Math.max(1, limit))) });
   const rows = await (await xDatabase(`x_bookmarks?${params}`)).json() as any[];
-  const results = rows.map(row => ({ title: row.title, url: row.url, folder: `@${row.account_username}`, source: 'x' as const, score: 1, imageUrl: row.image_url || null }));
+  const results = rows.map(row => ({ title: row.title, url: row.url, folder: `@${row.account_username}`, source: 'x' as const, score: 1, imageUrl: row.image_url || null, description: row.description, author: row.author }));
   return { results, total: results.length };
 }
 export async function searchXBookmarks(query: string, limit = 100): Promise<{ results: XCloudResult[]; total: number; hasMore: boolean }> {

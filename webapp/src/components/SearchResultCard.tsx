@@ -8,6 +8,8 @@ export interface SearchResult {
   imageUrl?: string;
   url: string;
   source: "chrome" | "pinterest" | "x";
+  description?: string;
+  author?: string;
 }
 
 interface SearchResultCardProps {
