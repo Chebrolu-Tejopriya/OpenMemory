@@ -75,6 +75,21 @@ SOFTWARE.
 
     button, input, select, textarea { font-family: inherit; }
 
+    /* Thin, arrow-free scrollbars; reveal a 50% opacity thumb on hover. */
+    *::-webkit-scrollbar { width: 6px; height: 6px; }
+    *::-webkit-scrollbar-track,
+    *::-webkit-scrollbar-corner { background: transparent; }
+    *::-webkit-scrollbar-button { display: none; width: 0; height: 0; background: transparent; }
+    *::-webkit-scrollbar-thumb { background: transparent; border-radius: 999px; }
+    *:hover::-webkit-scrollbar-thumb { background: rgba(128, 128, 128, 0.5); }
+
+    /* Keep standard scrollbar styling out of Chromium: it restores native arrows. */
+    @supports not selector(::-webkit-scrollbar) {
+      * { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+      *:hover { scrollbar-color: rgba(128, 128, 128, 0.5) transparent; }
+    }
+
+
     /* Fixed Header */
     .header {
       position: fixed;

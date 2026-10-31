@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { ChevronDown, LayoutGrid, List, FolderOpen, Search, X } from "lucide-react";
+import { LayoutGrid, List, FolderOpen, Search, X } from "lucide-react";
 import SearchResultCard, { SearchResult } from "./SearchResultCard";
+import CollectionSourceSelect from "./CollectionSourceSelect";
 import XPostFeed from "./XPostFeed";
 import { FluidNav } from "./FluidNav";
 
@@ -177,17 +178,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
     setSearchFolder("");
   }
 
-  const tabSwitch = (
-    <div className="relative">
-      <select aria-label="Collection source" value={activeTab} onChange={event => changeSource(event.target.value as BrowseTab)}
-        className="w-full appearance-none rounded-xl border border-[#5b9888]/20 bg-white/80 py-2.5 pl-3 pr-9 text-sm font-medium text-[#3a3a3a] shadow-sm outline-none focus:border-[#5b9888] focus:ring-2 focus:ring-[#5b9888]/15">
-        <option value="bookmarks">Bookmarks</option>
-        <option value="pinterest">Pinterest</option>
-        <option value="x">X bookmarks</option>
-      </select>
-      <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#65746d]" />
-    </div>
-  );
+  const tabSwitch = <CollectionSourceSelect value={activeTab} onChange={changeSource} />;
 
   const layoutSwitch = activeTab === "x" && (
     <div className="mb-3 flex justify-end gap-1" role="group" aria-label="X layout">
