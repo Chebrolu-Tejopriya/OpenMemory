@@ -17,7 +17,6 @@ export default function XPostFeed({ result }: { result: SearchResult }) {
         <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#edf5f2] text-lg">𝕏</span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-[#303c37]">{author}</p>
-          <p className="text-xs text-[#65746d]">Saved to X bookmarks</p>
         </div>
         <a href={result.url} target="_blank" rel="noopener noreferrer" aria-label={`Open post by ${author} on X`} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg p-2 text-[#65746d] hover:bg-[#edf5f2] focus-visible:outline-2 focus-visible:outline-[#5b9888]">
           <ArrowUpRight className="h-4 w-4" />
