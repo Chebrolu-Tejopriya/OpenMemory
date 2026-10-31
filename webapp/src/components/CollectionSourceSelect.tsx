@@ -35,7 +35,7 @@ export default function CollectionSourceSelect({ value, onChange }: { value: Sou
         onClick={() => setOpen(!open)} onKeyDown={event => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setOpen(true); }
         }}
-        className="flex w-full items-center gap-2 rounded-xl border border-[#5b9888]/20 bg-white/85 px-3 py-2.5 text-sm font-medium text-[#3d7a64] shadow-sm transition-colors hover:bg-white focus-visible:outline-2 focus-visible:outline-[#5b9888]">
+        className="flex min-h-11 w-full items-center gap-2 rounded-xl border border-[#5b9888]/20 bg-white/85 px-3 py-2.5 text-sm font-medium text-[#3d7a64] shadow-sm transition-colors hover:bg-white focus-visible:outline-2 focus-visible:outline-[#5b9888]">
         {selected.icon ? <selected.icon className="h-4 w-4" /> : <span aria-hidden="true">𝕏</span>}
         <span className="flex-1 text-left">{selected.label}</span>
         <ChevronDown aria-hidden="true" className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
@@ -53,7 +53,7 @@ export default function CollectionSourceSelect({ value, onChange }: { value: Sou
         }}>
         {options.map(option => <button key={option.value} type="button" role="menuitemradio" aria-checked={value === option.value}
           onClick={() => { onChange(option.value); setOpen(false); trigger.current?.focus(); }}
-          className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm outline-none hover:bg-[#f1f6f4] focus:bg-[#f1f6f4] ${value === option.value ? "bg-[#edf4f1] font-medium text-[#5b9888]" : "text-gray-600"}`}>
+          className={`flex min-h-11 w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm outline-none hover:bg-[#f1f6f4] focus:bg-[#f1f6f4] ${value === option.value ? "bg-[#edf4f1] font-medium text-[#5b9888]" : "text-gray-600"}`}>
           {option.icon ? <option.icon className="h-4 w-4" /> : <span aria-hidden="true" className="w-4 text-center">𝕏</span>}
           <span className="flex-1">{option.label}</span>
           {value === option.value && <Check aria-hidden="true" className="h-3.5 w-3.5" />}

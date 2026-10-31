@@ -152,7 +152,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
   );
 
   const skeletonCards = (
-    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+    <div className="grid grid-cols-1 min-[400px]:grid-cols-2 xl:grid-cols-3 gap-3">
       {[...Array(6)].map((_, i) => (
         <div key={i} className="flex flex-col bg-[#f4f4f4] rounded-2xl overflow-hidden animate-pulse">
           <div className="px-3 pt-3 pb-1 h-7 flex items-center">
@@ -184,7 +184,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
     <div className="mb-3 flex justify-end gap-1" role="group" aria-label="X layout">
       {(["feed", "grid"] as const).map(layout => (
         <button key={layout} onClick={() => setXLayout(layout)} aria-pressed={xLayout === layout}
-          className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs transition-colors ${xLayout === layout ? "bg-white text-[#303c37] shadow-sm" : "text-[#65746d] hover:bg-white/60"}`}>
+          className={`flex min-h-11 items-center gap-1.5 rounded-lg px-3 py-2 text-xs transition-colors ${xLayout === layout ? "bg-white text-[#303c37] shadow-sm" : "text-[#65746d] hover:bg-white/60"}`}>
           {layout === "feed" ? <List className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
           {layout === "feed" ? "Feed" : "Grid"}
         </button>
@@ -202,7 +202,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
       return true;
     });
     const feed = activeTab === "x" && xLayout === "feed";
-    return <div className={feed ? "mx-auto flex w-full max-w-[600px] flex-col gap-4 pb-12" : `grid ${mobile ? "grid-cols-2 pb-24" : "grid-cols-3 pb-2"} gap-3 items-start`}>
+    return <div className={feed ? "mx-auto flex w-full max-w-[600px] flex-col gap-4 pb-12" : `grid ${mobile ? "grid-cols-1 min-[400px]:grid-cols-2 pb-24" : "grid-cols-2 xl:grid-cols-3 pb-2"} gap-3 items-start`}>
       {unique.map((card, i) => feed ? <XPostFeed key={card.url} result={card} /> : <SearchResultCard key={card.id} result={card} revealDelay={Math.min(i, 5) * 60} />)}
     </div>;
   }
@@ -248,7 +248,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
         onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
         placeholder={activeTab === "x" ? "Search X bookmarks" : activeTab === "bookmarks" ? "Search bookmarks" : "Search pins"}
         aria-label={activeTab === "x" ? "Search X bookmarks" : activeTab === "bookmarks" ? "Search bookmarks" : "Search pins"}
-        className="w-full bg-white/60 backdrop-blur-sm border border-[#5b9888]/20 rounded-xl pl-8 pr-7 py-1.5 text-xs text-[#3a3a3a] placeholder:text-[#3a3a3a]/30 outline-none transition-colors focus:border-[#5b9888]/45 focus:bg-white/80"
+        className="w-full bg-white/60 backdrop-blur-sm border border-[#5b9888]/20 rounded-xl pl-8 pr-7 py-2.5 text-base md:py-1.5 md:text-xs text-[#3a3a3a] placeholder:text-[#3a3a3a]/30 outline-none transition-colors focus:border-[#5b9888]/45 focus:bg-white/80"
       />
       {query && (
         <button
@@ -263,7 +263,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
   );
 
   return (
-    <div className={`flex flex-col gap-4 ${constrained ? "h-full" : ""}`}>
+    <div className={`flex min-w-0 flex-col gap-4 ${constrained ? "h-full" : ""}`}>
       {/* Section header */}
       <div className="flex items-center gap-2">
         <FolderOpen className="w-4 h-4 text-[#5b9888]/60" />
@@ -273,28 +273,29 @@ export default function BrowseSection({ folders, boards, loading = false, constr
       </div>
 
       {/* ── MOBILE layout (< md) ── */}
-      <div className="md:hidden">
+      <div className="min-w-0 shrink-0 md:hidden">
         {/* Sticky tab switch — stays visible while scrolling */}
-        <div className="sticky top-0 z-10 -mx-4 px-4 pt-1 pb-3 bg-[#ebfdff]/95 backdrop-blur-sm">
+        <div className="sticky top-0 z-20 space-y-2 pt-1 pb-3 bg-[#ebfdff]/95 backdrop-blur-sm">
           {tabSwitch}
+          {searchBox}
         </div>
 
         {/* Horizontally scrollable folder/board chips — scrolls naturally */}
         {activeTab !== "x" && <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar mt-1">
-          {loading ? skeletonChips : list.length === 0 ? (
+          {sidebarLoading ? skeletonChips : navItems.length === 0 ? (
             <p className="text-xs text-[#3a3a3a]/30 px-2 py-2">No {activeTab === "bookmarks" ? "folders" : "boards"} found</p>
-          ) : list.map((item) => (
+          ) : navItems.map(({ key: item, label }) => (
             <button
               key={item}
               ref={(el) => { chipRefs.current[item] = el; }}
-              onClick={() => setSelectedItem(item)}
-              className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-150 whitespace-nowrap ${
-                selectedItem === item
+              onClick={() => onSidebarSelect(item)}
+              className={`min-h-11 max-w-[85vw] shrink-0 truncate px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-150 whitespace-nowrap ${
+                sidebarSelected === item
                   ? "bg-[#5b9888] text-white shadow-sm"
                   : "bg-white/70 text-[#3a3a3a]/60 border border-[#5b9888]/15 hover:bg-white hover:text-[#3a3a3a]/80"
               }`}
             >
-              {displayName(item)}
+              {label}
             </button>
           ))}
         </div>}
@@ -302,10 +303,10 @@ export default function BrowseSection({ folders, boards, loading = false, constr
         {/* Cards */}
         <div className="mt-3">
           {layoutSwitch}
-          {isLoading || !selectedItem ? skeletonCards : cards.length === 0 ? (
+          {panelLoading ? skeletonCards : panelCards.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-sm text-[#3a3a3a]/30">No items found</div>
           ) : (
-            renderCards(cards, true)
+            renderCards(panelCards, true)
           )}
         </div>
       </div>
