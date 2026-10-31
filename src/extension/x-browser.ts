@@ -4,7 +4,7 @@ export function validBookmarkPage(value?: string): boolean {
   try {
     const url = new URL(value || '');
     return url.protocol === 'https:' && ['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com'].includes(url.hostname) &&
-      /^\/i\/bookmarks\/?$/.test(url.pathname);
+      /^\/i\/(bookmarks|history)\/?$/.test(url.pathname);
   } catch { return false; }
 }
 export function validateBrowserPosts(value: unknown): XBookmark[] {
@@ -32,7 +32,21 @@ export function readXBookmarksPage(runId: string): void {
   let stopped = false, running = false, observed = 0, idleRounds = 0;
   const sent = new Map<string, string>();
   const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-  const onBookmarks = () => /^\/i\/bookmarks\/?$/.test(location.pathname);
+  const onBookmarks = () => /^\/i\/(bookmarks|history)\/?$/.test(location.pathname);
+  const historyPage = () => /^\/i\/history\/?$/.test(location.pathname);
+  const bookmarksTab = () => Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]')).find(tab => tab.textContent?.trim() === 'Bookmarks');
+  const bookmarksTimeline = () => document.querySelector('[aria-label="Timeline: Bookmarks" i]');
+  let selectedHistoryTab = false;
+  function readyToRead(): boolean {
+    if (!historyPage()) return true;
+    const tab = bookmarksTab();
+    if (!selectedHistoryTab && tab && tab.getAttribute('aria-selected') !== 'true') {
+      selectedHistoryTab = true;
+      tab.click();
+      return false;
+    }
+    return !!tab && tab.getAttribute('aria-selected') === 'true' && !!bookmarksTimeline();
+  }
   function account(): string {
     const profile = document.querySelector<HTMLAnchorElement>('a[data-testid="AppTabBar_Profile_Link"]');
     const path = profile?.getAttribute('href')?.match(/^\/([a-zA-Z0-9_]{1,15})\/?$/);
@@ -41,7 +55,7 @@ export function readXBookmarksPage(runId: string): void {
   }
   function collect() {
     const posts: Array<{ id: string; title: string; extendedContent: string; author: string; imageUrl?: string }> = [];
-    const primary = document.querySelector('[data-testid="primaryColumn"]');
+    const primary = historyPage() ? bookmarksTimeline() : document.querySelector('[data-testid="primaryColumn"]');
     for (const article of Array.from(primary?.querySelectorAll('article[data-testid="tweet"]') || [])) {
       const time = article.querySelector('time');
       const permalink = time?.closest('a')?.getAttribute('href');
@@ -51,7 +65,8 @@ export function readXBookmarksPage(runId: string): void {
       const text = textNode?.textContent?.trim() || '';
       const author = `@${match[1]}`;
       const links = Array.from(textNode?.querySelectorAll<HTMLAnchorElement>('a[href]') || []).map(a => a.href).join(' ');
-      const imageUrl = article.querySelector<HTMLImageElement>('[data-testid="tweetPhoto"] img')?.src;
+      const imageUrl = article.querySelector<HTMLImageElement>('[data-testid="tweetPhoto"] img')?.src
+        || article.querySelector<HTMLVideoElement>('video[poster]')?.poster;
       const imageAlt = article.querySelector<HTMLImageElement>('[data-testid="tweetPhoto"] img')?.alt || '';
       const title = text || imageAlt || `Post by ${author}`;
       const post = { id: match[2], title: title.slice(0, 180), extendedContent: `${author} ${text} ${imageAlt} ${links}`, author, imageUrl };
@@ -65,7 +80,11 @@ export function readXBookmarksPage(runId: string): void {
     if (stopped || scope.__openMemoryXReader !== runId || !onBookmarks()) { stopped = true; return false; }
     const username = account();
     if (!username && !done) return true;
-    const posts = collect();
+    if (!readyToRead()) {
+      if (!done) return true;
+      reason = 'view';
+    }
+    const posts = readyToRead() ? collect() : [];
     try {
       const response = await chrome.runtime.sendMessage({ type: 'X_BROWSER_BATCH', runId, username, posts, done, reason });
       if (!response?.success || response.stop) stopped = true;
@@ -90,6 +109,11 @@ export function readXBookmarksPage(runId: string): void {
         if (!account()) {
           running = false;
           if (Date.now() - started > 30000) { await publish(true, 'empty'); break; }
+          continue;
+        }
+        if (!readyToRead()) {
+          running = false;
+          if (Date.now() - started > 30000) { await publish(true, 'view'); break; }
           continue;
         }
         const before = sent.size;

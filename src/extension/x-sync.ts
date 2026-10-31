@@ -156,6 +156,7 @@ export async function handleXBrowserBatch(message: any, sender: chrome.runtime.M
       state.lastSyncAt = Date.now();
       if (message.reason === 'limit') state.error = 'Scan time limit reached. Imported posts are saved; more may remain on X.';
       if (message.reason === 'empty') state.error = 'No readable posts found. Check that your bookmarks loaded in X.';
+      if (message.reason === 'view') state.error = 'X Bookmarks view could not be verified. Other History tabs were not imported.';
       await closeRun(state);
       response.stop = true;
     } else await save(state);

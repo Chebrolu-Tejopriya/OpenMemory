@@ -7,6 +7,7 @@ const load = code => { const mod = { exports: {} }; new Function('module', 'expo
 (async () => {
   const browser = load(esbuild.buildSync({ entryPoints: ['src/extension/x-browser.ts'], bundle: true, platform: 'node', format: 'cjs', write: false }).outputFiles[0].text);
   assert.equal(browser.validBookmarkPage('https://x.com/i/bookmarks'), true);
+  assert.equal(browser.validBookmarkPage('https://x.com/i/history'), true);
   for (const url of ['https://x.com.evil.example/i/bookmarks', 'https://x.com/home', 'http://x.com/i/bookmarks']) assert.equal(browser.validBookmarkPage(url), false);
   const post = id => ({ id, title: 'Design systems', extendedContent: 'Design systems and components', author: '@designer', imageUrl: 'https://pbs.twimg.com/media/test.jpg' });
   assert.equal(browser.validateBrowserPosts([post('10')])[0].url, 'https://x.com/i/status/10');
@@ -16,20 +17,39 @@ const load = code => { const mod = { exports: {} }; new Function('module', 'expo
   const dom = new JSDOM(`<a data-testid="AppTabBar_Profile_Link" href="/owner">Profile</a>
     <div data-testid="primaryColumn"><article data-testid="tweet"><a href="/designer/status/10"><time>Today</time></a>
     <div data-testid="tweetText">Design systems <a href="https://example.com">link</a></div>
-    <div data-testid="tweetPhoto"><img src="https://pbs.twimg.com/media/test.jpg" alt="A component library"></div></article></div>
+    <div data-testid="tweetPhoto"><img src="https://pbs.twimg.com/media/test.jpg" alt="A component library"></div></article>
+    <article data-testid="tweet"><a href="/designer/status/11"><time>Today</time></a><div data-testid="tweetText">Video reference</div><video poster="https://pbs.twimg.com/amplify_video_thumb/example.jpg"></video></article></div>
     <aside><article data-testid="tweet"><a href="/other/status/999"><time>Today</time></a><div data-testid="tweetText">Unrelated</div></article></aside>`,
     { url: 'https://x.com/i/bookmarks', runScripts: 'outside-only' });
   const batches = [];
   dom.window.chrome = { runtime: { sendMessage: async message => { batches.push(message); return { success: true, stop: true }; } } };
   const realTimeout = dom.window.setTimeout.bind(dom.window);
   dom.window.setTimeout = callback => realTimeout(callback, 1);
+  dom.window.scrollBy = () => {};
   dom.window.eval(`(${browser.readXBookmarksPage.toString()})('fixture-run')`);
-  await new Promise(resolve => setTimeout(resolve, 50));
+  for (let i = 0; i < 100 && !batches.length; i++) await new Promise(resolve => setTimeout(resolve, 20));
+  dom.window.close();
   assert.equal(batches.length, 1);
   assert.equal(batches[0].username, 'owner');
-  assert.deepEqual(batches[0].posts.map(p => p.id).join(','), '10');
+  assert.deepEqual(batches[0].posts.map(p => p.id).join(','), '10,11');
   assert.match(batches[0].posts[0].extendedContent, /component library/);
-  dom.window.close();
+  assert.match(batches[0].posts[1].imageUrl, /amplify_video_thumb/);
+  const history = new JSDOM(`<a data-testid="AppTabBar_Profile_Link" href="/owner">Profile</a>
+    <button role="tab" aria-selected="true">All</button><button role="tab" aria-selected="false">Bookmarks</button>
+    <div aria-label="Timeline: History"><article data-testid="tweet"><a href="/other/status/999"><time>Today</time></a><div data-testid="tweetText">Private history, not a bookmark</div></article></div>
+    <div aria-label="Timeline: Bookmarks"><article data-testid="tweet"><a href="/designer/status/30"><time>Today</time></a><div data-testid="tweetText">Saved bookmark</div></article></div>`,
+    { url: 'https://x.com/i/history', runScripts: 'outside-only' });
+  const historyBatches = [];
+  history.window.document.querySelectorAll('[role="tab"]')[1].addEventListener('click', event => { event.target.setAttribute('aria-selected', 'true'); });
+  history.window.chrome = { runtime: { sendMessage: async message => { historyBatches.push(message); return { success: true, stop: true }; } } };
+  const historyTimeout = history.window.setTimeout.bind(history.window);
+  history.window.setTimeout = callback => historyTimeout(callback, 1);
+  history.window.scrollBy = () => {};
+  history.window.eval(`(${browser.readXBookmarksPage.toString()})('history-run')`);
+  for (let i = 0; i < 100 && !historyBatches.length; i++) await new Promise(resolve => setTimeout(resolve, 20));
+  history.window.close();
+  assert.equal(historyBatches.length, 1);
+  assert.equal(historyBatches[0].posts.map(post => post.id).join(','), '30', 'Never extract other History timelines');
 
   const store = {}, rows = new Map(), alarms = new Map(), tabs = new Map();
   let tabId = 0, injected = 0;

@@ -19,6 +19,9 @@ Every 15 minutes while Chrome runs, the extension opens its own inactive X
 bookmarks tab, verifies the signed-in handle, reads posts as it scrolls, and
 closes that tab after the scan. It does not scroll existing tabs you opened.
 The initial foreground tab stays open so you can inspect it.
+On X's newer History page, the reader selects the Bookmarks tab and reads only
+its named timeline. It does not import the other History timelines. Video poster
+images can be indexed as thumbnails; this does not analyze full video content.
 
 ## Controls and limits
 
