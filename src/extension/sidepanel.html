@@ -1242,16 +1242,18 @@ SOFTWARE.
     }
 
     @media (max-width: 420px) {
-      .integration-card { flex-wrap: wrap; gap: 8px; padding: 12px; }
+      .integration-card { gap: 8px; padding: 12px; }
       .integration-icon { width: 32px; height: 32px; }
-      .integration-info { flex: 1 1 calc(100% - 48px) !important; }
       .integration-card > .connect-btn,
-      .integration-card > div:last-of-type:not(.integration-info):not(.integration-icon) { margin-left: auto; }
-      .connect-btn, .reset-btn, .settings-back { min-height: 44px; }
+      .integration-card > div:last-of-type:not(.integration-info):not(.integration-icon) { flex-shrink: 0; }
       .integration-card > label { overflow-wrap: anywhere; }
       .integration-card input[type="checkbox"] { flex-shrink: 0; }
       .integrations-header { flex-wrap: wrap; gap: 8px; }
-      .integration-status { white-space: normal; overflow-wrap: anywhere; }
+    }
+    @media (pointer: coarse) {
+      .connect-btn, .reset-btn, .settings-back { min-height: 44px; }
+      .integration-card { flex-wrap: wrap; }
+      .integration-info { flex-basis: 140px; }
     }
   </style>
 </head>
