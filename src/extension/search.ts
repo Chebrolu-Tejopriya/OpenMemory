@@ -2669,7 +2669,7 @@ async function updateXUI() {
     document.getElementById('x-cloud-status')!.textContent = !state.cloudEnabled ? 'Cloud sync is off' : state.cloud?.error ||
       (state.cloud?.uploadedAt ? `Cloud uploaded · ${state.cloud.pending || 0} posts pending upload · ${state.cloud.progress ? `${state.cloud.progress.textMissing} text / ${state.cloud.progress.imageMissing} image embeddings pending` : 'text indexing queued; images use the separate worker'}` : 'Cloud upload queued');
     status.textContent = state.error || (!state.connected ? 'Not connected' :
-      `${state.username ? `@${state.username}` : 'X'} · ${state.count} saved · ${state.paused ? 'Paused' : state.syncing ? 'Reading bookmarks…' : state.lastSyncAt ? `Last checked ${new Date(state.lastSyncAt).toLocaleTimeString()}` : 'Waiting to sync'}`);
+      `${state.username ? `@${state.username}` : 'X'} · ${state.count} saved · ${state.paused ? 'Paused' : state.note || (state.syncing ? 'Reading bookmarks…' : state.lastSyncAt ? `Last checked ${new Date(state.lastSyncAt).toLocaleTimeString()}` : 'Waiting to sync')}`);
     status.className = `integration-status${state.error ? ' error' : ''}`;
     document.getElementById('x-connect')!.textContent = state.connected ? 'Open X / reconnect' : 'Enable automatic sync';
     document.getElementById('x-pause')!.textContent = state.paused ? 'Resume' : 'Pause';

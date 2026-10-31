@@ -17,7 +17,7 @@ API requests, post, like, or change bookmarks on X.
 
 Every 15 minutes while Chrome runs, the extension opens its own inactive X
 bookmarks tab, verifies the signed-in handle, reads posts as it scrolls, and
-closes that tab after the scan. It does not scroll existing tabs you opened.
+closes that tab after the scan completes. It only scrolls its managed scan tab.
 The initial foreground tab stays open so you can inspect it.
 On X's newer History page, the reader selects the Bookmarks tab and reads only
 its named timeline. It does not import the other History timelines. Video poster
@@ -30,9 +30,14 @@ images can be indexed as thumbnails; this does not analyze full video content.
   schedules another scan. **Disconnect** also deletes the local imported X library.
 - Changing the signed-in X handle pauses syncing before accepting that account's
   data. Switch back, or disconnect before connecting a different account.
-- Each batch is saved immediately and deduplicated by post ID. Interrupted scans
-  retain those posts; later scans restart at the top. There is no private API cursor.
-- A scan runs for at most 10 minutes, or until the rendered page stops advancing.
+- Each batch is saved immediately and deduplicated by post ID. The reader saves
+  its document, scroll position and last visible post. A scan chunk runs for at
+  most 10 minutes, then continues automatically after 30 seconds in the same tab.
+  Pausing or closing that tab retains the last post as a replay anchor; a reopened
+  page scrolls through saved posts until it reaches that anchor. This uses the
+  rendered page rather than a private API cursor. Replaying a large library can
+  take time if its tab was closed or reloaded.
+- A scan finishes when the rendered page stops advancing.
   "Last checked" is not a guarantee that every bookmark was imported. Lazy loading,
   collapsed text, deleted posts, account restrictions and page changes can limit it.
 - Imported posts remain saved when unbookmarked or missing from a later scan.
@@ -90,7 +95,10 @@ approved X integration. See [X automation rules](https://help.x.com/en/rules-and
 ## Verification
 
 `npm run test:x` checks extraction from representative DOM fixtures, session and
-tab validation, deduplication, interrupted scans, account changes, pause,
+tab validation, deduplication, timed continuation, closed-tab replay, account changes, pause,
 disconnect, local search and settings controls. `npm run build` creates the loadable
 extension. Live behavior must still be checked in your signed-in browser; fixtures
 cannot guarantee compatibility with the current X page.
+
+`python scripts/image-hosts.test.py` verifies that the image downloader accepts
+Pinterest and X media hosts and rejects other hosts, without loading a model.

@@ -24,10 +24,15 @@ export function validateBrowserPosts(value: unknown): XBookmark[] {
 }
 
 /** Serialized by executeScript; every helper must be declared inside this function. */
-export function readXBookmarksPage(runId: string): void {
-  const scope = globalThis as typeof globalThis & { __openMemoryXReader?: string };
+export function readXBookmarksPage(runId: string, resume?: { pageId?: string; afterPostId?: string; scrollY?: number; replaying?: boolean } | null): void {
+  const scope = globalThis as typeof globalThis & { __openMemoryXReader?: string; __openMemoryXPage?: string };
   if (scope.__openMemoryXReader === runId) return;
   scope.__openMemoryXReader = runId;
+  scope.__openMemoryXPage ||= `${Date.now()}-${Math.random()}`;
+  let afterPostId = resume?.afterPostId;
+  const samePosition = resume?.pageId === scope.__openMemoryXPage && Math.abs(window.scrollY - (resume.scrollY || 0)) < 100;
+  let replaying = !!afterPostId && (!samePosition || !!resume?.replaying);
+  let positioned = false;
   const started = Date.now();
   let stopped = false, running = false, observed = 0, idleRounds = 0;
   const sent = new Map<string, string>();
@@ -61,6 +66,8 @@ export function readXBookmarksPage(runId: string): void {
       const permalink = time?.closest('a')?.getAttribute('href');
       const match = permalink?.match(/^\/([a-zA-Z0-9_]+)\/status\/(\d+)/);
       if (!match) continue;
+      if (match[2] === afterPostId) replaying = false;
+      if (!replaying) afterPostId = match[2];
       const textNode = article.querySelector('[data-testid="tweetText"]');
       const text = textNode?.textContent?.trim() || '';
       const author = `@${match[1]}`;
@@ -84,9 +91,15 @@ export function readXBookmarksPage(runId: string): void {
       if (!done) return true;
       reason = 'view';
     }
-    const posts = readyToRead() ? collect() : [];
+    const readable = readyToRead();
+    if (readable && !positioned) {
+      positioned = true;
+      if (replaying && !samePosition) { window.scrollTo(0, 0); await wait(2000); }
+    }
+    const posts = readable ? collect() : [];
     try {
-      const response = await chrome.runtime.sendMessage({ type: 'X_BROWSER_BATCH', runId, username, posts, done, reason });
+      const checkpoint = { pageId: scope.__openMemoryXPage, afterPostId, scrollY: Math.max(0, window.scrollY), replaying };
+      const response = await chrome.runtime.sendMessage({ type: 'X_BROWSER_BATCH', runId, username, posts, done, reason, checkpoint });
       if (!response?.success || response.stop) stopped = true;
       if (response?.success) {
         for (const post of posts) sent.set(post.id, JSON.stringify(post));

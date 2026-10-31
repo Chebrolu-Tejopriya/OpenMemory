@@ -54,6 +54,11 @@ try {
     if (spawnError) throw spawnError;
     if (model.exitCode !== null) throw new Error(`Model process exited (${model.exitCode}); inspect ${logPath}`);
     try {
+      // New X imports should not wait behind retries of unavailable Pinterest media.
+      if (!boardFilter && !stopping) {
+        try { await runXEmbeddings(true); }
+        catch (error) { console.error('X image worker:', error instanceof Error ? error.message : error); }
+      }
       for (const board of await pendingBoards()) {
         if (stopping) break;
         console.log('Processing:', board);
@@ -62,14 +67,13 @@ try {
         console.log('Remaining:', JSON.stringify(counts));
         if (once && counts.imageMissing) process.exitCode = 1;
       }
-      if (!boardFilter && !stopping) await runXEmbeddings(true);
     } catch (error) {
       console.error(error instanceof Error ? error.message : 'Image worker failed');
       if (once) { process.exitCode = 1; break; }
     }
     if (once) break;
     // Missing vectors themselves are the persistent queue; completed ones are skipped.
-    console.log('Watching for newly imported pins (checks every 60 seconds).');
+    console.log('Watching for newly imported Pinterest and X images (checks every 60 seconds).');
     for (let i = 0; i < 60 && !stopping; i++) await delay(1000);
   }
   if (spawnError) throw spawnError;

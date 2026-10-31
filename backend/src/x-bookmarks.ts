@@ -52,6 +52,7 @@ export async function runXEmbeddings(imagesOnly = false): Promise<void> {
   if (!await checkEmbedServerAvailable()) throw new Error('X indexing is waiting for the embedding model. It will retry.');
   const column = imagesOnly ? 'image_embedding' : 'embedding';
   let cursor = '';
+  let generated = 0, failed = 0;
   while (true) {
     const params = new URLSearchParams({ select: 'id,title,description,author,image_url,updated_at', [column]: 'is.null', order: 'id.asc', limit: imagesOnly ? '1' : '30' });
     if (imagesOnly) params.set('image_url', 'not.is.null');
@@ -62,12 +63,13 @@ export async function runXEmbeddings(imagesOnly = false): Promise<void> {
       : await generateTextEmbeddings(rows.map(row => `${row.title} ${row.description} ${row.author}`.slice(0, 2000)));
     for (const [i, row] of rows.entries()) {
       const vector = vectors[i];
-      if (!vector || vector.length !== (imagesOnly ? 512 : 384) || !vector.every(Number.isFinite) || !vector.some(v => v !== 0)) continue;
+      if (!vector || vector.length !== (imagesOnly ? 512 : 384) || !vector.every(Number.isFinite) || !vector.some(v => v !== 0)) { failed++; continue; }
       // Do not attach a vector to content changed while inference was running.
       const update = new URLSearchParams({ id: `eq.${row.id}`, updated_at: `eq.${row.updated_at}`, [column]: 'is.null', select: 'id' });
       const saved = await (await xDatabase(`x_bookmarks?${update}`, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ [column]: vector }) })).json() as any[];
-      if (saved.length) { if (imagesOnly) xEmbeddingState.imageGenerated++; else xEmbeddingState.textGenerated++; }
+      if (saved.length) { generated++; if (imagesOnly) xEmbeddingState.imageGenerated++; else xEmbeddingState.textGenerated++; }
     }
     cursor = rows[rows.length - 1].id;
+    console.log(`[X embeddings] ${column}: generated=${generated}, failed=${failed}`);
   }
 }

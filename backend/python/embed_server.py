@@ -88,7 +88,8 @@ def embed_images(urls):
     try:
         def download(url):
             parsed = urlparse(url)
-            if parsed.scheme != 'https' or not (parsed.hostname or '').endswith('.pinimg.com'):
+            host = parsed.hostname or ''
+            if parsed.scheme != 'https' or not (host.endswith('.pinimg.com') or host in ('pbs.twimg.com', 'video.twimg.com')):
                 return None
             path = download_image(url)
             if not path and '/originals/' in url:
