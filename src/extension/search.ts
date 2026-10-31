@@ -2667,7 +2667,6 @@ async function updateXUI() {
     if (!state?.success) return;
     const status = document.getElementById('x-status')!;
     xPaused = !!state.paused;
-    (document.getElementById('x-cloud-enabled') as HTMLInputElement).checked = !!state.cloudEnabled;
     xConnected = !!state.connected;
     xNeedsAttention = !!state.error;
     const activity = state.paused ? 'Paused' : state.syncing ? 'Syncing…' : state.continuing ? 'Continuing…' : 'Auto-sync on';
@@ -2708,17 +2707,6 @@ for (const id of ['x-sync', 'x-pause']) {
   });
 }
 void updateXUI();
-document.getElementById('x-cloud-enabled')?.addEventListener('change', async event => {
-  const input = event.target as HTMLInputElement;
-  input.disabled = true;
-  try {
-    const result = await chrome.runtime.sendMessage({ type: 'X_CLOUD_ENABLE', enabled: input.checked });
-    if (!result?.success) throw new Error(result?.error || 'Could not change cloud sync');
-    await updateXUI();
-  } catch (error) {
-    document.getElementById('x-status')!.textContent = error instanceof Error ? error.message : 'Cloud setup failed';
-  } finally { input.disabled = false; }
-});
 setInterval(() => { if (!xUiBusy) void updateXUI(); }, 10000);
 
 async function updatePinterestBoardsUI(): Promise<void> {
