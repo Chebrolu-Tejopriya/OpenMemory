@@ -19,3 +19,4 @@ Thumbs.db
 .idea/
 backend/python/.cache/
 __pycache__/
+supabase/.temp/

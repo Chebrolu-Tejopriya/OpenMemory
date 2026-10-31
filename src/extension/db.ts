@@ -4,6 +4,7 @@
  */
 
 import Dexie, { Table } from 'dexie';
+import type { XBookmark } from './x-api';
 
 export interface IndexedBookmark {
   id?: number;
@@ -81,6 +82,7 @@ class OpenMemoryDB extends Dexie {
   integrations!: Table<Integration, number>;
   pinterestCheckpoints!: Table<PinterestSyncCheckpoint, number>;
   pinterestBoards!: Table<PinterestBoard, number>;
+  xBookmarks!: Table<XBookmark, string>;
 
   constructor() {
     super('OpenMemoryDB');
@@ -123,6 +125,7 @@ class OpenMemoryDB extends Dexie {
       pinterestCheckpoints: '++id, username, boardUrl',
       pinterestBoards: '++id, &boardId, url, archived, updatedAt'
     });
+    this.version(6).stores({ xBookmarks: '&id, author, indexedAt' });
   }
 }
 

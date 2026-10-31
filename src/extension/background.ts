@@ -4,6 +4,8 @@
  */
 
 import { db, IndexedBookmark, IndexingQueueItem } from './db';
+import { attachXReader, connectX, disconnectX, handleXBrowserBatch, pauseX, scheduleXSync, syncX, xStatus, xTabClosed, X_SYNC_ALARM } from './x-sync';
+import { flushXCloud, scheduleXCloudSync, setXCloudEnabled, X_CLOUD_ALARM } from './x-cloud';
 import { PINTEREST_IMPORT_LIMIT } from './pinterest-import-policy';
 import { requestPinterestEmbeddingJob, pinterestEmbeddingStatus } from './embedding-jobs';
 import {
@@ -171,6 +173,8 @@ async function reconcileDeletedBookmarks() {
 }
 
 function setupAlarms() {
+  void scheduleXSync().catch(() => console.warn('[X] Could not schedule sync'));
+  void scheduleXCloudSync().catch(() => console.warn('[X] Could not schedule cloud sync'));
   chrome.alarms.create(ALARM_NAME, { periodInMinutes: ALARM_PERIOD_MINUTES });
   chrome.alarms.create(PINTEREST_ALARM, { periodInMinutes: PINTEREST_SYNC_HOURS * 60 });
   chrome.alarms.create(SUPABASE_SYNC_ALARM, { periodInMinutes: SUPABASE_SYNC_MINUTES });
@@ -185,6 +189,8 @@ chrome.idle.onStateChanged.addListener((state) => {
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === X_SYNC_ALARM) void syncX().catch(() => console.warn('[X] Sync interrupted'));
+  if (alarm.name === X_CLOUD_ALARM) void flushXCloud().catch(() => console.warn('[X] Cloud sync interrupted'));
   if (alarm.name === ALARM_NAME) {
     chrome.idle.queryState(IDLE_THRESHOLD, (state) => {
       if (state === 'idle') {
@@ -1505,7 +1511,37 @@ async function generateEmbeddingsForAllBookmarks(): Promise<{ success: number; f
 }
 
 // ============== MESSAGE HANDLING FOR UI ==============
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && /^https:\/\/(www\.)?(x|twitter)\.com\//.test(tab.url || '')) {
+    void attachXReader(tabId).catch(() => {});
+  }
+});
+chrome.tabs.onRemoved.addListener(tabId => { void xTabClosed(tabId).catch(() => {}); });
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'X_BROWSER_BATCH') {
+    handleXBrowserBatch(message, sender).then(result => {
+      sendResponse(result);
+      if (result.success) void flushXCloud().catch(() => {});
+    }).catch(() => sendResponse({ success: false, stop: true }));
+    return true;
+  }
+  if (typeof message.type === 'string' && message.type.startsWith('X_')) {
+    // Connection controls are available only to our own extension pages.
+    if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL(''))) return false;
+    const operations: Record<string, () => Promise<unknown>> = {
+      X_STATUS: xStatus,
+      X_CONNECT: connectX,
+      X_SYNC: () => syncX(true),
+      X_PAUSE: () => pauseX(!!message.paused),
+      X_DISCONNECT: () => setXCloudEnabled(false).then(disconnectX),
+      X_CLOUD_ENABLE: () => setXCloudEnabled(!!message.enabled).then(() => flushXCloud())
+    };
+    const operation = operations[message.type];
+    if (!operation) return false;
+    operation().then(async () => sendResponse({ success: true, ...(await xStatus()) }))
+      .catch(error => sendResponse({ success: false, error: error instanceof Error ? error.message : 'X operation failed.' }));
+    return true;
+  }
   if (message.type === 'PINTEREST_EMBEDDING_STATUS') {
     pinterestEmbeddingStatus(message.boardUrl).then(status => sendResponse({success: true, ...status}))
       .catch(error => sendResponse({success: false, error: error.message}));

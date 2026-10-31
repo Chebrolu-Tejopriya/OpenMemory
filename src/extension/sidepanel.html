@@ -1263,6 +1263,7 @@ SOFTWARE.
                 <option value="all">All</option>
                 <option value="bookmarks">Bookmarks</option>
                 <option value="pinterest">Pinterest</option>
+                <option value="x">X bookmarks</option>
               </select>
             </div>
             <div class="filter-menu-section" id="filter-board-section">
@@ -1370,6 +1371,26 @@ SOFTWARE.
       </div>
     </div>
 
+    <div class="integration-card" id="x-card" style="margin-top: 8px; flex-wrap: wrap;">
+      <div class="integration-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M18.9 2H22l-6.8 7.8L23.2 22h-6.3L12 14.6 5.5 22H2.3l8.2-9.4L.8 2h6.5l4.5 6.8L18.9 2Zm-1.1 18h1.7L6.3 3.9H4.5L17.8 20Z"/></svg></div>
+      <div class="integration-info"><div class="integration-name">X bookmarks</div><div class="integration-status" id="x-status" role="status">Not connected</div></div>
+      <button class="connect-btn" id="x-settings-toggle" aria-expanded="false" aria-controls="x-settings">Set up</button>
+      <div id="x-settings" class="supabase-settings" style="display: none; width: 100%;">
+        <p style="color: #aaa; font-size: 12px; margin: 8px 0;">Use your signed-in X session. No API key needed. Every 15 minutes, OpenMemory opens a background bookmarks tab, reads loaded posts, then closes that tab. Chrome must be running. Posts stay on this device unless cloud sync is enabled below.</p>
+        <p style="color: #aaa; font-size: 12px; margin: 8px 0;">X prohibits non-API automation and may restrict accounts. Page changes or loading limits can interrupt imports.</p>
+        <label style="display: flex; align-items: start; gap: 8px; margin: 10px 0; font-size: 12px;">
+          <input id="x-cloud-enabled" type="checkbox" style="width: auto; margin-top: 2px;">
+          <span>Sync X posts and media to my configured Supabase web app and generate embeddings. With the current shared beta, visitors can see these posts.</span>
+        </label>
+        <div id="x-cloud-status" role="status" style="font-size: 12px; color: #aaa; margin-bottom: 8px;">Cloud sync is off</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+          <button class="connect-btn" id="x-connect">Enable automatic sync</button>
+          <button class="connect-btn" id="x-sync" hidden>Sync now</button>
+          <button class="reset-btn" id="x-pause" hidden>Pause</button>
+          <button class="reset-btn" id="x-disconnect" hidden>Disconnect</button>
+        </div>
+      </div>
+    </div>
     </details>
     <!-- Import Current Board Section -->
     <div id="pinterest-import-section" style="margin-top: 12px; padding: 12px; background: #111111; border: 1px solid #333333; border-radius: 8px;">

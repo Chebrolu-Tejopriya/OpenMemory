@@ -16,6 +16,7 @@
     "embeddings:images": "tsx scripts/pinterestImageWorker.ts",
     "fix:pinterest-images": "tsx scripts/fixPinterestImages.ts",
     "test:filters": "node scripts/filter-select.test.cjs && node scripts/filter-panel.test.cjs",
+    "test:x": "node scripts/x-sync.test.cjs && node scripts/x-search.test.cjs && node scripts/x-cloud.test.cjs && node scripts/x-embeddings.test.cjs",
     "test:pinterest": "node scripts/pinterest-import.test.cjs && node scripts/pinterest-feed.test.cjs && node scripts/pinterest-storage.test.cjs && node scripts/pinterest-embeddings.test.cjs"
   },
   "devDependencies": {

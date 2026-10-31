@@ -11,6 +11,11 @@ export interface EmbeddingJobStatus {
 }
 const jobs = new Map<string, EmbeddingJobStatus>();
 let workerQueue: Promise<unknown> = Promise.resolve();
+export function enqueueEmbeddingWork<T>(task: () => Promise<T>): Promise<T> {
+  const result = workerQueue.catch(() => undefined).then(task);
+  workerQueue = result.catch(() => undefined);
+  return result;
+}
 
 function credentials(): { url: string; key: string } {
   const url = process.env.SUPABASE_URL;
@@ -64,7 +69,7 @@ export function startPinterestEmbeddingJob(boardUrl: string): EmbeddingJobStatus
   if (current?.running) return current;
   const status: EmbeddingJobStatus = { running: true, textGenerated: 0, imageGenerated: 0, failed: 0 };
   jobs.set(boardUrl, status);
-  workerQueue = workerQueue.catch(() => undefined).then(() => runPinterestEmbeddingJob(boardUrl, status)).catch(error => {
+  void enqueueEmbeddingWork(() => runPinterestEmbeddingJob(boardUrl, status)).catch(error => {
     status.error = `${status.phase || 'worker'}: ${error instanceof Error ? error.message : 'Embedding worker failed'}`;
     status.imageWorkerRequired = status.error.includes('Image embeddings paused:');
     console.error('[Pinterest embeddings]', status.error);

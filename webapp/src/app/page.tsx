@@ -455,7 +455,7 @@ export default function Home() {
               title: item.title,
               folder: item.folder || "Bookmarks",
               url: item.url,
-              source: item.source.includes("chrome") ? "chrome" : "pinterest",
+              source: item.source === "x" ? "x" : item.source.includes("chrome") ? "chrome" : "pinterest",
               imageUrl: item.imageUrl || undefined,
             })
           )

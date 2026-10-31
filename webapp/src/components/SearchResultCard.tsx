@@ -7,7 +7,7 @@ export interface SearchResult {
   folder: string;
   imageUrl?: string;
   url: string;
-  source: "chrome" | "pinterest";
+  source: "chrome" | "pinterest" | "x";
 }
 
 interface SearchResultCardProps {
@@ -67,8 +67,8 @@ export default function SearchResultCard({ result, revealDelay = 0 }: SearchResu
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  const hasPinterestImage = isPinterest && result.imageUrl && !result.imageUrl.includes("favicon") && !pinImgError;
-  const screenshotUrl = !isPinterest ? getScreenshotUrl(result.url) : null;
+  const hasPinterestImage = (isPinterest || result.source === "x") && result.imageUrl && !result.imageUrl.includes("favicon") && !pinImgError;
+  const screenshotUrl = result.source === "chrome" ? getScreenshotUrl(result.url) : null;
   const faviconUrl = getFaviconUrl(result.url);
 
   const categoryLabel = result.folder && result.folder !== "Bookmarks"

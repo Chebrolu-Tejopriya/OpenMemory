@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Bookmark, Pin } from "lucide-react";
 import { SearchResult } from "./SearchResultCard";
 
-type CanvasSource = "chrome" | "pinterest";
+type CanvasSource = "chrome" | "pinterest" | "x";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
@@ -45,8 +45,8 @@ function Card({ result, style }: { result: SearchResult; style: React.CSSPropert
   const displayTitle = isPin
     ? result.title.replace(/^this may contain:?\s*/i, "").trim()
     : result.title;
-  const pinImg = isPin && result.imageUrl && !result.imageUrl.includes("favicon") && !pinErr;
-  const shot = !isPin ? screenshotUrl(result.url) : null;
+  const pinImg = (isPin || result.source === "x") && result.imageUrl && !result.imageUrl.includes("favicon") && !pinErr;
+  const shot = result.source === "chrome" ? screenshotUrl(result.url) : null;
   const fav = faviconUrl(result.url);
   const dom = domain(result.url);
   const label = result.folder && result.folder !== "Bookmarks"
@@ -119,6 +119,22 @@ export default function CanvasView({ folders: _folders, boards: _boards, active 
   const hasFetched = useRef(false);
   // ── Filter state ─────────────────────────────────────────────────────────
   const [source, setSource] = useState<CanvasSource>("chrome");
+  const [xError, setXError] = useState("");
+  const [xLoading, setXLoading] = useState(false);
+  useEffect(() => {
+    if (!active || source !== "x") return;
+    const controller = new AbortController();
+    setXLoading(true); setXError("");
+    fetch(`${BACKEND_URL}/browse?source=x`, { signal: controller.signal, cache: "no-store" })
+      .then(async response => {
+        if (!response.ok) throw new Error("X bookmarks are unavailable. Check cloud sync setup.");
+        const data = await response.json();
+        const posts: SearchResult[] = (data.results || []).slice(0, MAX_ITEMS).map((item: SearchResult, i: number) => ({ ...item, source: "x", id: `x-${i}-${item.url}` }));
+        setItems(previous => [...previous.filter(item => item.source !== "x"), ...posts]);
+      }).catch(error => { if (!controller.signal.aborted) setXError(error.message); })
+      .finally(() => { if (!controller.signal.aborted) setXLoading(false); });
+    return () => controller.abort();
+  }, [active, source]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const tileWRef = useRef(0);
@@ -163,7 +179,7 @@ export default function CanvasView({ folders: _folders, boards: _boards, active 
       }
 
       const all = [...bookmarks, ...pins];
-      setItems(all);
+      setItems(previous => [...all, ...previous.filter(item => item.source === "x")]);
       setLoading(false);
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -387,11 +403,14 @@ export default function CanvasView({ folders: _folders, boards: _boards, active 
             <Pin className="w-3 h-3" />
             Pinterest
           </button>
+          <button onClick={() => setSource("x")} aria-pressed={source === "x"}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium ${source === "x" ? "bg-white shadow-sm text-[#3d7a64]" : "text-[#3a3a3a]/50 hover:text-[#3a3a3a]/70"}`}>𝕏 bookmarks</button>
         </div>
       </div>
+      {source === "x" && xError && <p role="status" className="absolute bottom-4 left-4 z-30 text-xs text-red-700 bg-white/90 rounded-lg p-3">{xError}</p>}
 
       {/* Loading */}
-      {loading && (
+      {(source === "x" ? xLoading : loading) && (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 pointer-events-none">
           <div className="w-8 h-8 border-2 border-[#5b9888]/30 border-t-[#5b9888] rounded-full animate-spin" />
           <p className="text-xs text-[#3a3a3a]/40 font-medium tracking-wide">Loading canvas...</p>

@@ -33,6 +33,7 @@ model.on('error', error => { spawnError = error; stopping = true; });
 process.on('SIGINT', () => { stopping = true; model.kill(); });
 process.on('SIGTERM', () => { stopping = true; model.kill(); });
 const { runPinterestEmbeddingJob, pinterestEmbeddingCounts } = await import('../backend/src/pinterest-embeddings');
+const { runXEmbeddings } = await import('../backend/src/x-bookmarks');
 
 async function pendingBoards(): Promise<string[]> {
   const boards = new Set<string>();
@@ -61,6 +62,7 @@ try {
         console.log('Remaining:', JSON.stringify(counts));
         if (once && counts.imageMissing) process.exitCode = 1;
       }
+      if (!boardFilter && !stopping) await runXEmbeddings(true);
     } catch (error) {
       console.error(error instanceof Error ? error.message : 'Image worker failed');
       if (once) { process.exitCode = 1; break; }

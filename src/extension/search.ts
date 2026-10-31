@@ -8,6 +8,8 @@ import MiniSearch from 'minisearch';
 import { PINTEREST_IMPORT_LIMIT } from './pinterest-import-policy';
 import { mountFilterSelects, refreshFilterSelects } from './filter-select';
 import { db, IndexedBookmark, PinterestPin } from './db';
+import type { XBookmark } from './x-api';
+import { embeddingBackendUrl } from './embedding-jobs';
 
 // ============== SUPABASE SEARCH ==============
 const DEBUG_SEARCH = false;
@@ -24,7 +26,7 @@ interface SupabaseBookmark {
 }
 
 interface SupabaseSearchResult {
-  source: 'chrome' | 'pinterest';
+  source: 'chrome' | 'pinterest' | 'x';
   item_id: string;
   url: string;
   title: string;
@@ -476,14 +478,14 @@ interface HybridResult {
   similarityRaw?: number | null;
   recencyScore: number;  // Recency score (0-1)
   combinedScore: number; // Weighted combination
-  source: 'chrome' | 'pinterest';
+  source: 'chrome' | 'pinterest' | 'x';
   item?: SearchableItem;
   imageUrl?: string | null;
   createdAt?: number | null;
   searchableText?: string;
 }
 
-type SourceFilter = 'all' | 'pinterest' | 'bookmarks';
+type SourceFilter = 'all' | 'pinterest' | 'bookmarks' | 'x';
 type TimeFilter = 'all' | 'recent' | 'older';
 
 interface SearchFilters {
@@ -586,12 +588,14 @@ function filterRelevantResults(results: HybridResult[], terms: string[], normali
   const relaxedPinterestOptions = { requirePhrase: false, requireAllTerms: false };
   const semanticFloorBySource: Record<HybridResult['source'], number> = {
     chrome: 0.5,
-    pinterest: 0.45
+    pinterest: 0.45,
+    x: 0.5
   };
 
   const bySource: Record<HybridResult['source'], HybridResult[]> = {
     chrome: [],
-    pinterest: []
+    pinterest: [],
+    x: []
   };
 
   results.forEach(result => {
@@ -646,10 +650,11 @@ function filterRelevantResults(results: HybridResult[], terms: string[], normali
 
   const filteredBySource = {
     chrome: buildSourceResults('chrome'),
-    pinterest: buildSourceResults('pinterest')
+    pinterest: buildSourceResults('pinterest'),
+    x: buildSourceResults('x')
   };
 
-  return [...filteredBySource.chrome, ...filteredBySource.pinterest];
+  return [...filteredBySource.chrome, ...filteredBySource.pinterest, ...filteredBySource.x];
 }
 
 function mixSourcesByScore(results: HybridResult[]): HybridResult[] {
@@ -676,7 +681,7 @@ async function hybridSearch(query: string, limit = getSearchPoolLimit(), filters
   const terms = tokenizeQuery(normalizedQuery);
   const resultMap = new Map<string, HybridResult>();
 
-  const useSupabase = isSupabaseAvailable;
+  const useSupabase = isSupabaseAvailable && filters?.source !== 'x';
   const localResultsPromise = DEBUG_VECTOR_ONLY && useSupabase
     ? Promise.resolve([])
     : Promise.resolve(search(normalizedQuery));
@@ -690,19 +695,32 @@ async function hybridSearch(query: string, limit = getSearchPoolLimit(), filters
       )
     : Promise.resolve([]);
 
-  const [localResults, supabaseResults] = await Promise.all([
+  const xCloudResultsPromise: Promise<SupabaseSearchResult[]> = isSupabaseAvailable &&
+    (!filters || filters.source === 'all' || filters.source === 'x') && !filters?.folder && !filters?.board
+    ? (async () => {
+      if (!(await chrome.storage.local.get('xCloudEnabled')).xCloudEnabled) return [];
+      const response = await fetch(`${await embeddingBackendUrl()}/search?source=x&q=${encodeURIComponent(query)}&limit=${Math.max(limit, 100)}`, { signal: AbortSignal.timeout(15000), cache: 'no-store' });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return (data.results || []).map((row: any) => ({ source: 'x' as const, item_id: row.url, url: row.url, title: row.title,
+        folder_or_board: row.folder, image_url: row.imageUrl, similarity: row.similarity || 0,
+        keyword_score: row.keyword_score || 0, description: row.description, final_score: row.score }));
+    })().catch(() => []) : Promise.resolve([]);
+  const [localResults, baseSupabaseResults, xCloudResults] = await Promise.all([
     localResultsPromise,
-    supabaseResultsPromise
+    supabaseResultsPromise,
+    xCloudResultsPromise
   ]);
+  const supabaseResults = [...baseSupabaseResults, ...xCloudResults];
 
   // Add local results to map
   for (const result of localResults) {
-    const url = result.item.source === 'chrome' ? result.item.url : result.item.pinUrl;
-    const folderOrBoard = result.item.source === 'chrome'
+    const url = result.item.source !== 'pinterest' ? result.item.url : result.item.pinUrl;
+    const folderOrBoard = result.item.source !== 'pinterest'
       ? result.item.folder || null
       : result.item.boardName || null;
     const createdAt = getItemTimestamp(result.item);
-    const extraText = result.item.source === 'chrome'
+    const extraText = result.item.source !== 'pinterest'
       ? result.item.extendedContent || null
       : result.item.description || null;
     const textScore = computeTextMatchScore(result.item.title, folderOrBoard, terms, extraText, url);
@@ -888,7 +906,8 @@ async function hybridSearch(query: string, limit = getSearchPoolLimit(), filters
 }
 
 // ============== INTERFACES ==============
-type SearchableItem = (IndexedBookmark & { source: 'chrome' }) | (PinterestPin & { source: 'pinterest' });
+type XSearchItem = Omit<XBookmark, 'id'> & { id?: number; xId: string; source: 'x' };
+type SearchableItem = (IndexedBookmark & { source: 'chrome' }) | (PinterestPin & { source: 'pinterest' }) | XSearchItem;
 
 interface SearchResult {
   item: SearchableItem;
@@ -910,7 +929,7 @@ interface SearchableDocument {
   folder: string;
   extendedContent: string;
   contentType: string;
-  source: 'chrome' | 'pinterest';
+  source: 'chrome' | 'pinterest' | 'x';
 }
 
 // ============== DOM ELEMENTS ==============
@@ -1006,16 +1025,18 @@ const blobUrlCache = new Map<string, string>();
 async function initializeSearch(): Promise<void> {
   try {
     // Load bookmarks from IndexedDB
-    const [bookmarks, pins] = await Promise.all([
+    const [bookmarks, pins, xBookmarks] = await Promise.all([
       db.bookmarks.toArray(),
-      db.pins.toArray()
+      db.pins.toArray(),
+      db.xBookmarks.toArray()
     ]);
 
     // Mark sources and combine
     const bookmarkItems: SearchableItem[] = bookmarks.map(b => ({ ...b, source: 'chrome' as const }));
     const pinItems: SearchableItem[] = pins.map(p => ({ ...p, source: 'pinterest' as const }));
 
-    allItems = [...bookmarkItems, ...pinItems];
+    const xItems: XSearchItem[] = xBookmarks.map(({ id, ...post }) => ({ ...post, xId: id, source: 'x' }));
+    allItems = [...bookmarkItems, ...pinItems, ...xItems];
 
     // If no bookmarks, try fallback to data.json
     if (bookmarks.length === 0) {
@@ -1029,7 +1050,7 @@ async function initializeSearch(): Promise<void> {
             indexStatus: 'pending' as const,
             source: 'chrome' as const
           }));
-          allItems = [...jsonItems, ...pinItems];
+          allItems = [...jsonItems, ...pinItems, ...xItems];
           allFolders = data.folders || [];
         }
       } catch (fetchError) {
@@ -1109,13 +1130,13 @@ function initializeMiniSearch(): void {
       };
     } else {
       return {
-        id: `bm_${item.id ?? index}`,
+        id: item.source === 'x' ? `x_${item.xId}` : `bm_${item.id ?? index}`,
         title: item.title || '',
         url: item.url || '',
         folder: item.folder || '',
         extendedContent: item.extendedContent || '',
         contentType: item.contentType || '',
-        source: 'chrome' as const
+        source: item.source
       };
     }
   });
@@ -1151,6 +1172,8 @@ function search(query: string): SearchResult[] {
     if (resultId.startsWith('pin_')) {
       const pinId = resultId.substring(4);
       item = allItems.find(i => i.source === 'pinterest' && i.pinId === pinId) as SearchableItem | undefined;
+    } else if (resultId.startsWith('x_')) {
+      item = allItems.find(i => i.source === 'x' && i.xId === resultId.substring(2));
     } else if (resultId.startsWith('bm_')) {
       const bmId = parseInt(resultId.substring(3), 10);
       item = allItems.find((i, idx) => i.source === 'chrome' && (i.id ?? idx) === bmId) as SearchableItem | undefined;
@@ -1161,7 +1184,7 @@ function search(query: string): SearchResult[] {
     const matchField = determineMatchField(normalizedQuery, item);
     let snippet: string | undefined;
 
-    if (item.source === 'chrome' && matchField === 'extendedContent') {
+    if (item.source !== 'pinterest' && matchField === 'extendedContent') {
       snippet = generateSnippet(item.extendedContent || '', normalizedQuery);
     } else if (item.source === 'pinterest' && item.description) {
       snippet = generateSnippet(item.description, normalizedQuery);
@@ -1196,7 +1219,7 @@ function search(query: string): SearchResult[] {
   // Apply folder filter if set
   if (currentFolder) {
     searchResults = searchResults.filter(r => {
-      if (r.item.source === 'chrome') {
+      if (r.item.source !== 'pinterest') {
         return r.item.folder?.toLowerCase().startsWith(currentFolder!.toLowerCase());
       } else {
         return r.item.boardName?.toLowerCase().startsWith(currentFolder!.toLowerCase());
@@ -1217,7 +1240,7 @@ function determineMatchField(query: string, item: SearchableItem): 'title' | 'fo
   }
 
   // Check folder/boardName
-  if (item.source === 'chrome') {
+  if (item.source !== 'pinterest') {
     for (const word of queryWords) {
       if (item.folder?.toLowerCase().includes(word)) return 'folder';
     }
@@ -1307,6 +1330,12 @@ function renderCard(result: SearchResult): string {
 
   if (item.source === 'pinterest') {
     return renderPinterestCard(item, snippet, result.debugScores);
+  }
+  if (item.source === 'x') {
+    return `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer" class="card">
+      ${item.imageUrl ? `<div class="card-thumbnail"><img src="${escapeHtml(item.imageUrl)}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover"></div>` : ''}
+      <div class="card-content"><div class="card-title"><span class="card-title-text">${escapeHtml(item.title)}</span></div>
+      <div class="card-path">${escapeHtml(item.author)}</div><div class="card-meta"><span class="source-badge">X</span></div></div></a>`;
   }
 
   return renderBookmarkCard(item, snippet, result.debugScores);
@@ -1525,7 +1554,7 @@ async function performSearch(): Promise<void> {
 
   const filterInfoParts: string[] = [];
   if (selectedSourceFilter !== 'all') {
-    filterInfoParts.push(selectedSourceFilter === 'bookmarks' ? 'Bookmarks' : 'Pinterest');
+    filterInfoParts.push(selectedSourceFilter === 'bookmarks' ? 'Bookmarks' : selectedSourceFilter === 'x' ? 'X bookmarks' : 'Pinterest');
   }
   if (selectedBoardFilter) {
     filterInfoParts.push(`Board: ${selectedBoardFilter}`);
@@ -1566,6 +1595,9 @@ async function performSearch(): Promise<void> {
               syncedAt: r.createdAt || Date.now(),
               source: 'pinterest' as const
             } as PinterestPin & { source: 'pinterest' })
+          : r.source === 'x' ? ({ xId: r.url, url: r.url, title: r.title, folder: 'X bookmarks',
+              author: r.folder || 'X', extendedContent: r.searchableText || '', contentType: 'x',
+              indexStatus: 'indexed', indexedAt: r.createdAt || Date.now(), imageUrl: r.imageUrl || undefined, source: 'x' } as XSearchItem)
           : ({
               id: undefined,
               url: r.url,
@@ -1596,16 +1628,16 @@ async function performSearch(): Promise<void> {
       const normalizedQuery = normalizeQuery(query);
       const terms = tokenizeQuery(normalizedQuery);
       const localHybrid = currentResults.map(r => {
-        const itemUrl = r.item.source === 'chrome' ? r.item.url : r.item.pinUrl;
+        const itemUrl = r.item.source !== 'pinterest' ? r.item.url : r.item.pinUrl;
         return {
         url: itemUrl,
         title: r.item.title,
-        folder: r.item.source === 'chrome' ? r.item.folder || null : r.item.boardName || null,
+        folder: r.item.source !== 'pinterest' ? r.item.folder || null : r.item.boardName || null,
         textScore: computeTextMatchScore(
           r.item.title,
-          r.item.source === 'chrome' ? r.item.folder : r.item.boardName,
+          r.item.source !== 'pinterest' ? r.item.folder : r.item.boardName,
           terms,
-          r.item.source === 'chrome' ? r.item.extendedContent || null : r.item.description || null,
+          r.item.source !== 'pinterest' ? r.item.extendedContent || null : r.item.description || null,
           itemUrl
         ),
         semanticScore: 0,
@@ -1616,8 +1648,8 @@ async function performSearch(): Promise<void> {
         createdAt: getItemTimestamp(r.item),
         searchableText: buildSearchableText([
           r.item.title,
-          r.item.source === 'chrome' ? r.item.folder || null : r.item.boardName || null,
-          r.item.source === 'chrome' ? r.item.extendedContent || null : r.item.description || null,
+          r.item.source !== 'pinterest' ? r.item.folder || null : r.item.boardName || null,
+          r.item.source !== 'pinterest' ? r.item.extendedContent || null : r.item.description || null,
           itemUrl,
           r.item.source === 'pinterest' ? 'pinterest' : 'bookmark'
         ])
@@ -2432,7 +2464,7 @@ function computeTextMatchScore(
 }
 
 function getItemTimestamp(item: SearchableItem): number | null {
-  if (item.source === 'chrome') {
+  if (item.source !== 'pinterest') {
     if (item.indexedAt) return item.indexedAt;
     return null;
   }
@@ -2447,6 +2479,8 @@ function applyFilters(results: HybridResult[], filters: SearchFilters): HybridRe
     filtered = filtered.filter(r => r.source === 'chrome');
   } else if (filters.source === 'pinterest') {
     filtered = filtered.filter(r => r.source === 'pinterest');
+  } else if (filters.source === 'x') {
+    filtered = filtered.filter(r => r.source === 'x');
   }
 
   if (filters.board) {
@@ -2505,13 +2539,12 @@ function updateFilterOptions(): void {
       }
     }
     const sorted = Array.from(boardNames).sort((a, b) => a.localeCompare(b));
-    const disabled = selectedSourceFilter === 'bookmarks' ? ' disabled' : '';
     boardFilter.innerHTML = ['<option value="">All boards</option>', ...sorted.map(name => {
       const selected = selectedBoardFilter && selectedBoardFilter === name ? ' selected' : '';
       return `<option value="${escapeHtml(name)}"${selected}>${escapeHtml(name)}</option>`;
     })].join('');
-    boardFilter.disabled = selectedSourceFilter === 'bookmarks';
-    if (disabled && selectedBoardFilter) {
+    boardFilter.disabled = selectedSourceFilter === 'bookmarks' || selectedSourceFilter === 'x';
+    if (boardFilter.disabled && selectedBoardFilter) {
       selectedBoardFilter = null;
     }
   }
@@ -2528,15 +2561,15 @@ function updateFilterOptions(): void {
       const selected = selectedFolderFilter && selectedFolderFilter === name ? ' selected' : '';
       return `<option value="${escapeHtml(name)}"${selected}>${escapeHtml(name)}</option>`;
     })].join('');
-    folderFilter.disabled = selectedSourceFilter === 'pinterest';
+    folderFilter.disabled = selectedSourceFilter === 'pinterest' || selectedSourceFilter === 'x';
     if (folderFilter.disabled && selectedFolderFilter) {
       selectedFolderFilter = null;
     }
   }
 
   if (filterBoardSection && filterFolderSection) {
-    filterBoardSection.style.display = selectedSourceFilter === 'bookmarks' ? 'none' : 'flex';
-    filterFolderSection.style.display = selectedSourceFilter === 'pinterest' ? 'none' : 'flex';
+    filterBoardSection.style.display = selectedSourceFilter === 'bookmarks' || selectedSourceFilter === 'x' ? 'none' : 'flex';
+    filterFolderSection.style.display = selectedSourceFilter === 'pinterest' || selectedSourceFilter === 'x' ? 'none' : 'flex';
   }
 
   renderFilterChips();
@@ -2549,7 +2582,7 @@ function renderFilterChips(): void {
 
   if (selectedSourceFilter !== 'all') {
     chips.push({
-      label: selectedSourceFilter === 'bookmarks' ? 'Bookmarks' : 'Pinterest',
+      label: selectedSourceFilter === 'bookmarks' ? 'Bookmarks' : selectedSourceFilter === 'x' ? 'X bookmarks' : 'Pinterest',
       key: 'source'
     });
   }
@@ -2612,8 +2645,78 @@ function applyFilterFromControls(): void {
     selectedTimeFilter = timeFilter.value as TimeFilter;
   }
 
+  if (selectedSourceFilter === 'x') {
+    selectedBoardFilter = null;
+    selectedFolderFilter = null;
+    currentFolder = null;
+  }
+
   updateFilterOptions();
 }
+
+// Browser-session X sync is managed by the background worker.
+let xUiBusy = false;
+let xLoadedCount = -1;
+let xLoadedSync: number | undefined;
+let xPaused = false;
+async function updateXUI() {
+  try {
+    const state = await chrome.runtime.sendMessage({ type: 'X_STATUS' });
+    if (!state?.success) return;
+    const status = document.getElementById('x-status')!;
+    xPaused = !!state.paused;
+    (document.getElementById('x-cloud-enabled') as HTMLInputElement).checked = !!state.cloudEnabled;
+    document.getElementById('x-cloud-status')!.textContent = !state.cloudEnabled ? 'Cloud sync is off' : state.cloud?.error ||
+      (state.cloud?.uploadedAt ? `Cloud uploaded · ${state.cloud.pending || 0} posts pending upload · ${state.cloud.progress ? `${state.cloud.progress.textMissing} text / ${state.cloud.progress.imageMissing} image embeddings pending` : 'text indexing queued; images use the separate worker'}` : 'Cloud upload queued');
+    status.textContent = state.error || (!state.connected ? 'Not connected' :
+      `${state.username ? `@${state.username}` : 'X'} · ${state.count} saved · ${state.paused ? 'Paused' : state.syncing ? 'Reading bookmarks…' : state.lastSyncAt ? `Last checked ${new Date(state.lastSyncAt).toLocaleTimeString()}` : 'Waiting to sync'}`);
+    status.className = `integration-status${state.error ? ' error' : ''}`;
+    document.getElementById('x-connect')!.textContent = state.connected ? 'Open X / reconnect' : 'Enable automatic sync';
+    document.getElementById('x-pause')!.textContent = state.paused ? 'Resume' : 'Pause';
+    for (const id of ['x-sync', 'x-pause', 'x-disconnect']) (document.getElementById(id) as HTMLButtonElement).hidden = !state.connected;
+    if (xLoadedCount !== state.count || xLoadedSync !== state.lastSyncAt) {
+      const first = xLoadedCount === -1;
+      xLoadedCount = state.count;
+      xLoadedSync = state.lastSyncAt;
+      if (!first) { await initializeSearch(); if (searchInput.value.trim()) await performSearch(); }
+    }
+  } catch { /* The extension may be reloaded while this panel is open. */ }
+}
+document.getElementById('x-settings-toggle')?.addEventListener('click', () => {
+  const settings = document.getElementById('x-settings')!;
+  const open = settings.style.display === 'none';
+  settings.style.display = open ? 'block' : 'none';
+  document.getElementById('x-settings-toggle')!.setAttribute('aria-expanded', String(open));
+});
+for (const [id, type] of [['x-connect', 'X_CONNECT'], ['x-sync', 'X_SYNC'], ['x-pause', 'X_PAUSE'], ['x-disconnect', 'X_DISCONNECT']]) {
+  document.getElementById(id)?.addEventListener('click', async () => {
+    if (xUiBusy) return;
+    xUiBusy = true;
+    const buttons = document.querySelectorAll<HTMLButtonElement>('#x-settings button');
+    buttons.forEach(button => { button.disabled = true; });
+    document.getElementById('x-status')!.textContent = type === 'X_CONNECT' ? 'Connecting to X…' : 'Updating…';
+    try {
+      const response = await chrome.runtime.sendMessage({ type, paused: !xPaused });
+      if (!response?.success) throw new Error(response?.error || 'X operation failed.');
+      await updateXUI();
+    } catch (error) {
+      document.getElementById('x-status')!.textContent = error instanceof Error ? error.message : 'X connection failed.';
+    } finally { xUiBusy = false; buttons.forEach(button => { button.disabled = false; }); }
+  });
+}
+void updateXUI();
+document.getElementById('x-cloud-enabled')?.addEventListener('change', async event => {
+  const input = event.target as HTMLInputElement;
+  input.disabled = true;
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'X_CLOUD_ENABLE', enabled: input.checked });
+    if (!result?.success) throw new Error(result?.error || 'Could not change cloud sync');
+    await updateXUI();
+  } catch (error) {
+    document.getElementById('x-cloud-status')!.textContent = error instanceof Error ? error.message : 'Cloud setup failed';
+  } finally { input.disabled = false; }
+});
+setInterval(() => { if (!xUiBusy) void updateXUI(); }, 10000);
 
 async function updatePinterestBoardsUI(): Promise<void> {
   try {

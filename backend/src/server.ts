@@ -13,6 +13,7 @@ import { generateEmbeddings } from './embeddings.js';
 import { startPinterestEmbeddingJob, getPinterestEmbeddingJob, pinterestEmbeddingCounts } from './pinterest-embeddings.js';
 import { scrapePageMetadata, buildEmbeddingText } from './scraper.js';
 import { getCache, setCache, invalidate } from './redis.js';
+import { browseXBookmarks, searchXBookmarks, startXEmbeddings, xEmbeddingState, xEmbeddingCounts } from './x-bookmarks.js';
 
 // Cache TTLs (seconds)
 const TTL = {
@@ -149,8 +150,12 @@ app.get('/browse', async (req, res) => {
     const board = req.query.board as string | undefined;
     const maxItems = Math.min(parseInt(req.query.limit as string) || 500, 1000);
 
+    if (source === 'x') {
+      res.setHeader('Cache-Control', 'no-store');
+      return res.json(await browseXBookmarks(maxItems));
+    }
     if (source !== 'chrome' && source !== 'pinterest') {
-      return res.status(400).json({ error: 'source must be chrome or pinterest' });
+      return res.status(400).json({ error: 'source must be chrome, pinterest or x' });
     }
 
     const folderOrBoard = (source === 'chrome' ? folder : board) ?? '';
@@ -192,6 +197,21 @@ app.post('/embed', async (req, res) => {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }
 });
+
+app.post('/run-x-embeddings', (req, res) => {
+  if (typeof req.body.supabase_url !== 'string' || req.body.supabase_url.replace(/\/$/, '') !== process.env.SUPABASE_URL?.replace(/\/$/, '')) {
+    return res.status(400).json({ error: 'X uploads and the embedding worker must use the same Supabase project.' });
+  }
+  const job = startXEmbeddings();
+  res.status(202).json({ accepted: true, job });
+});
+app.get('/x-embedding-status', async (_req, res) => {
+  try { res.json({ ...await xEmbeddingCounts(), job: xEmbeddingState }); }
+  catch (error) { res.status(500).json({ error: error instanceof Error ? error.message : 'X indexing status unavailable' }); }
+});
+// Missing vectors are durable work: restart/redeploy does not lose the queue.
+const xWorkerTimer = setInterval(() => { startXEmbeddings(); }, 60000);
+xWorkerTimer.unref();
 
 /**
  * POST /resync-board
@@ -415,11 +435,21 @@ app.get('/search', async (req, res) => {
     // folder/board belong in the key: the same query scoped to a different
     // collection is a different result set.
     const cacheKey = `search:${query.toLowerCase().trim()}:${source ?? 'all'}:${folder ?? ''}:${board ?? ''}:${limit}`;
-    const cached = await getCache<object>(cacheKey);
+    const includesX = source === 'x' || ((!source || source === 'all') && !folder && !board);
+    const cached = includesX ? null : await getCache<object>(cacheKey);
     if (cached) return res.json(cached);
 
-    const result = await searchSupabase(query, limit, source, folder, board);
-    await setCache(cacheKey, result, TTL.SEARCH);
+    const [existing, x] = await Promise.all([
+      source === 'x' ? Promise.resolve({ results: [], total: 0, hasMore: false }) : searchSupabase(query, limit, source, folder, board),
+      includesX ? searchXBookmarks(query, limit).catch(error => {
+        if (source === 'x') throw error;
+        console.warn('[X search] unavailable:', error instanceof Error ? error.message : 'request failed');
+        return { results: [], total: 0, hasMore: false };
+      }) : Promise.resolve({ results: [], total: 0, hasMore: false })
+    ]);
+    const results = [...existing.results, ...x.results].sort((a, b) => b.score - a.score).slice(0, limit);
+    const result = { results, total: existing.total + x.total, hasMore: existing.hasMore || existing.total + x.total > limit };
+    if (!includesX) await setCache(cacheKey, result, TTL.SEARCH);
     res.json(result);
   } catch (err) {
     console.error('Search error:', err);

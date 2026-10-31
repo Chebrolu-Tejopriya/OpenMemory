@@ -7,7 +7,7 @@ import { FluidNav } from "./FluidNav";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
-type BrowseTab = "bookmarks" | "pinterest";
+type BrowseTab = "bookmarks" | "pinterest" | "x";
 
 interface BrowseSectionProps {
   folders: string[];
@@ -30,7 +30,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
   const chipRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   useEffect(() => {
-    const raw = activeTab === "bookmarks" ? folders : boards;
+    const raw = activeTab === "x" ? ["X bookmarks"] : activeTab === "bookmarks" ? folders : boards;
     const sorted = raw.slice().sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
     setQuery("");
     if (sorted.length > 0) setSelectedItem(sorted[0]);
@@ -48,7 +48,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
     if (!item) return;
     setIsLoading(true);
     try {
-      const source = activeTab === "bookmarks" ? "chrome" : "pinterest";
+      const source = activeTab === "x" ? "x" : activeTab === "bookmarks" ? "chrome" : "pinterest";
       const paramKey = activeTab === "bookmarks" ? "folder" : "board";
       const res = await fetch(`${BACKEND_URL}/browse?source=${source}&${paramKey}=${encodeURIComponent(item)}`);
       if (!res.ok) throw new Error("Browse failed");
@@ -59,7 +59,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
           title: r.title,
           folder: r.folder || item,
           url: r.url,
-          source: r.source.includes("chrome") ? "chrome" : "pinterest",
+          source: r.source === "x" ? "x" : r.source.includes("chrome") ? "chrome" : "pinterest",
           imageUrl: r.imageUrl || undefined,
         }))
       );
@@ -88,7 +88,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
     const timer = setTimeout(async () => {
       try {
         const params = new URLSearchParams({ q: trimmed, limit: "100" });
-        params.set("source", activeTab === "bookmarks" ? "chrome_bookmarks" : "pinterest");
+        params.set("source", activeTab === "x" ? "x" : activeTab === "bookmarks" ? "chrome_bookmarks" : "pinterest");
         const res = await fetch(`${BACKEND_URL}/search?${params.toString()}`);
         if (!res.ok) throw new Error("Search failed");
         const data = await res.json();
@@ -98,7 +98,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
             title: r.title,
             folder: r.folder || "",
             url: r.url,
-            source: r.source.includes("chrome") ? "chrome" : "pinterest",
+            source: r.source === "x" ? "x" : r.source.includes("chrome") ? "chrome" : "pinterest",
             imageUrl: r.imageUrl || undefined,
           }))
         );
@@ -114,7 +114,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
   // A new query invalidates whichever result folder was drilled into
   useEffect(() => { setSearchFolder(""); }, [query, activeTab]);
 
-  const list = (activeTab === "bookmarks" ? folders : boards)
+  const list = (activeTab === "x" ? ["X bookmarks"] : activeTab === "bookmarks" ? folders : boards)
     .slice()
     .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 
@@ -161,6 +161,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
   const tabItems = [
     { key: "bookmarks", label: "Bookmarks", icon: <Bookmark className="w-3 h-3" /> },
     { key: "pinterest", label: "Pinterest", icon: <Pin className="w-3 h-3" /> },
+    { key: "x", label: "X", icon: <span aria-hidden="true" className="text-xs">𝕏</span> },
   ];
 
   const tabSwitch = (

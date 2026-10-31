@@ -61,6 +61,7 @@ A personal inspiration memory system — search your Chrome bookmarks and Pinter
 - Popover dock button for quick navigation between Notes and Links
 
 ### Chrome Extension
+- **X bookmarks beta** — browser-session import without an API key and automatic checks every 15 minutes while Chrome runs. Optional Supabase sync adds web-app search, collections and canvas support; text embeddings retry automatically and images use the separate worker. Cloud sync requires explicit opt-in because the current web app is shared. X prohibits non-API automation; this experimental connector can be restricted or break with page changes. See [X setup](docs/x-bookmarks.md).
 - Sync Chrome bookmarks and Pinterest pins to Supabase
 - **Real-time sync** — `onCreated`, `onRemoved`, `onChanged`, `onMoved` listeners handle all bookmark changes instantly
 - **Daily reconciliation** — once per day, compares Chrome URLs against Supabase and removes orphaned rows; **OM-saved links (`folder = OM`) are excluded** so webapp-saved links are never wiped

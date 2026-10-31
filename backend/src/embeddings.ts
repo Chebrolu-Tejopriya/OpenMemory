@@ -37,8 +37,18 @@ async function callEmbedServer(endpoint: string, text: string): Promise<number[]
 /**
  * Generate query embedding (uses query_embed for better retrieval)
  */
+const queryRequests = new Map<string, { at: number; promise: Promise<number[] | null> }>();
 export async function generateQueryEmbedding(query: string): Promise<number[] | null> {
-  return callEmbedServer('/embed/query', query);
+  const key = query.trim().toLowerCase();
+  const cached = queryRequests.get(key);
+  if (cached && Date.now() - cached.at < 15 * 60000) return cached.promise;
+  if (queryRequests.size >= 100) queryRequests.delete(queryRequests.keys().next().value!);
+  const promise = callEmbedServer('/embed/query', query).then(vector => {
+    if (!vector) queryRequests.delete(key);
+    return vector;
+  });
+  queryRequests.set(key, { at: Date.now(), promise });
+  return promise;
 }
 
 /**

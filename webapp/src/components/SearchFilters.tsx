@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Bookmark, Pin, LayoutGrid, ChevronDown } from "lucide-react";
 
-export type SourceFilter = "all" | "chrome" | "pinterest";
+export type SourceFilter = "all" | "chrome" | "pinterest" | "x";
 
 interface SearchFiltersProps {
   activeSource: SourceFilter;
@@ -203,8 +203,10 @@ export default function SearchFilters({
             </div>
           )}
         </div>
+      <button type="button" onClick={() => { onSourceChange("x"); setShowFolderDropdown(false); setShowBoardDropdown(false); }}
+        aria-pressed={activeSource === "x"}
+        className={`px-3 py-1.5 rounded-md text-xs font-medium ${activeSource === "x" ? "bg-white shadow-sm text-[#5b9888]" : "text-gray-500 hover:bg-white/50"}`}>X bookmarks</button>
       </div>
-
       {/* Result count */}
       {typeof resultCount === "number" && (
         <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-white/60 backdrop-blur-sm border border-white/40">
