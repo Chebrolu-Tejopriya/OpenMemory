@@ -1,4 +1,4 @@
-# Automatic X bookmarks: browser-session beta
+# Manual X bookmarks: browser-session beta
 
 No X developer account, OAuth client ID, paid API credits, or client secret is
 required. This connector reads your own rendered bookmarks page using your
@@ -15,9 +15,10 @@ API requests, post, like, or change bookmarks on X.
 5. Keep the tab open during the initial scan. Imported batches appear in the
    extension's X count and are keyword-searchable with Source → X bookmarks.
 
-Every 15 minutes while Chrome runs, the extension opens its own inactive X
+Only when you click **Sync X**, the extension opens its own inactive X
 bookmarks tab, verifies the signed-in handle, reads posts as it scrolls, and
-closes that tab after the scan completes. It only scrolls its managed scan tab.
+closes that tab after the scan completes. Browser startup and timers never start
+a scan. Pinterest imports are also manual; old automatic scan alarms are cleared. It only scrolls its managed scan tab.
 The initial foreground tab stays open so you can inspect it.
 On X's newer History page, the reader selects the Bookmarks tab and reads only
 its named timeline. It does not import the other History timelines. Video poster
@@ -26,13 +27,13 @@ images can be indexed as thumbnails; this does not analyze full video content.
 ## Controls and limits
 
 - **Sync X** starts or restarts the reader immediately from saved progress; only one managed scan runs at a time.
-- **Pause** invalidates the active reader and stops scheduled scans. **Resume**
-  schedules another scan. The compact card shows only Sync X and Pause/Resume.
+- **Stop** invalidates the active reader and saves progress. Click **Sync X**
+  to continue. The compact card shows only Sync X and Stop.
 - Changing the signed-in X handle pauses syncing before accepting that account's
   data. Switch back, or disconnect before connecting a different account.
 - Each batch is saved immediately and deduplicated by post ID. The reader saves
   its document, scroll position and last visible post. A scan chunk runs for at
-  most 10 minutes, then continues automatically after 30 seconds in the same tab.
+  most 10 minutes, then stops until you click **Sync X** again.
   Pausing or closing that tab retains the last post as a replay anchor; a reopened
   page scrolls through saved posts until it reaches that anchor. This uses the
   rendered page rather than a private API cursor. Replaying a large library can
@@ -66,8 +67,8 @@ private posts until account-isolated sign-in is implemented.
    and Supabase key. It prefers `SUPABASE_SERVICE_ROLE_KEY`, with the existing
    `SUPABASE_ANON_KEY` supported for the explicitly shared beta. Never put the
    service-role key in the extension.
-5. Enable **Sync to shared web app (public)** in the X
-   settings. Existing local X posts are backfilled automatically. Upload failures
+5. Existing shared-cloud opt-in is preserved; the compact card no longer has
+   a cloud checkbox. For opted-in installations, local X posts are backfilled. Upload failures
    remain pending and retry every minute while Chrome runs and X sync is enabled.
 6. X appears as a source in web-app search, collections and the canvas. The canvas
    loads X only when its tab is selected.
@@ -85,7 +86,7 @@ it running for automatic image indexing. Free Render runs only the text model;
 the image model is not loaded there. Missing or failed images remain NULL for
 retry, and no placeholder vectors are generated.
 
-Pause stops future X uploads and scans. Disconnect removes local X posts and stops
+Stop pauses the active X scan and future X uploads until the next manual sync. Disconnect removes local X posts and stops
 future cloud sync, but does not delete already uploaded posts from Supabase.
 
 X explicitly prohibits non-API website automation and warns that it may result in

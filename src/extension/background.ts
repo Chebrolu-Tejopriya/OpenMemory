@@ -4,7 +4,7 @@
  */
 
 import { db, IndexedBookmark, IndexingQueueItem } from './db';
-import { attachXReader, connectX, disconnectX, handleXBrowserBatch, pauseX, scheduleXSync, syncX, xStatus, xTabClosed, X_SYNC_ALARM } from './x-sync';
+import { attachXReader, connectX, disconnectX, handleXBrowserBatch, pauseX, resetXScanOnStartup, scheduleXSync, syncX, xStatus, xTabClosed, X_SYNC_ALARM } from './x-sync';
 import { flushXCloud, scheduleXCloudSync, setXCloudEnabled, X_CLOUD_ALARM } from './x-cloud';
 import { PINTEREST_IMPORT_LIMIT } from './pinterest-import-policy';
 import { requestPinterestEmbeddingJob, pinterestEmbeddingStatus } from './embedding-jobs';
@@ -46,7 +46,6 @@ const ALARM_PERIOD_MINUTES = 2; // Check more frequently
 
 // Pinterest sync constants
 const PINTEREST_ALARM = 'pinterestSync';
-const PINTEREST_SYNC_HOURS = 1;
 const BATCH_DELAY_MS = 1200; // 50 pins/min = 1.2s delay
 
 // Supabase auto-sync constants
@@ -85,6 +84,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   console.log('[OpenMemory] Extension installed/updated:', details.reason);
   await initializeDatabase();
   await initializePinterestIntegration();
+  await resetXScanOnStartup();
   setupAlarms();
 
   // Auto-sync to Supabase after initialization if configured
@@ -96,6 +96,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 chrome.runtime.onStartup.addListener(async () => {
   console.log('[OpenMemory] Browser started');
   await initializePinterestIntegration();
+  await resetXScanOnStartup();
   setupAlarms();
 
   // Auto-sync to Supabase on startup if configured
@@ -172,11 +173,15 @@ async function reconcileDeletedBookmarks() {
   }
 }
 
+// Clear legacy browser-opening alarms on every service-worker load as well.
+void chrome.alarms.clear(PINTEREST_ALARM);
+void scheduleXSync();
+
 function setupAlarms() {
   void scheduleXSync().catch(() => console.warn('[X] Could not schedule sync'));
   void scheduleXCloudSync().catch(() => console.warn('[X] Could not schedule cloud sync'));
   chrome.alarms.create(ALARM_NAME, { periodInMinutes: ALARM_PERIOD_MINUTES });
-  chrome.alarms.create(PINTEREST_ALARM, { periodInMinutes: PINTEREST_SYNC_HOURS * 60 });
+  void chrome.alarms.clear(PINTEREST_ALARM);
   chrome.alarms.create(SUPABASE_SYNC_ALARM, { periodInMinutes: SUPABASE_SYNC_MINUTES });
 }
 
@@ -189,7 +194,7 @@ chrome.idle.onStateChanged.addListener((state) => {
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === X_SYNC_ALARM) void syncX().catch(() => console.warn('[X] Sync interrupted'));
+  if (alarm.name === X_SYNC_ALARM) void scheduleXSync();
   if (alarm.name === X_CLOUD_ALARM) void flushXCloud().catch(() => console.warn('[X] Cloud sync interrupted'));
   if (alarm.name === ALARM_NAME) {
     chrome.idle.queryState(IDLE_THRESHOLD, (state) => {
@@ -200,8 +205,8 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 
   if (alarm.name === PINTEREST_ALARM) {
-    // Auto Pinterest sync if username is saved
-    autoPinterestSync();
+    // Ignore a legacy alarm already queued before it was cleared.
+    void chrome.alarms.clear(PINTEREST_ALARM);
   }
 
   if (alarm.name === SUPABASE_SYNC_ALARM) {
@@ -1066,40 +1071,6 @@ async function autoSyncToSupabase(): Promise<void> {
     updateSyncStatus({ syncInProgress: false });
   } finally {
     supabaseSyncInProgress = false;
-  }
-}
-
-// ============== AUTO PINTEREST SYNC ==============
-async function autoPinterestSync(): Promise<void> {
-  // Check if user has connected Pinterest before
-  const stored = await chrome.storage.local.get('pinterestUsername');
-  const username = stored?.pinterestUsername;
-
-  if (!username) {
-    console.log('[Pinterest] No username saved, skipping auto-sync');
-    return;
-  }
-
-  // Check if logged in
-  const { loggedIn } = await checkPinterestLogin();
-  if (!loggedIn) {
-    console.log('[Pinterest] Not logged in, skipping auto-sync');
-    return;
-  }
-
-  // Check if already syncing
-  if (pinterestSyncInProgress) {
-    console.log('[Pinterest] Sync already in progress, skipping');
-    return;
-  }
-
-  console.log('[Pinterest] Starting auto-sync for:', username);
-  pinterestSyncInProgress = true;
-
-  try {
-    await fastPinterestSync(username);
-  } finally {
-    pinterestSyncInProgress = false;
   }
 }
 

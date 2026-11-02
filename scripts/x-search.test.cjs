@@ -17,11 +17,13 @@ const { JSDOM } = require('jsdom');
       pins: { toArray: async () => [] }, queue: { count: async () => 0 }, xBookmarks: { toArray: async () => [{ id: '99', title: 'Design systems on X',
         url: 'https://x.com/i/status/99', folder: 'X bookmarks', extendedContent: '@designer Component libraries', author: '@designer', indexedAt: Date.now(), indexStatus: 'indexed' }] } };
     let paused = false;
+    let syncing = false;
     w.chrome = { storage: { local: { get: (_keys, callback) => callback ? callback({}) : Promise.resolve({}) } }, runtime: {
       getURL: file => `http://localhost/${file}`, onMessage: { addListener() {} }, sendMessage: async msg => {
-        if (msg.type === 'X_PAUSE') paused = msg.paused;
+        if (msg.type === 'X_SYNC') syncing = true;
+        if (msg.type === 'X_PAUSE') { paused = msg.paused; syncing = false; }
         if (msg.type.startsWith('X_')) return { success: true, connected: true, count: 1, username: 'designer', clientId: 'test',
-          redirectUri: 'https://extension.chromiumapp.org/x', paused };
+          redirectUri: 'https://extension.chromiumapp.org/x', paused, syncing };
         return { success: true, pins: [], boards: [], count: 0 };
       } } };
     w.fetch = async () => { throw new Error('X-only search must not request a remote backend'); };
@@ -35,6 +37,11 @@ const { JSDOM } = require('jsdom');
     assert.equal(doc.getElementById('x-sync').textContent, 'Sync X');
     assert.equal(doc.getElementById('x-settings'), null);
     assert.equal(doc.getElementById('x-client-id'), null);
+    assert.match(doc.getElementById('x-status').textContent, /Manual sync/);
+    assert.equal(doc.getElementById('x-pause').disabled, true);
+    doc.getElementById('x-sync').click(); await pause(100);
+    assert.equal(syncing, true);
+    assert.equal(doc.getElementById('x-pause').disabled, false);
     const source = doc.getElementById('filter-source'); source.value = 'x';
     source.dispatchEvent(new w.Event('change', { bubbles: true }));
     const input = doc.getElementById('search-input'); input.value = 'design systems';
@@ -47,7 +54,8 @@ const { JSDOM } = require('jsdom');
     assert.equal(doc.getElementById('filter-folder-section').style.display, 'none');
     doc.getElementById('x-pause').click(); await pause(100);
     assert.equal(paused, true);
-    assert.equal(doc.getElementById('x-pause').textContent, 'Resume');
-    console.log('Passed X UI: browser setup, keyword search, source filter, private result link and pause/resume state.');
+    assert.equal(doc.getElementById('x-pause').textContent, 'Stop');
+    assert.equal(doc.getElementById('x-pause').disabled, true);
+    console.log('Passed X UI: browser setup, keyword search, source filter, private result link and manual sync/stop state.');
   } finally { w.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

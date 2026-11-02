@@ -2658,7 +2658,7 @@ function applyFilterFromControls(): void {
 let xUiBusy = false;
 let xLoadedCount = -1;
 let xLoadedSync: number | undefined;
-let xPaused = false;
+let xSyncing = false;
 let xConnected = false;
 let xNeedsAttention = false;
 async function updateXUI() {
@@ -2666,16 +2666,16 @@ async function updateXUI() {
     const state = await chrome.runtime.sendMessage({ type: 'X_STATUS' });
     if (!state?.success) return;
     const status = document.getElementById('x-status')!;
-    xPaused = !!state.paused;
+    xSyncing = !!state.syncing;
     xConnected = !!state.connected;
     xNeedsAttention = !!state.error;
-    const activity = state.paused ? 'Paused' : state.syncing ? 'Syncing…' : state.continuing ? 'Continuing…' : 'Auto-sync on';
+    const activity = state.syncing ? 'Syncing…' : state.continuing ? 'Ready to continue' : 'Manual sync';
     status.textContent = state.error || state.cloud?.error || (!state.connected ? 'Not connected' : `${activity} · ${state.count} saved`);
     status.title = state.error || state.cloud?.error || `${state.username ? `@${state.username} · ` : ''}${state.count} saved${state.lastSyncAt ? ` · Last synced ${new Date(state.lastSyncAt).toLocaleTimeString()}` : ''}`;
     status.className = `integration-status${state.error || state.cloud?.error ? ' error' : ''}`;
     document.getElementById('x-sync')!.textContent = state.error ? 'Reconnect' : state.connected ? 'Sync X' : 'Connect X';
-    document.getElementById('x-pause')!.textContent = state.paused ? 'Resume' : 'Pause';
-    (document.getElementById('x-pause') as HTMLButtonElement).disabled = !state.connected || xUiBusy;
+    document.getElementById('x-pause')!.textContent = 'Stop';
+    (document.getElementById('x-pause') as HTMLButtonElement).disabled = !xSyncing || xUiBusy;
     if (xLoadedCount !== state.count || xLoadedSync !== state.lastSyncAt) {
       const first = xLoadedCount === -1;
       xLoadedCount = state.count;
@@ -2691,9 +2691,9 @@ for (const id of ['x-sync', 'x-pause']) {
     const type = id === 'x-pause' ? 'X_PAUSE' : xConnected && !xNeedsAttention ? 'X_SYNC' : 'X_CONNECT';
     const buttons = document.querySelectorAll<HTMLButtonElement>('#x-card button');
     buttons.forEach(button => { button.disabled = true; });
-    document.getElementById('x-status')!.textContent = type === 'X_CONNECT' ? 'Connecting…' : type === 'X_SYNC' ? 'Starting sync…' : xPaused ? 'Resuming…' : 'Pausing…';
+    document.getElementById('x-status')!.textContent = type === 'X_CONNECT' ? 'Connecting…' : type === 'X_SYNC' ? 'Starting sync…' : 'Stopping…';
     try {
-      const response = await chrome.runtime.sendMessage({ type, paused: !xPaused });
+      const response = await chrome.runtime.sendMessage({ type, paused: true });
       if (!response?.success) throw new Error(response?.error || 'X operation failed.');
       await updateXUI();
     } catch (error) {
@@ -2702,7 +2702,7 @@ for (const id of ['x-sync', 'x-pause']) {
       status.className = 'integration-status error';
     } finally {
       xUiBusy = false;
-      buttons.forEach(button => { button.disabled = button.id === 'x-pause' && !xConnected; });
+      buttons.forEach(button => { button.disabled = button.id === 'x-pause' && !xSyncing; });
     }
   });
 }

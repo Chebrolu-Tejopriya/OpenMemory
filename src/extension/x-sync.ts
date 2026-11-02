@@ -3,8 +3,6 @@ import { readXBookmarksPage, validBookmarkPage, validateBrowserPosts } from './x
 
 export const X_SYNC_ALARM = 'xBookmarkSync';
 const KEY = 'xBrowserConnection';
-const INTERVAL = 15 * 60000;
-const CONTINUE_DELAY = 30000;
 interface ScanCheckpoint {
   tabId?: number; owned: boolean; pageId?: string; afterPostId?: string; scrollY?: number; replaying?: boolean;
 }
@@ -41,9 +39,19 @@ async function closeRun(state: Connection, preserveCheckpoint = false) {
   }
 }
 export async function scheduleXSync() {
-  const state = await read();
-  if (!state?.enabled || state.paused) { await chrome.alarms.clear(X_SYNC_ALARM); return; }
-  await chrome.alarms.create(X_SYNC_ALARM, { when: Math.max(Date.now() + 1000, state.nextSyncAt || 0), periodInMinutes: 15 });
+  // Remove alarms left behind by versions with automatic browser scanning.
+  await chrome.alarms.clear(X_SYNC_ALARM);
+}
+export function resetXScanOnStartup() {
+  return exclusive(async () => {
+    const state = await read();
+    if (state) {
+      state.nextSyncAt = undefined;
+      state.note = undefined;
+      await closeRun(state, true);
+    }
+    await scheduleXSync();
+  });
 }
 export function connectX(): Promise<void> {
   return exclusive(async () => {
@@ -70,7 +78,7 @@ async function startRun(state: Connection, interactive: boolean) {
   tab ||= await chrome.tabs.create({ url: 'https://x.com/i/bookmarks', active: interactive });
   if (tab.id === undefined) throw new Error('Could not open X bookmarks.');
   state.run = { id: crypto.randomUUID(), tabId: tab.id, startedAt: Date.now(), owned: reused ? !!state.continuation?.owned : !interactive };
-  state.nextSyncAt = Date.now() + INTERVAL;
+  state.nextSyncAt = undefined;
   state.error = undefined;
   state.note = state.continuation ? 'Continuing older bookmarks…' : undefined;
   await save(state);
@@ -79,6 +87,7 @@ async function startRun(state: Connection, interactive: boolean) {
 }
 export function syncX(manual = false): Promise<void> {
   return exclusive(async () => {
+    if (!manual) { await scheduleXSync(); return; }
     const state = await read();
     if (!state?.enabled || (state.paused && !manual)) return;
     if (manual) state.paused = false;
@@ -160,8 +169,9 @@ export async function handleXBrowserBatch(message: any, sender: chrome.runtime.M
         sender.tab?.id !== state.run?.tabId || message.runId !== state.run?.id || !validBookmarkPage(sender.url)) return;
     if (Date.now() - state.run!.startedAt > 12 * 60000) {
       state.continuation = { ...state.continuation, tabId: state.run.tabId, owned: state.run.owned };
-      state.run = undefined; state.nextSyncAt = Date.now() + CONTINUE_DELAY;
-      state.note = 'Continuing older bookmarks…'; await save(state); await scheduleXSync(); return;
+      state.nextSyncAt = undefined;
+      state.note = 'Progress saved. Click Sync X to continue.';
+      await closeRun(state, true); await scheduleXSync(); return;
     }
     const username = typeof message.username === 'string' && /^[a-zA-Z0-9_]{1,15}$/.test(message.username) ? message.username.toLowerCase() : '';
     if (!username) {
@@ -197,10 +207,9 @@ export async function handleXBrowserBatch(message: any, sender: chrome.runtime.M
     if (message.done) {
       if (message.reason === 'limit') {
         state.continuation = { ...state.continuation, tabId: state.run.tabId, owned: state.run.owned };
-        state.run = undefined;
-        state.note = 'Continuing older bookmarks…';
-        state.nextSyncAt = Date.now() + CONTINUE_DELAY;
-        await save(state); await scheduleXSync();
+        state.note = 'Progress saved. Click Sync X to continue.';
+        state.nextSyncAt = undefined;
+        await closeRun(state, true); await scheduleXSync();
         response.stop = true;
         return;
       }
