@@ -78,6 +78,9 @@ const load = code => { const mod = { exports: {} }; new Function('module', 'expo
   }
 
   const store = {}, rows = new Map(), alarms = new Map(), tabs = new Map();
+  const week = 7 * 24 * 60 * 60 * 1000;
+  let now = Date.now();
+  Date.now = () => now;
   let tabId = 0, injected = 0, injection;
   global.__xDb = { xBookmarks: { clear: async () => rows.clear(), get: async id => rows.get(id), put: async item => rows.set(item.id, item), count: async () => rows.size, toArray: async () => [...rows.values()] },
     transaction: async (...args) => args.at(-1)() };
@@ -93,12 +96,17 @@ const load = code => { const mod = { exports: {} }; new Function('module', 'expo
     plugins: [{ name: 'test-db', setup(b) { b.onResolve({ filter: /^\.\/db$/ }, () => ({ path: 'db', namespace: 'test' }));
       b.onLoad({ filter: /.*/, namespace: 'test' }, () => ({ contents: 'export const db = globalThis.__xDb;' })); } }] });
   const sync = load(build.outputFiles[0].text);
-  store.xBrowserConnection = { enabled: true, paused: false, nextSyncAt: 0 };
+  store.xBrowserConnection = { enabled: true, paused: true, nextSyncAt: 0 };
   alarms.set('xBookmarkSync', { periodInMinutes: 15 });
   await sync.scheduleXSync();
   await sync.syncX();
-  assert.equal(alarms.size, 0, 'Legacy automatic sync alarms are cleared');
+  assert.equal(alarms.get('xBookmarkSync').when, now + week, 'Legacy frequent alarms migrate to a week from now');
+  assert.equal(alarms.get('xBookmarkSync').periodInMinutes, undefined, 'Weekly scans use one durable due date');
+  assert.equal(store.xBrowserConnection.paused, false, 'The weekly upgrade enables scheduling after an old manual stop');
   assert.equal(tabId, 0, 'An overdue legacy schedule cannot open an X tab');
+  now += 60000;
+  await sync.scheduleXSync();
+  assert.equal(alarms.get('xBookmarkSync').when, now - 60000 + week, 'Worker wakes preserve the scheduled date');
   await sync.connectX();
   assert.equal(tabs.get(1).active, true);
   await sync.attachXReader(1); assert.equal(injected, 1);
@@ -149,7 +157,7 @@ const load = code => { const mod = { exports: {} }; new Function('module', 'expo
   assert.ok(tabs.has(resumeTab), 'Keep the live timeline for continuation');
   assert.equal(store.xBrowserConnection.error, undefined);
   assert.equal(store.xBrowserConnection.lastSyncAt, undefined, 'A timed scan is not a completed sync');
-  assert.equal(alarms.size, 0, 'A timed scan must wait for manual continuation');
+  assert.equal(alarms.get('xBookmarkSync').when, now + week, 'A timed scan waits until next week or a manual sync');
   const resumed = load(build.outputFiles[0].text);
   await resumed.syncX(true);
   assert.equal(tabId, resumeTab, 'Continuation must reuse the existing page');
@@ -182,6 +190,25 @@ const load = code => { const mod = { exports: {} }; new Function('module', 'expo
   assert.equal(tabId, startupTab, 'Startup never creates a tab');
   assert.equal((await resumed.handleXBrowserBatch(startupMessage, sender(startupTab))).success, false);
   assert.equal(rows.size > 0, true, 'Disabling automatic scans preserves imported bookmarks');
+  const due = store.xBrowserConnection.nextSyncAt;
+  now = due - 1;
+  await resumed.syncX();
+  assert.equal(tabId, startupTab, 'Automatic sync does not run before its weekly due date');
+  now = due + 60000;
+  await resumed.resetXScanOnStartup();
+  assert.equal(store.xBrowserConnection.nextSyncAt, due, 'An overdue date survives browser startup');
+  await resumed.syncX();
+  const weeklyTab = tabId;
+  assert.equal(weeklyTab, startupTab + 1, 'One weekly alarm starts one background scan');
+  assert.equal(tabs.get(weeklyTab).active, false);
+  assert.equal(store.xBrowserConnection.nextSyncAt, now + week);
+  await resumed.syncX();
+  assert.equal(tabId, weeklyTab, 'Duplicate alarm delivery does not create another scan');
+  await resumed.handleXBrowserBatch({ ...message(), done: true, reason: 'settled' }, sender(weeklyTab));
+  assert.equal(tabs.has(weeklyTab), false);
+  now += 2 * 24 * 60 * 60 * 1000;
+  await resumed.syncX(true);
+  assert.equal(store.xBrowserConnection.nextSyncAt, now + week, 'Manual sync postpones the next automatic scan by a week');
   await resumed.disconnectX();
   console.log('Passed X browser sync: DOM extraction, no API calls, sender/run checks, durable batches, deduplication, restart, account changes, pause and tab cleanup.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

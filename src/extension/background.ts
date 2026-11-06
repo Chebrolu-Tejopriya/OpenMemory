@@ -194,7 +194,7 @@ chrome.idle.onStateChanged.addListener((state) => {
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === X_SYNC_ALARM) void scheduleXSync();
+  if (alarm.name === X_SYNC_ALARM) void syncX().catch(() => console.warn('[X] Weekly sync interrupted'));
   if (alarm.name === X_CLOUD_ALARM) void flushXCloud().catch(() => console.warn('[X] Cloud sync interrupted'));
   if (alarm.name === ALARM_NAME) {
     chrome.idle.queryState(IDLE_THRESHOLD, (state) => {

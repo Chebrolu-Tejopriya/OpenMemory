@@ -37,7 +37,7 @@ const { JSDOM } = require('jsdom');
     assert.equal(doc.getElementById('x-sync').textContent, 'Sync X');
     assert.equal(doc.getElementById('x-settings'), null);
     assert.equal(doc.getElementById('x-client-id'), null);
-    assert.match(doc.getElementById('x-status').textContent, /Manual sync/);
+    assert.match(doc.getElementById('x-status').textContent, /Weekly sync/);
     assert.equal(doc.getElementById('x-pause').disabled, true);
     doc.getElementById('x-sync').click(); await pause(100);
     assert.equal(syncing, true);

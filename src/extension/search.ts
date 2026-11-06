@@ -2669,9 +2669,9 @@ async function updateXUI() {
     xSyncing = !!state.syncing;
     xConnected = !!state.connected;
     xNeedsAttention = !!state.error;
-    const activity = state.syncing ? 'Syncing…' : state.continuing ? 'Ready to continue' : 'Manual sync';
+    const activity = state.syncing ? 'Syncing…' : state.paused ? 'Paused' : 'Weekly sync';
     status.textContent = state.error || state.cloud?.error || (!state.connected ? 'Not connected' : `${activity} · ${state.count} saved`);
-    status.title = state.error || state.cloud?.error || `${state.username ? `@${state.username} · ` : ''}${state.count} saved${state.lastSyncAt ? ` · Last synced ${new Date(state.lastSyncAt).toLocaleTimeString()}` : ''}`;
+    status.title = state.error || state.cloud?.error || `${state.username ? `@${state.username} · ` : ''}${state.count} saved${state.lastSyncAt ? ` · Last synced ${new Date(state.lastSyncAt).toLocaleTimeString()}` : ''}${!state.paused && state.nextSyncAt ? ` · Next sync ${new Date(state.nextSyncAt).toLocaleString()}` : ''}`;
     status.className = `integration-status${state.error || state.cloud?.error ? ' error' : ''}`;
     document.getElementById('x-sync')!.textContent = state.error ? 'Reconnect' : state.connected ? 'Sync X' : 'Connect X';
     document.getElementById('x-pause')!.textContent = 'Stop';

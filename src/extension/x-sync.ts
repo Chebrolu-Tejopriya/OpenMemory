@@ -3,11 +3,13 @@ import { readXBookmarksPage, validBookmarkPage, validateBrowserPosts } from './x
 
 export const X_SYNC_ALARM = 'xBookmarkSync';
 const KEY = 'xBrowserConnection';
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 interface ScanCheckpoint {
   tabId?: number; owned: boolean; pageId?: string; afterPostId?: string; scrollY?: number; replaying?: boolean;
 }
 interface Connection {
   enabled: boolean; paused: boolean; username?: string;
+  schedule?: 'weekly';
   lastSyncAt?: number; nextSyncAt?: number; error?: string;
   note?: string;
   continuation?: ScanCheckpoint;
@@ -38,19 +40,39 @@ async function closeRun(state: Connection, preserveCheckpoint = false) {
     } catch { /* Already closed. */ }
   }
 }
-export async function scheduleXSync() {
-  // Remove alarms left behind by versions with automatic browser scanning.
-  await chrome.alarms.clear(X_SYNC_ALARM);
+async function scheduleConnection(state: Connection | undefined) {
+  if (!state?.enabled) {
+    await chrome.alarms.clear(X_SYNC_ALARM);
+    return;
+  }
+  if (state.schedule !== 'weekly') {
+    state.schedule = 'weekly';
+    state.paused = !!state.error;
+    state.nextSyncAt = Date.now() + WEEK_MS;
+    await save(state);
+  }
+  if (state.paused) {
+    await chrome.alarms.clear(X_SYNC_ALARM);
+    return;
+  }
+  if (!state.nextSyncAt) {
+    state.nextSyncAt = Date.now() + WEEK_MS;
+    await save(state);
+  }
+  // Recreate a single alarm from the durable due date when Chrome restarts.
+  await chrome.alarms.create(X_SYNC_ALARM, { when: Math.max(Date.now() + 1000, state.nextSyncAt) });
+}
+export function scheduleXSync() {
+  return exclusive(async () => scheduleConnection(await read()));
 }
 export function resetXScanOnStartup() {
   return exclusive(async () => {
     const state = await read();
     if (state) {
-      state.nextSyncAt = undefined;
       state.note = undefined;
       await closeRun(state, true);
     }
-    await scheduleXSync();
+    await scheduleConnection(state);
   });
 }
 export function connectX(): Promise<void> {
@@ -78,18 +100,22 @@ async function startRun(state: Connection, interactive: boolean) {
   tab ||= await chrome.tabs.create({ url: 'https://x.com/i/bookmarks', active: interactive });
   if (tab.id === undefined) throw new Error('Could not open X bookmarks.');
   state.run = { id: crypto.randomUUID(), tabId: tab.id, startedAt: Date.now(), owned: reused ? !!state.continuation?.owned : !interactive };
-  state.nextSyncAt = undefined;
+  state.schedule = 'weekly';
+  state.nextSyncAt = Date.now() + WEEK_MS;
   state.error = undefined;
   state.note = state.continuation ? 'Continuing older bookmarks…' : undefined;
   await save(state);
-  await scheduleXSync();
+  await scheduleConnection(state);
   if ((await chrome.tabs.get(tab.id)).status === 'complete') void attachXReader(tab.id);
 }
 export function syncX(manual = false): Promise<void> {
   return exclusive(async () => {
-    if (!manual) { await scheduleXSync(); return; }
     const state = await read();
     if (!state?.enabled || (state.paused && !manual)) return;
+    if (!manual && (state.schedule !== 'weekly' || !state.nextSyncAt)) {
+      await scheduleConnection(state);
+      return;
+    }
     if (manual) state.paused = false;
     if (state.run) {
       if (!manual && Date.now() - state.run.startedAt < 12 * 60000) return;
@@ -120,10 +146,10 @@ export function pauseX(paused: boolean) {
     if (state) {
       state.paused = paused;
       await closeRun(state, true);
-      if (!paused) state.nextSyncAt = 0;
+      if (!paused) state.nextSyncAt = Date.now() + WEEK_MS;
       await save(state);
     }
-    await scheduleXSync();
+    await scheduleConnection(state);
   });
 }
 export function disconnectX() {
@@ -147,7 +173,7 @@ export async function attachXReader(tabId: number) {
         current.paused = true;
         current.error = 'X needs attention. Sign in and open bookmarks, then reconnect to resume.';
         await closeRun(current, true);
-        await scheduleXSync();
+        await scheduleConnection(current);
       });
       return;
     }
@@ -169,20 +195,19 @@ export async function handleXBrowserBatch(message: any, sender: chrome.runtime.M
         sender.tab?.id !== state.run?.tabId || message.runId !== state.run?.id || !validBookmarkPage(sender.url)) return;
     if (Date.now() - state.run!.startedAt > 12 * 60000) {
       state.continuation = { ...state.continuation, tabId: state.run.tabId, owned: state.run.owned };
-      state.nextSyncAt = undefined;
       state.note = 'Progress saved. Click Sync X to continue.';
-      await closeRun(state, true); await scheduleXSync(); return;
+      await closeRun(state, true); await scheduleConnection(state); return;
     }
     const username = typeof message.username === 'string' && /^[a-zA-Z0-9_]{1,15}$/.test(message.username) ? message.username.toLowerCase() : '';
     if (!username) {
       state.paused = true;
       state.error = 'Sign in to X in the opened tab, then reconnect. Your account could not be verified.';
-      await closeRun(state, true); await scheduleXSync(); return;
+      await closeRun(state, true); await scheduleConnection(state); return;
     }
     if (state.username && state.username !== username) {
       state.paused = true;
       state.error = `X account changed. Switch back to @${state.username}, or disconnect before connecting a different account.`;
-      await closeRun(state, true); await scheduleXSync(); return;
+      await closeRun(state, true); await scheduleConnection(state); return;
     }
     const posts = validateBrowserPosts(message.posts);
     state.username = username;
@@ -208,8 +233,7 @@ export async function handleXBrowserBatch(message: any, sender: chrome.runtime.M
       if (message.reason === 'limit') {
         state.continuation = { ...state.continuation, tabId: state.run.tabId, owned: state.run.owned };
         state.note = 'Progress saved. Click Sync X to continue.';
-        state.nextSyncAt = undefined;
-        await closeRun(state, true); await scheduleXSync();
+        await closeRun(state, true); await scheduleConnection(state);
         response.stop = true;
         return;
       }
