@@ -181,14 +181,16 @@ export default function BrowseSection({ folders, boards, loading = false, constr
   const tabSwitch = <CollectionSourceSelect value={activeTab} onChange={changeSource} />;
 
   const layoutSwitch = activeTab === "x" && (
-    <div className="mb-3 flex justify-end gap-1" role="group" aria-label="X layout">
-      {(["feed", "grid"] as const).map(layout => (
-        <button key={layout} onClick={() => setXLayout(layout)} aria-pressed={xLayout === layout}
-          className={`flex min-h-11 items-center gap-1.5 rounded-lg px-3 py-2 text-xs transition-colors ${xLayout === layout ? "bg-white text-[#303c37] shadow-sm" : "text-[#65746d] hover:bg-white/60"}`}>
-          {layout === "feed" ? <List className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
-          {layout === "feed" ? "Feed" : "Grid"}
-        </button>
-      ))}
+    <div className="mb-3 flex justify-end">
+      <div className="flex items-center gap-1 sm:gap-1.5 p-0.5 sm:p-1 rounded-lg bg-white/60 backdrop-blur-sm border border-white/40 shadow-sm" role="group" aria-label="X layout">
+        {(["feed", "grid"] as const).map(layout => (
+          <button key={layout} onClick={() => setXLayout(layout)} aria-pressed={xLayout === layout}
+            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-md text-[10px] sm:text-xs font-medium transition-all duration-200 [@media(pointer:coarse)]:min-h-11 ${xLayout === layout ? "bg-white shadow-sm border border-gray-100 text-[#5b9888]" : "text-gray-500 hover:text-gray-700 hover:bg-white/50"}`}>
+            {layout === "feed" ? <List className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> : <LayoutGrid className="w-3 h-3 sm:w-3.5 sm:h-3.5" />}
+            {layout === "feed" ? "Feed" : "Grid"}
+          </button>
+        ))}
+      </div>
     </div>
   );
   function renderCards(results: SearchResult[], mobile = false) {
