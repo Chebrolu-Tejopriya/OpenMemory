@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { ArrowUpRight } from "lucide-react";
 import type { SearchResult } from "./SearchResultCard";
 
@@ -22,7 +22,29 @@ export default function XPostFeed({ result }: { result: SearchResult }) {
           <ArrowUpRight className="h-4 w-4" />
         </a>
       </div>
-      <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-[15px] leading-7 text-[#303c37]">{text}</p>
+      <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-[15px] leading-7 text-[#303c37]">
+        {text.split(/(https?:\/\/[^\s<>"]+)/gi).map((part, index) => {
+          if (index % 2 === 0) return part;
+
+          let href = part.replace(/[.,!?;:]+$/, "");
+          // Keep balanced URL parentheses, but leave surrounding prose outside the link.
+          while (href.endsWith(")") && href.split(")").length > href.split("(").length) {
+            href = href.slice(0, -1);
+          }
+          try {
+            new URL(href);
+          } catch {
+            return part;
+          }
+
+          return (
+            <Fragment key={index}>
+              <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#367565] underline decoration-[#5b9888]/50 underline-offset-2 hover:text-[#245344] focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-[#5b9888]">{href}</a>
+              {part.slice(href.length)}
+            </Fragment>
+          );
+        })}
+      </p>
       {result.imageUrl && !imageFailed && (
         <a href={result.url} target="_blank" rel="noopener noreferrer" className="mt-4 block overflow-hidden rounded-xl bg-[#edf2ef]">
           <Image src={result.imageUrl} alt="Media from saved X post" width={1000} height={1000} unoptimized onError={() => setImageFailed(true)} className="max-h-[680px] w-full h-auto object-contain" />
