@@ -1,5 +1,7 @@
 "use client";
 
+import { bookmarkFolderName } from "@/lib/bookmark-folders";
+
 import { useState, useEffect, useCallback, useRef } from "react";
 import { LayoutGrid, List, FolderOpen, Search, X } from "lucide-react";
 import SearchResultCard, { SearchResult } from "./SearchResultCard";
@@ -131,8 +133,7 @@ export default function BrowseSection({ folders, boards, loading = false, constr
     .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 
   function displayName(path: string) {
-    const parts = path.split("/");
-    return parts[parts.length - 1] || path;
+    return bookmarkFolderName(path);
   }
 
   const skeletonChips = (

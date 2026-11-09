@@ -1,5 +1,7 @@
 "use client";
 
+import { bookmarkFolderLabel, bookmarkFolderName } from "@/lib/bookmark-folders";
+
 import { useState, useRef, useEffect } from "react";
 import { Bookmark, Pin, LayoutGrid, ChevronDown } from "lucide-react";
 
@@ -51,8 +53,7 @@ export default function SearchFilters({
   const getBookmarkLabel = () => {
     if (selectedFolder) {
       // Show truncated folder name
-      const parts = selectedFolder.split("/");
-      const lastPart = parts[parts.length - 1];
+      const lastPart = bookmarkFolderName(selectedFolder);
       return lastPart.length > 12 ? lastPart.slice(0, 12) + "..." : lastPart;
     }
     return "Bookmarks";
@@ -138,7 +139,7 @@ export default function SearchFilters({
                     selectedFolder === folder ? "bg-[#5b9888]/10 text-[#5b9888] font-medium" : "text-gray-600"
                   }`}
                 >
-                  {folder}
+                  {bookmarkFolderLabel(folder)}
                 </button>
               ))}
             </div>

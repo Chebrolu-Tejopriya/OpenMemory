@@ -1,5 +1,7 @@
 "use client";
 
+import { bookmarkFolderName } from "@/lib/bookmark-folders";
+
 import Image from "next/image";
 import dynamic from "next/dynamic";
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -28,8 +30,7 @@ function getRandomSuggestions(count = 4): string[] {
 }
 
 function displayName(path: string) {
-  const parts = path.split("/");
-  return parts[parts.length - 1] || path;
+  return bookmarkFolderName(path);
 }
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";

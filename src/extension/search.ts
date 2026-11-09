@@ -5,6 +5,7 @@
  */
 
 import MiniSearch from 'minisearch';
+import { bookmarkFolderLabel, fetchBookmarkCatalog, mergeBookmarkCatalog } from './bookmark-catalog';
 import { PINTEREST_IMPORT_LIMIT } from './pinterest-import-policy';
 import { mountFilterSelects, refreshFilterSelects } from './filter-select';
 import { db, IndexedBookmark, PinterestPin } from './db';
@@ -1018,6 +1019,25 @@ const ITEMS_PER_PAGE = 20;
 // Supabase availability flag
 let isSupabaseAvailable = false;
 
+// Reinitialization also runs after indexing progress. Reuse the read-only
+// catalog briefly instead of downloading it again for every progress event.
+let catalogLoad: { key: string; expires: number; promise: ReturnType<typeof fetchBookmarkCatalog> } | null = null;
+
+async function loadCloudCatalog(): ReturnType<typeof fetchBookmarkCatalog> {
+  const config = await getSupabaseConfig();
+  if (!config) return [];
+  const key = `${config.url}|${config.anonKey}`;
+  if (catalogLoad?.key === key && catalogLoad.expires > Date.now()) return catalogLoad.promise;
+  const promise = fetchBookmarkCatalog(config);
+  const entry = { key, expires: Date.now() + 60000, promise };
+  catalogLoad = entry;
+  try { return await promise; }
+  catch (error) {
+    if (catalogLoad === entry) catalogLoad = null;
+    throw error;
+  }
+}
+
 // Object URL cache for Pinterest images
 const blobUrlCache = new Map<string, string>();
 
@@ -1025,11 +1045,18 @@ const blobUrlCache = new Map<string, string>();
 async function initializeSearch(): Promise<void> {
   try {
     // Load bookmarks from IndexedDB
-    const [bookmarks, pins, xBookmarks] = await Promise.all([
+    const [localBookmarks, pins, xBookmarks, cloudBookmarks] = await Promise.all([
       db.bookmarks.toArray(),
       db.pins.toArray(),
-      db.xBookmarks.toArray()
+      db.xBookmarks.toArray(),
+      loadCloudCatalog().catch(error => {
+        console.warn('[OpenMemory] Using local bookmarks while cloud catalog is unavailable:', error);
+        return [];
+      }),
     ]);
+    // Read-only, in-memory merge: never enqueue cloud records for upload.
+    const bookmarks = mergeBookmarkCatalog(localBookmarks, cloudBookmarks);
+    allFolders = [];
 
     // Mark sources and combine
     const bookmarkItems: SearchableItem[] = bookmarks.map(b => ({ ...b, source: 'chrome' as const }));
@@ -1059,8 +1086,8 @@ async function initializeSearch(): Promise<void> {
     }
 
     // Extract unique folders from bookmarks
-    if (allFolders.length === 0) {
-      const folderSet = new Set<string>();
+    {
+      const folderSet = new Set<string>(allFolders);
       allItems.forEach(item => {
         if (item.source === 'chrome' && item.folder) {
           folderSet.add(item.folder);
@@ -1468,7 +1495,7 @@ function renderResults(results: SearchResult[], append = false): void {
 // ============== FOLDER SUGGESTIONS ==============
 function showSuggestions(filter: string): void {
   const filtered = allFolders
-    .filter(f => f.toLowerCase().includes(filter.toLowerCase()));
+    .filter(f => bookmarkFolderLabel(f).toLowerCase().includes(filter.toLowerCase()) || f.toLowerCase().includes(filter.toLowerCase()));
 
   if (filtered.length === 0) {
     hideSuggestions();
@@ -1478,7 +1505,7 @@ function showSuggestions(filter: string): void {
   selectedSuggestionIndex = -1;
   suggestionsEl.innerHTML = filtered.map((folder, i) => `
     <div class="suggestion-item" data-folder="${escapeHtml(folder)}" data-index="${i}">
-      📁 ${escapeHtml(folder)}
+      📁 ${escapeHtml(bookmarkFolderLabel(folder))}
     </div>
   `).join('');
   suggestionsEl.classList.add('active');
@@ -2550,7 +2577,7 @@ function updateFilterOptions(): void {
   }
 
   if (folderFilter) {
-    const folders = new Set<string>();
+    const folders = new Set<string>(allFolders);
     for (const item of allItems) {
       if (item.source === 'chrome' && item.folder) {
         folders.add(item.folder);
@@ -2559,7 +2586,7 @@ function updateFilterOptions(): void {
     const sortedFolders = Array.from(folders).sort((a, b) => a.localeCompare(b));
     folderFilter.innerHTML = ['<option value="">All folders</option>', ...sortedFolders.map(name => {
       const selected = selectedFolderFilter && selectedFolderFilter === name ? ' selected' : '';
-      return `<option value="${escapeHtml(name)}"${selected}>${escapeHtml(name)}</option>`;
+      return `<option value="${escapeHtml(name)}"${selected}>${escapeHtml(bookmarkFolderLabel(name))}</option>`;
     })].join('');
     folderFilter.disabled = selectedSourceFilter === 'pinterest' || selectedSourceFilter === 'x';
     if (folderFilter.disabled && selectedFolderFilter) {
@@ -2592,7 +2619,7 @@ function renderFilterChips(): void {
   }
 
   if (selectedFolderFilter && selectedSourceFilter !== 'pinterest') {
-    chips.push({ label: `Folder: ${selectedFolderFilter}`, key: 'folder' });
+    chips.push({ label: `Folder: ${bookmarkFolderLabel(selectedFolderFilter)}`, key: 'folder' });
   }
 
   if (selectedTimeFilter !== 'all') {
@@ -3104,6 +3131,7 @@ supabaseSaveBtn?.addEventListener('click', async () => {
   // Update UI
   supabaseSettings!.style.display = 'none';
   await updateSupabaseUI();
+  await initializeSearch();
 
   alert('Supabase configured! AI Search is now available.');
 });

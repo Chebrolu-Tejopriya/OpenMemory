@@ -105,10 +105,10 @@ app.post('/ingest', async (req, res) => {
  */
 app.get('/folders', async (req, res) => {
   try {
-    const cached = await getCache<string[]>('folders');
+    const cached = await getCache<string[]>('folders:v2');
     if (cached) return res.json({ folders: cached });
     const folders = await getSupabaseFolders();
-    await setCache('folders', folders, TTL.FOLDERS);
+    await setCache('folders:v2', folders, TTL.FOLDERS);
     res.json({ folders });
   } catch (err) {
     console.error('Folders error:', err);

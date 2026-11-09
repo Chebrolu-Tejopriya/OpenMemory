@@ -705,17 +705,18 @@ export async function searchSupabase(
  */
 export async function getSupabaseFolders(): Promise<string[]> {
   try {
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/bookmarks?select=folder&order=folder.asc&limit=2000`,
-      { method: 'GET', headers: { ...requestHeaders, 'Prefer': 'count=none' } }
-    );
-    if (!response.ok) {
-      console.error('[Supabase] Failed to fetch folders:', response.status);
-      return [];
-    }
-    const data: Array<{ folder: string | null }> = await response.json();
     const folders = new Set<string>();
-    data.forEach(item => { if (item.folder) folders.add(item.folder); });
+    for (let offset = 0; ; ) {
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/bookmarks?select=folder&order=folder.asc,id.asc&limit=1000&offset=${offset}`,
+        { method: 'GET', headers: { ...requestHeaders, 'Prefer': 'count=none' }, signal: AbortSignal.timeout(15000) }
+      );
+      if (!response.ok) throw new Error(`Failed to fetch folders: ${response.status}`);
+      const data: Array<{ folder: string | null }> = await response.json();
+      if (data.length === 0) break;
+      data.forEach(item => { if (item.folder) folders.add(item.folder); });
+      offset += data.length;
+    }
     return Array.from(folders).sort();
   } catch (error) {
     console.error('[Supabase] Error fetching folders:', error);
