@@ -6,6 +6,7 @@
 
 import MiniSearch from 'minisearch';
 import { bookmarkFolderLabel, fetchBookmarkCatalog, mergeBookmarkCatalog } from './bookmark-catalog';
+import { collectPinterestBoardNames, fetchPinterestBoardNames } from './pinterest-board-catalog';
 import { PINTEREST_IMPORT_LIMIT } from './pinterest-import-policy';
 import { mountFilterSelects, refreshFilterSelects } from './filter-select';
 import { db, IndexedBookmark, PinterestPin } from './db';
@@ -1005,6 +1006,7 @@ interface PinterestBoardRow {
 // ============== STATE ==============
 let allItems: SearchableItem[] = [];
 let allFolders: string[] = [];
+let allPinterestBoards: string[] = [];
 let miniSearch: MiniSearch<SearchableDocument> | null = null;
 let currentResults: SearchResult[] = [];
 let displayedCount = 0;
@@ -1022,6 +1024,22 @@ let isSupabaseAvailable = false;
 // Reinitialization also runs after indexing progress. Reuse the read-only
 // catalog briefly instead of downloading it again for every progress event.
 let catalogLoad: { key: string; expires: number; promise: ReturnType<typeof fetchBookmarkCatalog> } | null = null;
+let boardCatalogLoad: { key: string; expires: number; promise: ReturnType<typeof fetchPinterestBoardNames> } | null = null;
+
+async function loadCloudBoardNames(): ReturnType<typeof fetchPinterestBoardNames> {
+  const config = await getSupabaseConfig();
+  if (!config) return [];
+  const key = `${config.url}|${config.anonKey}`;
+  if (boardCatalogLoad?.key === key && boardCatalogLoad.expires > Date.now()) return boardCatalogLoad.promise;
+  const promise = fetchPinterestBoardNames(config);
+  const entry = { key, expires: Date.now() + 60000, promise };
+  boardCatalogLoad = entry;
+  try { return await promise; }
+  catch (error) {
+    if (boardCatalogLoad === entry) boardCatalogLoad = null;
+    throw error;
+  }
+}
 
 async function loadCloudCatalog(): ReturnType<typeof fetchBookmarkCatalog> {
   const config = await getSupabaseConfig();
@@ -1045,7 +1063,7 @@ const blobUrlCache = new Map<string, string>();
 async function initializeSearch(): Promise<void> {
   try {
     // Load bookmarks from IndexedDB
-    const [localBookmarks, pins, xBookmarks, cloudBookmarks] = await Promise.all([
+    const [localBookmarks, pins, xBookmarks, cloudBookmarks, localBoards, cloudBoards] = await Promise.all([
       db.bookmarks.toArray(),
       db.pins.toArray(),
       db.xBookmarks.toArray(),
@@ -1053,10 +1071,20 @@ async function initializeSearch(): Promise<void> {
         console.warn('[OpenMemory] Using local bookmarks while cloud catalog is unavailable:', error);
         return [];
       }),
+      db.pinterestBoards.toArray(),
+      loadCloudBoardNames().catch(error => {
+        console.warn('[OpenMemory] Using local boards while cloud board list is unavailable:', error);
+        return [];
+      }),
     ]);
     // Read-only, in-memory merge: never enqueue cloud records for upload.
     const bookmarks = mergeBookmarkCatalog(localBookmarks, cloudBookmarks);
     allFolders = [];
+    allPinterestBoards = collectPinterestBoardNames(
+      cloudBoards,
+      localBoards.filter(board => !board.archived).map(board => board.name),
+      pins.map(pin => pin.boardName),
+    );
 
     // Mark sources and combine
     const bookmarkItems: SearchableItem[] = bookmarks.map(b => ({ ...b, source: 'chrome' as const }));
@@ -2559,13 +2587,7 @@ function updateFilterOptions(): void {
   }
 
   if (boardFilter) {
-    const boardNames = new Set<string>();
-    for (const item of allItems) {
-      if (item.source === 'pinterest' && item.boardName) {
-        boardNames.add(item.boardName);
-      }
-    }
-    const sorted = Array.from(boardNames).sort((a, b) => a.localeCompare(b));
+    const sorted = allPinterestBoards;
     boardFilter.innerHTML = ['<option value="">All boards</option>', ...sorted.map(name => {
       const selected = selectedBoardFilter && selectedBoardFilter === name ? ' selected' : '';
       return `<option value="${escapeHtml(name)}"${selected}>${escapeHtml(name)}</option>`;

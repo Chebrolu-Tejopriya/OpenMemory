@@ -64,5 +64,21 @@ function load(entry) {
   assert.equal(labels.bookmarkFolderLabel(recovered), 'OM');
   assert.equal(labels.bookmarkFolderName(recovered), 'OM');
   assert.equal(labels.bookmarkFolderName('Bookmarks bar/Tools'), 'Tools');
+  const boardCatalog = load('src/extension/pinterest-board-catalog.ts');
+  const boardRows = ['tracker', 'figbruary', 'OpenMemory', 'tracker', null, '', 'Test board'].map(board_name => ({ board_name }));
+  const boardOffsets = [];
+  const boards = await boardCatalog.fetchPinterestBoardNames({ url: 'https://test.supabase.co', anonKey: 'test' }, async (url, options) => {
+    assert.equal(options.method, 'GET');
+    const endpoint = new URL(url);
+    assert.equal(endpoint.pathname, '/rest/v1/pinterest_boards');
+    assert.equal(endpoint.searchParams.get('select'), 'board_name', 'No pin download needed for board names');
+    const offset = Number(endpoint.searchParams.get('offset'));
+    boardOffsets.push(offset);
+    return { ok: true, json: async () => boardRows.slice(offset, offset + 2) };
+  });
+  assert.deepEqual(boardOffsets, [0, 2, 4, 6, 7]);
+  assert.deepEqual(boards, ['figbruary', 'OpenMemory', 'tracker']);
+  assert.deepEqual(boardCatalog.collectPinterestBoardNames(boards, ['Local board', 'tracker']), ['figbruary', 'Local board', 'OpenMemory', 'tracker']);
+  await assert.rejects(boardCatalog.fetchPinterestBoardNames({ url: 'https://test.supabase.co', anonKey: 'test' }, async () => ({ ok: false, status: 503 })));
   console.log('Passed: complete catalog, partial local cache, unique search IDs, paginated folders, read-only requests, and OM labels.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
