@@ -2,8 +2,10 @@
  * MCP endpoint — exposes OpenMemory to coding agents (Claude Code, Codex,
  * Cursor, ...) over Streamable HTTP at POST /mcp.
  *
- * Read-only. Protected by a bearer token (MCP_AUTH_TOKEN); the endpoint
- * refuses every request while that variable is unset.
+ * Read-only. A request must carry either the fixed bearer token
+ * (MCP_AUTH_TOKEN, for agents that can send a header) or an access token from
+ * the OAuth sign-in in oauth.ts (MCP_OAUTH_PASSWORD, for the Claude apps).
+ * The endpoint refuses every request while both variables are unset.
  */
 import type { Express, Request, Response, NextFunction } from 'express';
 import { createHash, timingSafeEqual } from 'crypto';
@@ -13,6 +15,7 @@ import { z } from 'zod';
 import { searchAll, listFolders, listBoards, CatalogResult } from './catalog.js';
 import { browseSupabase } from './supabase-search.js';
 import { browseXBookmarks } from './x-bookmarks.js';
+import { mountMcpOAuth, McpOAuth } from './oauth.js';
 
 export interface McpDeps {
   /** Active (non-archived) sticky notes, newest first. */
@@ -177,25 +180,31 @@ function buildServer(deps: McpDeps): McpServer {
 
 const digest = (value: string) => createHash('sha256').update(value).digest();
 
-function requireToken(req: Request, res: Response, next: NextFunction) {
-  const expected = process.env.MCP_AUTH_TOKEN;
-  if (!expected) {
-    return res.status(503).json({ jsonrpc: '2.0', error: { code: -32000, message: 'MCP is disabled: set MCP_AUTH_TOKEN on the backend.' }, id: null });
-  }
-  const header = req.headers.authorization ?? '';
-  const supplied = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
-  // Compare digests so the check is constant-time regardless of length.
-  if (!supplied || !timingSafeEqual(digest(supplied), digest(expected))) {
-    res.setHeader('WWW-Authenticate', 'Bearer');
-    return res.status(401).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Unauthorized' }, id: null });
-  }
-  next();
+function requireToken(oauth: McpOAuth | null) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const expected = process.env.MCP_AUTH_TOKEN;
+    if (!expected && !oauth) {
+      return res.status(503).json({ jsonrpc: '2.0', error: { code: -32000, message: 'MCP is disabled: set MCP_AUTH_TOKEN or MCP_OAUTH_PASSWORD on the backend.' }, id: null });
+    }
+    const header = req.headers.authorization ?? '';
+    const supplied = /^Bearer /i.test(header) ? header.slice(7).trim() : '';
+    // Compare digests so the check is constant-time regardless of length.
+    const isStaticToken = !!expected && !!supplied && timingSafeEqual(digest(supplied), digest(expected));
+    if (isStaticToken || (supplied && oauth?.verifyAccessToken(supplied))) return next();
+    // resource_metadata is what lets an OAuth client find the sign-in flow.
+    res.setHeader('WWW-Authenticate', oauth
+      ? `Bearer${supplied ? ' error="invalid_token",' : ''} resource_metadata="${oauth.resourceMetadataUrl}"`
+      : 'Bearer');
+    res.status(401).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Unauthorized' }, id: null });
+  };
 }
 
 export function mountMcp(app: Express, deps: McpDeps) {
+  const guard = requireToken(mountMcpOAuth(app));
+
   // Stateless: a fresh server + transport per request, so nothing is held in
   // memory between calls and a Render restart never strands a session.
-  app.post('/mcp', requireToken, async (req, res) => {
+  app.post('/mcp', guard, async (req, res) => {
     const server = buildServer(deps);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on('close', () => { void transport.close(); void server.close(); });

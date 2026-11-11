@@ -17,5 +17,7 @@ services:
         sync: false
       - key: MCP_AUTH_TOKEN
         sync: false
+      - key: MCP_OAUTH_PASSWORD
+        sync: false
       - key: NODE_ENV
         value: production
