@@ -6,20 +6,19 @@ import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import { ingestItems } from './ingest.js';
 import { search } from './search.js';
-import { searchSupabase, getSupabaseFolders, getSupabaseBoards, browseSupabase } from './supabase-search.js';
+import { browseSupabase } from './supabase-search.js';
+import { searchAll, listFolders, listBoards } from './catalog.js';
+import { mountMcp } from './mcp.js';
 import { getAllFolders, getPinterestBoards, getPinterestPinsCountByBoard, upsertPinterestBoard, upsertPinterestPins, getExistingPinterestPinUrls, deletePinterestBoard, PinterestPinRow, PinterestBoardRow } from './db.js';
 import { StandardizedItem } from './types.js';
 import { generateEmbeddings } from './embeddings.js';
 import { startPinterestEmbeddingJob, getPinterestEmbeddingJob, pinterestEmbeddingCounts } from './pinterest-embeddings.js';
 import { scrapePageMetadata, buildEmbeddingText } from './scraper.js';
 import { getCache, setCache, invalidate } from './redis.js';
-import { browseXBookmarks, searchXBookmarks, startXEmbeddings, xEmbeddingState, xEmbeddingCounts } from './x-bookmarks.js';
+import { browseXBookmarks, startXEmbeddings, xEmbeddingState, xEmbeddingCounts } from './x-bookmarks.js';
 
-// Cache TTLs (seconds)
+// Cache TTLs (seconds). Search, folder and board TTLs live in catalog.ts.
 const TTL = {
-  SEARCH: 600,    // 10 min — search results
-  FOLDERS: 3600,  // 1 hr — folder list rarely changes
-  BOARDS: 86400,  // 24 hr — board list rarely changes
   NOTES: 1800,    // 30 min — notes list (no image_data, safe to cache longer)
   OM_LINKS: 1800, // 30 min — saved links
   BROWSE: 86400,   // 24 hr — browse results (canvas fetches all bookmarks+pins)
@@ -105,11 +104,7 @@ app.post('/ingest', async (req, res) => {
  */
 app.get('/folders', async (req, res) => {
   try {
-    const cached = await getCache<string[]>('folders:v2');
-    if (cached) return res.json({ folders: cached });
-    const folders = await getSupabaseFolders();
-    await setCache('folders:v2', folders, TTL.FOLDERS);
-    res.json({ folders });
+    res.json({ folders: await listFolders() });
   } catch (err) {
     console.error('Folders error:', err);
     res.status(500).json({
@@ -125,11 +120,7 @@ app.get('/folders', async (req, res) => {
  */
 app.get('/boards', async (req, res) => {
   try {
-    const cached = await getCache<string[]>('boards');
-    if (cached) return res.json({ boards: cached });
-    const boards = await getSupabaseBoards();
-    await setCache('boards', boards, TTL.BOARDS);
-    res.json({ boards });
+    res.json({ boards: await listBoards() });
   } catch (err) {
     console.error('Boards error:', err);
     res.status(500).json({
@@ -432,24 +423,7 @@ app.get('/search', async (req, res) => {
       return res.status(400).json({ error: 'q parameter is required' });
     }
 
-    // folder/board belong in the key: the same query scoped to a different
-    // collection is a different result set.
-    const cacheKey = `search:${query.toLowerCase().trim()}:${source ?? 'all'}:${folder ?? ''}:${board ?? ''}:${limit}`;
-    const includesX = source === 'x' || ((!source || source === 'all') && !folder && !board);
-    const cached = includesX ? null : await getCache<object>(cacheKey);
-    if (cached) return res.json(cached);
-
-    const [existing, x] = await Promise.all([
-      source === 'x' ? Promise.resolve({ results: [], total: 0, hasMore: false }) : searchSupabase(query, limit, source, folder, board),
-      includesX ? searchXBookmarks(query, limit).catch(error => {
-        if (source === 'x') throw error;
-        console.warn('[X search] unavailable:', error instanceof Error ? error.message : 'request failed');
-        return { results: [], total: 0, hasMore: false };
-      }) : Promise.resolve({ results: [], total: 0, hasMore: false })
-    ]);
-    const results = [...existing.results, ...x.results].sort((a, b) => b.score - a.score).slice(0, limit);
-    const result = { results, total: existing.total + x.total, hasMore: existing.hasMore || existing.total + x.total > limit };
-    if (!includesX) await setCache(cacheKey, result, TTL.SEARCH);
+    const result = await searchAll(query, limit, source, folder, board);
     res.json(result);
   } catch (err) {
     console.error('Search error:', err);
@@ -503,15 +477,21 @@ const sbHeaders = {
 // image_data excluded from list — fetched on demand via GET /notes/:id
 const NOTES_LIST_SELECT = 'id,title,body,color_bg,color_text,created_at,pos_x,pos_y,archived,todos,pinned,pin_x,pin_y';
 
+async function loadNotes(): Promise<Array<Record<string, unknown>>> {
+  const cached = await getCache<Array<Record<string, unknown>>>('notes:all');
+  if (cached) return cached;
+  const r = await fetch(`${SB_URL}/rest/v1/sticky_notes?select=${NOTES_LIST_SELECT}&archived=is.false&order=created_at.desc`, { headers: sbHeaders });
+  if (!r.ok) throw new Error(await r.text());
+  const notes = await r.json();
+  await setCache('notes:all', notes, TTL.NOTES);
+  return notes;
+}
+
+mountMcp(app, { listNotes: loadNotes });
+
 app.get('/notes', async (req, res) => {
   try {
-    const cached = await getCache<object[]>('notes:all');
-    if (cached) return res.json({ notes: cached });
-    const r = await fetch(`${SB_URL}/rest/v1/sticky_notes?select=${NOTES_LIST_SELECT}&archived=is.false&order=created_at.desc`, { headers: sbHeaders });
-    if (!r.ok) return res.status(500).json({ error: await r.text() });
-    const notes = await r.json();
-    await setCache('notes:all', notes, TTL.NOTES);
-    res.json({ notes });
+    res.json({ notes: await loadNotes() });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }
