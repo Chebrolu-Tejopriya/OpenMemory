@@ -5,7 +5,7 @@ import { bookmarkFolderName } from "@/lib/bookmark-folders";
 import Image from "next/image";
 import dynamic from "next/dynamic";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Pencil, Upload, Plus, ArchiveRestore, Trash2, Pause, Play, GripHorizontal, ListTodo, Square, CheckSquare2, MoreVertical } from "lucide-react";
+import { Search, RefreshCw, LayoutGrid, X, Bookmark, Hash, Waypoints, Link2, StickyNote, Pencil, Upload, Plus, ArchiveRestore, Trash2, Pause, Play, GripHorizontal, ListTodo, Square, CheckSquare2, MoreVertical, Copy, Check } from "lucide-react";
 import SearchResults from "@/components/SearchResults";
 import SearchFilters, { SourceFilter } from "@/components/SearchFilters";
 import { SearchResult } from "@/components/SearchResultCard";
@@ -138,6 +138,7 @@ export default function Home() {
   const [showNotesArchive, setShowNotesArchive] = useState(false);
   const [showLinksArchive, setShowLinksArchive] = useState(false);
   const [videoPaused, setVideoPaused] = useState(false);
+  const [mcpCopied, setMcpCopied] = useState(false);
   const [noteSearch, setNoteSearch] = useState("");
   const [openNoteMenuId, setOpenNoteMenuId] = useState<string | null>(null);
 
@@ -766,6 +767,25 @@ export default function Home() {
         </button>
       )}
 
+      {/* Connect to MCP — top centre of the home screen; copies the MCP URL for any agent */}
+      <button
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(`${BACKEND_URL}/mcp`);
+            setMcpCopied(true);
+            setTimeout(() => setMcpCopied(false), 2000);
+          } catch {}
+        }}
+        className={`absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 h-8 px-3 rounded-full text-[13px] font-medium text-[#2f6f66] whitespace-nowrap transition-all duration-300 hover:scale-105 ${
+          activeView === "search" && !hasSearched ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
+        style={{ background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid rgba(91,152,136,0.25)' }}
+        title="Copy the OpenMemory MCP URL"
+        tabIndex={activeView === "search" && !hasSearched ? 0 : -1}
+      >
+        <span aria-live="polite">{mcpCopied ? "MCP URL copied" : "Connect to MCP"}</span>
+        {mcpCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+      </button>
 
       {/* ══════════════════════════════════════════
           SEARCH VIEW
