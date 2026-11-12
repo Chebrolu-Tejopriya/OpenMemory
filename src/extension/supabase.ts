@@ -4,6 +4,7 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { fetchBookmarkSyncState, planBookmarkWrite, type BookmarkSyncState } from './bookmark-sync-state';
 import { canonicalPinterestBoardUrl } from './pinterest-import-policy';
 import { embeddingBackendUrl } from './embedding-jobs';
 
@@ -216,21 +217,32 @@ export async function upsertBookmark(
   }
 
   try {
-    // First, check if bookmark exists and if title changed
+    // First, check what the cloud already holds for this URL.
     console.log('[Supabase] Checking if bookmark exists...');
-    const { data: existing, error: fetchError } = await supabaseRequest<SupabaseBookmark[]>(
-      `bookmarks?url=eq.${encodeURIComponent(bookmark.url)}&select=id,title`
-    );
+    const urlFilter = `url=eq.${encodeURIComponent(bookmark.url)}`;
+    const [{ data: existing, error: fetchError }, { data: withoutEmbedding }] = await Promise.all([
+      supabaseRequest<SupabaseBookmark[]>(`bookmarks?${urlFilter}&select=id,title,folder,chrome_id`),
+      // Ask only whether the embedding is missing; never download the vector.
+      supabaseRequest<Array<{ id: string }>>(`bookmarks?${urlFilter}&embedding=is.null&select=id`),
+    ]);
 
     if (fetchError) {
       console.error('[Supabase] Error checking existing bookmark:', fetchError);
     }
 
     const existingBookmark = existing?.[0];
-    const titleChanged = existingBookmark && existingBookmark.title !== bookmark.title;
-    const needsEmbedding = forceEmbedding || !existingBookmark || titleChanged || !existingBookmark.embedding;
+    // If the presence check itself failed, assume missing so nothing is left unindexed.
+    const hasEmbedding = !!existingBookmark && withoutEmbedding !== null && withoutEmbedding.length === 0;
+    const plan = planBookmarkWrite(bookmark, existingBookmark, hasEmbedding, forceEmbedding);
+    const needsEmbedding = plan.embed;
 
     console.log('[Supabase] Existing:', !!existingBookmark, 'Needs embedding:', needsEmbedding);
+
+    // An unchanged row must not be rewritten: each write also rewrites its
+    // vector index entry, which is what drains the database's disk budget.
+    if (!plan.write) {
+      return { success: true };
+    }
 
     // Generate embedding if needed
     let embedding: number[] | null = null;
@@ -424,6 +436,29 @@ export async function bulkUpsertBookmarks(
   const BATCH_SIZE = 10;
   let success = 0;
   let failed = 0;
+  const total = bookmarks.length;
+
+  // Compare against the cloud in a few reads, then send only what differs.
+  // A routine sync of an unchanged library therefore writes nothing.
+  const config = await getSupabaseConfig();
+  let state: BookmarkSyncState | null = null;
+  if (config) {
+    try {
+      state = await fetchBookmarkSyncState(config);
+    } catch (err) {
+      // upsertBookmark still skips unchanged rows one by one, so this is only slower.
+      console.warn('[Supabase] Could not load sync state, checking bookmarks individually:', err);
+    }
+  }
+  if (state) {
+    const snapshot = state;
+    bookmarks = bookmarks.filter(b =>
+      planBookmarkWrite(b, snapshot.rows.get(b.url), !snapshot.missingEmbedding.has(b.url)).write);
+    success = total - bookmarks.length;
+    console.log(`[Supabase] ${success} bookmarks already up to date, ${bookmarks.length} to write`);
+    onProgress?.(success, total);
+  }
+  const alreadySynced = success;
 
   for (let i = 0; i < bookmarks.length; i += BATCH_SIZE) {
     const batch = bookmarks.slice(i, i + BATCH_SIZE);
@@ -440,7 +475,7 @@ export async function bulkUpsertBookmarks(
       }
     }
 
-    onProgress?.(Math.min(i + BATCH_SIZE, bookmarks.length), bookmarks.length);
+    onProgress?.(alreadySynced + Math.min(i + BATCH_SIZE, bookmarks.length), total);
 
     // Small delay between batches to avoid rate limiting
     if (i + BATCH_SIZE < bookmarks.length) {
